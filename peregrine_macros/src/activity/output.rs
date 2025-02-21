@@ -28,15 +28,11 @@ impl ToTokens for Activity {
             M::Timelines: 'o + #(peregrine::timeline::HasTimeline<'o, #resources_used, M>)+*
         };
 
-        let histories_bound = quote! {
-            M::Histories: #(peregrine::history::HasHistory<'o, #resources_used>)+*
-        };
-
         let num_operations = lines.iter().filter(|l| l.is_op()).count();
 
         let result = quote! {
             impl<'o, M: peregrine::Model<'o> + 'o> peregrine::Activity<'o, M> for #name
-            where #timelines_bound, #histories_bound {
+            where #timelines_bound {
                 fn decompose(&'o self, start: peregrine::Time, timelines: &M::Timelines, bump: &'o peregrine::exec::SyncBump) -> (peregrine::Duration, Vec<&'o dyn peregrine::operation::Operation<'o, M>>) {
                     let mut operations: Vec<&'o dyn peregrine::operation::Operation<'o, M>> = Vec::with_capacity(#num_operations);
                     let duration = { #(#lines)* };

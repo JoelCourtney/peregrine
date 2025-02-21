@@ -8,3 +8,4 @@ nightly = ["peregrine/nightly"]
 
 [dependencies]
 peregrine = { path = "../peregrine" }
+serde = { version = "1.0.218", features = ["derive"] }

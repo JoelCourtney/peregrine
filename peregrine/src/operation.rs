@@ -1,7 +1,7 @@
 #![doc(hidden)]
 
 use crate::exec::{BumpedFuture, ExecEnvironment};
-use crate::history::{HasHistory, PeregrineDefaultHashBuilder};
+use crate::history::{History, PeregrineDefaultHashBuilder};
 use crate::timeline::HasTimeline;
 use crate::{Model, Resource};
 use hifitime::Duration;
@@ -26,7 +26,7 @@ pub trait Operation<'o, M: Model<'o>>: Sync {
 pub trait Writer<'o, R: Resource<'o>, M: Model<'o>>: Operation<'o, M> {
     fn read<'b>(
         &'o self,
-        histories: &'o M::Histories,
+        histories: &'o History,
         env: ExecEnvironment<'b>,
     ) -> BumpedFuture<'b, (u64, RwLockReadGuard<'o, <R as Resource<'o>>::Read>)>
     where
@@ -66,7 +66,6 @@ where
 impl<'o, R: Resource<'o>, M: Model<'o>> Operation<'o, M> for InitialConditionOp<'o, R, M>
 where
     M::Timelines: HasTimeline<'o, R, M>,
-    M::Histories: HasHistory<'o, R>,
 {
     fn find_children(&'o self, _time_of_change: Duration, _timelines: &M::Timelines) {}
 
@@ -106,12 +105,11 @@ where
 
 impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Writer<'o, R, M> for InitialConditionOp<'o, R, M>
 where
-    M::Histories: HasHistory<'o, R>,
     M::Timelines: HasTimeline<'o, R, M>,
 {
     fn read<'b>(
         &'o self,
-        histories: &'o M::Histories,
+        histories: &'o History,
         env: ExecEnvironment<'b>,
     ) -> BumpedFuture<'b, (u64, RwLockReadGuard<'o, <R as Resource<'o>>::Read>)>
     where
@@ -128,11 +126,11 @@ where
                             )
                             .unwrap(),
                         );
-                        if let Some(r) = histories.get(hash) {
+                        if let Some(r) = histories.get::<R>(hash) {
                             write_guard.result = Some((hash, r));
                         } else {
                             write_guard.result =
-                                Some((hash, histories.insert(hash, write_guard.value.clone())));
+                                Some((hash, histories.insert::<R>(hash, write_guard.value.clone())));
                         }
                     }
                     write_guard.downgrade()

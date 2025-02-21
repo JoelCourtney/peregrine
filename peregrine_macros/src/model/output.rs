@@ -18,14 +18,9 @@ impl ToTokens for Model {
             .iter()
             .map(|r| format_ident!("{}_operation_timeline", r.field))
             .collect::<Vec<_>>();
-        let history_names = resources
-            .iter()
-            .map(|r| format_ident!("{}_history", r.field))
-            .collect::<Vec<_>>();
 
         let timelines_name = format_ident!("{name}Timelines");
         let initial_conditions_name = format_ident!("{name}InitialConditions");
-        let histories_name = format_ident!("{name}Histories");
 
         let result = quote! {
             #visibility enum #name {}
@@ -33,7 +28,10 @@ impl ToTokens for Model {
             impl<'o> peregrine::Model<'o> for #name {
                 type Timelines = #timelines_name<'o>;
                 type InitialConditions = #initial_conditions_name<'o>;
-                type Histories = #histories_name<'o>;
+
+                fn init_history(history: &mut peregrine::history::History) {
+                    #(history.init::<#resource_paths>();)*
+                }
             }
 
             #visibility struct #initial_conditions_name<'h> {
@@ -54,22 +52,6 @@ impl ToTokens for Model {
                     }
                 }
             }
-
-            #[derive(Default)]
-            #visibility struct #histories_name<'h> {
-                #(#history_names: <#resource_paths as peregrine::Resource<'h>>::History,)*
-            }
-
-            #(
-                impl<'h> peregrine::history::HasHistory<'h, #resource_paths> for #histories_name<'h> {
-                    fn insert(&'h self, hash: u64, value: <#resource_paths as peregrine::Resource<'h>>::Write) -> <#resource_paths as peregrine::Resource<'h>>::Read {
-                        self.#history_names.insert(hash, value)
-                    }
-                    fn get(&'h self, hash: u64) -> Option<<#resource_paths as peregrine::Resource<'h>>::Read> {
-                        self.#history_names.get(hash)
-                    }
-                }
-            )*
 
             #(
                 impl<'o> peregrine::timeline::HasTimeline<'o, #resource_paths, #name> for #timelines_name<'o> {

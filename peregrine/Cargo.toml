@@ -32,11 +32,11 @@ bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 foldhash = "0.1.4"
 # A concurrent hashmap for storing history. Used for copiable resources.
 dashmap = { version = "6.1.0", features = ["serde"] }
-# A frozen concurrent hashmap that allows holding references across reallocations.
-# Used for non-copiable resources.
-elsa = "1.11.0"
 # The central trait that `elsa` depends on.
 stable_deref_trait = "1.2.0"
+type-map = "0.5.0"
+type_reg = { version = "0.8.0", features = ["untagged"] }
+inventory = "0.3.19"
 
 ## MEMORY
 # An arena allocator used for Futures during simulation, and operations trait objects.
@@ -59,4 +59,4 @@ hifitime = "4.0.2"
 
 ## MISC
 # Used for convience, not having to manually implement simple traits.
-derive_more = { version = "2.0.1", features = ["deref"] }
+derive_more = { version = "2.0.1", features = ["deref", "deref_mut"] }

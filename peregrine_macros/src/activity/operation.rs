@@ -193,14 +193,14 @@ fn generate_operation(idents: &Idents, body: TokenStream) -> TokenStream {
         let relationships = self.relationships.blocking_lock();
 
         #(let (#read_only_resource_hashes, #read_only_variables) = relationships.#read_only_variables
-                .read(histories, new_env)
+                .read(history, new_env)
                 .await;
         )*
 
         #(
             let (#read_write_resource_hashes, mut #read_write_variables): (u64, <#read_write_paths as peregrine::Resource<'o>>::Write) = {
                 let (hash, #read_write_variables) = relationships.#read_write_variables
-                    .read(histories, new_env)
+                    .read(history, new_env)
                     .await;
                 (hash, (*#read_write_variables).into())
             };
@@ -221,13 +221,13 @@ fn generate_operation(idents: &Idents, body: TokenStream) -> TokenStream {
             state.finish()
         };
 
-        let (#(#all_write_variables),*) = if let Some(#first_write_variable) = <M::Histories as peregrine::history::HasHistory<#first_write_path>>::get(histories, hash) {
-            #(let #all_but_one_write_variables = <M::Histories as peregrine::history::HasHistory<#all_but_one_write_paths>>::get(histories, hash).unwrap();)*
+        let (#(#all_write_variables),*) = if let Some(#first_write_variable) = history.get::<#first_write_path>(hash) {
+            #(let #all_but_one_write_variables = history.get::<#all_but_one_write_paths>(hash).unwrap();)*
             (#(#all_write_variables),*)
         } else {
             let args = self.activity;
             { #body }
-            #(let #all_write_variables = <M::Histories as peregrine::history::HasHistory<#all_write_paths>>::insert(histories, hash, #all_write_variables);)*
+            #(let #all_write_variables = history.insert::<#all_write_paths>(hash, #all_write_variables);)*
             (#(#all_write_variables),*)
         };
 
@@ -241,10 +241,6 @@ fn generate_operation(idents: &Idents, body: TokenStream) -> TokenStream {
 
     let timelines_bound = quote! {
         M::Timelines: #(peregrine::timeline::HasTimeline<'o, #all_paths, M>)+*
-    };
-
-    let history_bound = quote! {
-        M::Histories: #(peregrine::history::HasHistory<'o, #all_write_paths>)+*
     };
 
     quote! {
@@ -262,7 +258,7 @@ fn generate_operation(idents: &Idents, body: TokenStream) -> TokenStream {
         }
 
         impl<'o, M: peregrine::Model<'o>> peregrine::operation::Operation<'o, M> for #op<'o, M>
-        where #timelines_bound, #history_bound {
+        where #timelines_bound {
             fn find_children(&'o self, time_of_change: peregrine::Duration, timelines: &M::Timelines) {
                 if time_of_change >= self.time { return; }
 
@@ -333,8 +329,8 @@ fn generate_operation(idents: &Idents, body: TokenStream) -> TokenStream {
 
         #(
             impl<'o, M: peregrine::Model<'o>> peregrine::operation::Writer<'o, #all_write_paths, M> for #op<'o, M>
-            where #timelines_bound, #history_bound {
-                fn read<'b>(&'o self, histories: &'o M::Histories, env: peregrine::exec::ExecEnvironment<'b>) -> peregrine::exec::BumpedFuture<'b, (u64, peregrine::reexports::tokio::sync::RwLockReadGuard<'o, <#all_write_paths as peregrine::Resource<'o>>::Read>)> where 'o: 'b {
+            where #timelines_bound {
+                fn read<'b>(&'o self, history: &'o peregrine::History, env: peregrine::exec::ExecEnvironment<'b>) -> peregrine::exec::BumpedFuture<'b, (u64, peregrine::reexports::tokio::sync::RwLockReadGuard<'o, <#all_write_paths as peregrine::Resource<'o>>::Read>)> where 'o: 'b {
                     unsafe { std::pin::Pin::new_unchecked(env.bump.alloc(async move {
                         // If you (the thread) can get the write lock on the node, then you are responsible
                         // for calculating the hash and value if they aren't present.

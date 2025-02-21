@@ -1,5 +1,6 @@
 use peregrine::{model, Resource};
 use peregrine::{CopyHistory, DerefHistory};
+use serde::{Deserialize, Serialize};
 
 mod activities;
 
@@ -10,7 +11,7 @@ model! {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 enum Battery {}
 
 impl<'h> Resource<'h> for Battery {
@@ -19,17 +20,17 @@ impl<'h> Resource<'h> for Battery {
     type Read = f32;
     type Write = f32;
 
-    type History = CopyHistory<'h, Self>;
+    type History = CopyHistory<f32>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 enum Mode {}
 
 impl<'h> Resource<'h> for Mode {
     const STATIC: bool = true;
     type Read = &'h str;
     type Write = String;
-    type History = DerefHistory<'h, Self>;
+    type History = DerefHistory<String>;
 }
 
 fn main() {}

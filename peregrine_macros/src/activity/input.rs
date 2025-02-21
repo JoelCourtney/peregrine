@@ -69,8 +69,8 @@ impl Parse for Op {
 
         let when: Expr = when_buffer.parse()?;
 
-        let mut reads_temp = HashMap::new();
-        let mut writes_temp = HashMap::new();
+        let mut reads_temp = vec![];
+        let mut writes_temp = vec![];
 
         loop {
             let variable: Ident = input.parse()?;
