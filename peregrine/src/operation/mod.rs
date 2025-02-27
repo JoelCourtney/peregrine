@@ -5,6 +5,7 @@ pub mod ungrounded;
 
 use crate::Model;
 use crate::exec::ExecEnvironment;
+use crate::operation::ungrounded::UngroundedUpstream;
 use crate::resource::Resource;
 use anyhow::Result;
 use crossbeam::queue::SegQueue;
@@ -37,7 +38,7 @@ pub trait Node<'o, M: Model<'o> + 'o>: Sync {
     }
 }
 
-pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
+pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: AsRef<dyn Node<'o, M>> {
     fn respond<'s>(
         &'o self,
         value: InternalResult<(u64, R::Read)>,
@@ -47,7 +48,7 @@ pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
         'o: 's;
 }
 
-pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
+pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: AsRef<dyn Node<'o, M>> {
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,

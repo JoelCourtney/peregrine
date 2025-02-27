@@ -7,6 +7,7 @@ use quote::quote;
 
 mod activity;
 mod model;
+mod operation;
 
 #[proc_macro]
 pub fn model(input: TokenStream) -> TokenStream {

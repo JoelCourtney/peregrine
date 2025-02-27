@@ -285,6 +285,7 @@ pub use peregrine_macros::model;
 /// It would just be very un-hygienic and potentially hard to debug.
 pub use peregrine_macros::impl_activity;
 
+mod activity;
 pub mod exec;
 pub mod history;
 pub mod operation;
@@ -300,6 +301,7 @@ pub use hifitime::{Duration, Epoch as Time};
 use operation::{Continuation, ErrorAccumulator, Node};
 use resource::Resource;
 use timeline::HasTimeline;
+use crate::activity::{Activity, ActivityId};
 
 #[derive(Default)]
 pub struct Session {
@@ -507,28 +509,4 @@ pub trait Model<'o>: Sync {
     type Timelines: Send + Sync + for<'a> From<(Duration, &'a Member<'o>, Self::InitialConditions)>;
 
     fn init_history(history: &History);
-}
-
-/// An activity, which decomposes into a statically-known set of operations. Implemented
-/// with the [impl_activity] macro.
-pub trait Activity<'o, M: Model<'o>>: Send + Sync {
-    fn decompose(
-        &'o self,
-        start: Time,
-        timelines: &M::Timelines,
-        bump: &Member<'o>,
-    ) -> Result<(Duration, Vec<&'o dyn Node<'o, M>>)>;
-}
-
-pub trait ActivityLabel {
-    const LABEL: &'static str;
-}
-
-/// A unique activity ID.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
-pub struct ActivityId(u32);
-impl ActivityId {
-    pub fn new(id: u32) -> ActivityId {
-        ActivityId(id)
-    }
 }

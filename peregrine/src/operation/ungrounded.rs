@@ -11,18 +11,22 @@ use rayon::Scope;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-pub trait UngroundedUpstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Upstream<'o, R, M> {
-    fn ground_request<'s>(
+pub trait UngroundedUpstream<'o, R: Resource<'o>, M: Model<'o> + 'o>:
+    AsRef<dyn Upstream<'o, R, M>>
+{
+    fn request_grounding<'s>(
         &'o self,
         marker: usize,
         continuation: Continuation<'o, peregrine_grounding, M>,
         scope: &Scope<'s>,
         env: ExecEnvironment<'s, 'o>,
     );
-    fn upcast(&'o self) -> &'o dyn Upstream<'o, R, M>;
+
+    fn id(&self) -> u64;
 }
 
 use crate as peregrine;
+resource!(pub delay: Duration);
 resource!(pub peregrine_grounding: GroundingResponse);
 
 #[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
@@ -33,7 +37,7 @@ pub struct GroundingResponse {
 
 pub struct UngroundedUpstreamResolver<'o, R: Resource<'o>, M: Model<'o>> {
     time: Duration,
-    downstream: &'o dyn Node<'o, M>,
+    downstream: Mutex<Option<&'o dyn Node<'o, M>>>,
     ungrounded_upstreams: SmallVec<&'o dyn UngroundedUpstream<'o, R, M>, 1>,
     grounding_responses: Mutex<SmallVec<InternalResult<GroundingResponse>, 1>>,
     grounded_upstream: Option<(Duration, &'o dyn Upstream<'o, R, M>)>,
@@ -41,6 +45,25 @@ pub struct UngroundedUpstreamResolver<'o, R: Resource<'o>, M: Model<'o>> {
 
     #[allow(clippy::type_complexity)]
     cached_decision: Mutex<Option<InternalResult<(Duration, &'o dyn Upstream<'o, R, M>)>>>,
+}
+
+impl<'o, R: Resource<'o>, M: Model<'o>> UngroundedUpstreamResolver<'o, R, M> {
+    pub(crate) fn new(
+        time: Duration,
+        grounded_upstream: Option<(Duration, &'o dyn Upstream<'o, R, M>)>,
+        ungrounded_upstreams: SmallVec<&'o dyn UngroundedUpstream<'o, R, M>, 1>,
+    ) -> Self {
+        UngroundedUpstreamResolver {
+            time,
+            grounded_upstream,
+            ungrounded_upstreams,
+
+            downstream: Mutex::new(None),
+            grounding_responses: Mutex::new(SmallVec::new()),
+            continuation: Mutex::new(None),
+            cached_decision: Mutex::new(None),
+        }
+    }
 }
 
 impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for UngroundedUpstreamResolver<'o, R, M>
@@ -72,7 +95,7 @@ where
     }
 
     fn downstreams(&self) -> NodeVec<'o, M> {
-        NodeVec::from([self.downstream])
+        NodeVec::from([&self.downstream])
     }
 }
 
@@ -105,9 +128,11 @@ where
 
         for (i, ungrounded) in self.ungrounded_upstreams[1..].iter().enumerate() {
             scope.spawn(move |s| {
-                ungrounded.ground_request(i, Continuation::Node(self), s, env.reset())
+                ungrounded.request_grounding(i, Continuation::Node(self), s, env.reset())
             });
         }
+
+        todo!() // forgot to request [0]
     }
 }
 
@@ -151,13 +176,13 @@ where
                             } else {
                                 *decision = Some(Ok((
                                     ug.when,
-                                    self.ungrounded_upstreams[ug.marker].upcast(),
+                                    self.ungrounded_upstreams[ug.marker].as_ref(),
                                 )));
                             }
                         }
                         (Some(ug), None) => {
                             *decision =
-                                Some(Ok((ug.when, self.ungrounded_upstreams[ug.marker].upcast())))
+                                Some(Ok((ug.when, self.ungrounded_upstreams[ug.marker].as_ref())))
                         }
                         (None, Some(gr)) => *decision = Some(Ok(gr)),
                         _ => unreachable!(),

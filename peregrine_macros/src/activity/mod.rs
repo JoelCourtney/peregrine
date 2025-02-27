@@ -1,17 +1,17 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::ToTokens;
-use syn::{Block, Expr, Stmt};
+use syn::{Block, Expr, Item, Path, Stmt};
+use crate::operation::{Context, Op};
 
 mod input;
-mod operation;
 mod output;
 
 pub fn process_activity(mut activity: Activity) -> TokenStream {
-    let name = activity.name.clone();
+    let path = activity.path.clone();
 
     for line in &mut activity.lines {
-        if let StmtOrOp::Op(op) = line {
-            op.activity = Some(name.clone());
+        if let StmtOrInvoke::Invoke(_, Target::Inline(op)) = line {
+            op.context = Context::Activity(path.clone());
         }
     }
 
@@ -19,39 +19,46 @@ pub fn process_activity(mut activity: Activity) -> TokenStream {
 }
 
 pub struct Activity {
-    name: Ident,
-    lines: Vec<StmtOrOp>,
+    path: Path,
+    structure: ActivityStructure,
+    lines: Vec<StmtOrInvoke>,
 }
 
-enum StmtOrOp {
+pub enum ActivityStructure {
+    Ident(Ident),
+    Item(Item),
+}
+
+enum StmtOrInvoke {
     Stmt(Stmt),
-    Op(Op),
+    Invoke(InvocationTime, Target),
 }
 
-impl StmtOrOp {
-    fn is_op(&self) -> bool {
-        matches!(self, StmtOrOp::Op(_))
+struct InvocationTime {
+    start: Expr,
+    delay: Delay,
+}
+
+impl StmtOrInvoke {
+    fn is_invoke(&self) -> bool {
+        matches!(self, StmtOrInvoke::Invoke(..))
     }
-    fn get_op(&self) -> Option<&Op> {
+    fn get_invoke(&self) -> Option<(&InvocationTime, &Target)> {
         match self {
-            StmtOrOp::Stmt(_) => None,
-            StmtOrOp::Op(o) => Some(o),
+            StmtOrInvoke::Stmt(_) => None,
+            StmtOrInvoke::Invoke(when, target) => Some((when, target)),
         }
     }
 }
 
-struct Op {
-    activity: Option<Ident>,
-    reads: Vec<Ident>,
-    writes: Vec<Ident>,
-    read_writes: Vec<Ident>,
-    when: Expr,
-    // delay: Option<OpDelay>,
-    body: Block,
-    uuid: String,
+enum Delay {
+    Expr(Expr),
+    Inline(Op)
 }
 
-// struct OpDelay {
-//     reads: Vec<Ident>,
-//     delay: Expr,
-// }
+enum Target {
+    Inline(Op),
+    Activity(Expr),
+    Routine(Expr),
+}
+

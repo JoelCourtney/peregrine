@@ -1,4 +1,4 @@
-use crate::activity::{Activity, StmtOrOp};
+use crate::activity::{Activity, StmtOrInvoke};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, TokenStreamExt, quote};
 
@@ -10,7 +10,7 @@ impl ToTokens for Activity {
         let mut writes = vec![];
         let mut read_writes = vec![];
         for line in &self.lines {
-            if let StmtOrOp::Op(op) = line {
+            if let StmtOrInvoke::Invoke(op) = line {
                 reads.extend(op.reads.clone());
                 writes.extend(op.writes.clone());
                 read_writes.extend(op.read_writes.clone());
@@ -27,7 +27,7 @@ impl ToTokens for Activity {
             M::Timelines: 'o + #(peregrine::timeline::HasTimeline<'o, #resources_used, M>)+*
         };
 
-        let num_operations = lines.iter().filter(|l| l.is_op()).count();
+        let num_operations = lines.iter().filter(|l| l.is_invoke()).count();
 
         let op_functions = lines
             .iter()
@@ -58,13 +58,13 @@ impl ToTokens for Activity {
     }
 }
 
-impl ToTokens for StmtOrOp {
+impl ToTokens for StmtOrInvoke {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            StmtOrOp::Stmt(s) => {
+            StmtOrInvoke::Stmt(s) => {
                 s.to_tokens(tokens);
             }
-            StmtOrOp::Op(op) => {
+            StmtOrInvoke::Invoke(op) => {
                 op.to_tokens(tokens);
             }
         }

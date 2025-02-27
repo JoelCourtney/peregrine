@@ -11,3 +11,4 @@ proc-macro2 = "1.0.93"
 syn = { version = "2.0.98", features = ["full", "extra-traits"] }
 quote = "1.0.38"
 uuid = { version = "1.12.1", features = ["v4"] }
+derive_more = { version = "2.0.1", features = ["deref", "deref_mut"] }

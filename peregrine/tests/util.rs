@@ -24,16 +24,34 @@ impl_activity! { for IncrementB
 }
 
 pub struct SetBToA;
-impl_activity! { for SetBToA
-    @(start) a -> b {
-        b = a;
+
+#[activity]
+impl Activity for SetBToA {
+    fn run(&self, start: Time) -> Duration {
+
     }
+}
+activity! { for SetBToA
+
+    op! {
+        fn my_duration_expression(t) {
+            mut: delay = 2 * ref: a
+        }
+    }
+
+
+    @(start) + (2 * ref: a) {
+        mut: b = ref: a;
+        ref mut: mutator += 2;
+    }
+
     Duration::ZERO
 }
 
 pub struct SetAToB;
 impl_activity! { for SetAToB
-    @(start) b -> a {
+    @(start): b -> a {
+        use capture;
         a = b;
     }
     Duration::ZERO
