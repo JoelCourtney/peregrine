@@ -29,9 +29,9 @@ macro_rules! resource {
                 $crate::reexports::peregrine_macros::code_to_str!($ty).to_string()
             }
 
-            fn ser<'h>(&self, input: &'h mut $crate::reexports::type_map::concurrent::TypeMap, type_map: &'h mut $crate::reexports::type_reg::untagged::TypeMap<String>) {
-                if let Some(h) = input.remove::<$crate::history::CopyHistory<$ty>>() {
-                    type_map.insert(self.write_type_string(), h);
+            fn ser<'h>(&self, input: &'h $crate::reexports::type_map::concurrent::TypeMap, type_map: &'h mut $crate::reexports::type_reg::untagged::TypeMap<String>) {
+                if let Some(h) = input.get::<$crate::history::CopyHistory<$ty>>() {
+                    type_map.insert(self.write_type_string(), h.clone());
                 }
             }
 
@@ -79,9 +79,9 @@ macro_rules! resource {
                 $crate::reexports::peregrine_macros::code_to_str!($ty).to_string()
             }
 
-            fn ser<'h>(&self, input: &'h mut $crate::reexports::type_map::concurrent::TypeMap, type_map: &'h mut $crate::reexports::type_reg::untagged::TypeMap<String>) {
-                if let Some(h) = input.remove::<$crate::history::DerefHistory<$ty>>() {
-                    type_map.insert(self.write_type_string(), h);
+            fn ser<'h>(&self, input: &'h $crate::reexports::type_map::concurrent::TypeMap, type_map: &'h mut $crate::reexports::type_reg::untagged::TypeMap<String>) {
+                if let Some(h) = input.get::<$crate::history::DerefHistory<$ty>>() {
+                    type_map.insert(self.write_type_string(), h.clone());
                 }
             }
 
@@ -143,11 +143,7 @@ pub trait Resource<'h>: Sync + ErasedResource<'h> {
 pub trait ResourceHistoryPlugin: Sync {
     fn write_type_string(&self) -> String;
 
-    fn ser<'h>(
-        &self,
-        input: &'h mut TypeMap,
-        type_map: &'h mut type_reg::untagged::TypeMap<String>,
-    );
+    fn ser<'h>(&self, input: &'h TypeMap, type_map: &'h mut type_reg::untagged::TypeMap<String>);
 
     fn register(&self, type_reg: &mut TypeReg<String>);
     fn de<'h>(

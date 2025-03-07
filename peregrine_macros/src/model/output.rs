@@ -37,7 +37,7 @@ impl ToTokens for Model {
             #visibility enum #name {}
 
             impl<'o> peregrine::Model<'o> for #name {
-                fn init_history(history: &peregrine::history::History) {
+                fn init_history(history: &mut peregrine::history::History) {
                     #(history.init::<#resources>();)*
                 }
                 fn init_timelines(time: peregrine::Duration, mut initial_conditions: peregrine::operation::initial_conditions::InitialConditions, herd: &'o peregrine::reexports::bumpalo_herd::Herd) -> peregrine::timeline::Timelines<'o, Self> {

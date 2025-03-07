@@ -25,7 +25,7 @@ fn deref_history_valid_across_realloc() {
 
 #[test]
 fn history_serde() -> Result<()> {
-    let history = History::default();
+    let mut history = History::default();
     history.init::<a>();
     history.init::<b>();
 

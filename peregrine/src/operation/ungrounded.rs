@@ -1,7 +1,8 @@
 use crate as peregrine;
 use crate::exec::ExecEnvironment;
 use crate::operation::{
-    Continuation, Downstream, InternalResult, Node, ObservedErrorOutput, Upstream,
+    Continuation, Downstream, InternalResult, MaybeMarkedDownstream, Node, ObservedErrorOutput,
+    Upstream,
 };
 use crate::resource::Resource;
 use crate::timeline::Timelines;
@@ -56,11 +57,11 @@ impl<T: Clone + Debug> Clone for MarkedValue<T> {
 
 pub struct UngroundedUpstreamResolver<'o, R: Resource<'o>, M: Model<'o>> {
     time: Duration,
-    downstream: Option<&'o dyn Downstream<'o, R, M>>,
     grounded_upstream: Option<(Duration, &'o dyn Upstream<'o, R, M>)>,
     ungrounded_upstreams: SmallVec<&'o dyn UngroundedUpstream<'o, R, M>, 1>,
     grounding_responses: Mutex<SmallVec<InternalResult<MarkedValue<Duration>>, 1>>,
     continuation: Mutex<Option<Continuation<'o, R, M>>>,
+    downstream: Mutex<Option<MaybeMarkedDownstream<'o, R, M>>>,
 
     #[allow(clippy::type_complexity)]
     cached_decision: Mutex<Option<InternalResult<(Duration, &'o dyn Upstream<'o, R, M>)>>>,
@@ -74,22 +75,18 @@ impl<'o, R: Resource<'o>, M: Model<'o>> UngroundedUpstreamResolver<'o, R, M> {
     ) -> Self {
         Self {
             time,
-            downstream: None,
             grounded_upstream: grounded,
             ungrounded_upstreams: ungrounded,
             grounding_responses: Mutex::new(SmallVec::new()),
             continuation: Mutex::new(None),
+            downstream: Mutex::new(None),
             cached_decision: Mutex::new(None),
         }
     }
 }
 
 impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for UngroundedUpstreamResolver<'o, R, M> {
-    fn insert_self(
-        &'o self,
-        _timelines: &mut Timelines<'o, M>,
-        _disruptive: bool,
-    ) -> anyhow::Result<()> {
+    fn insert_self(&'o self, _timelines: &mut Timelines<'o, M>) -> anyhow::Result<()> {
         unreachable!()
     }
 
@@ -104,6 +101,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,
+        already_registered: bool,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -113,7 +111,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
         let decision = self.cached_decision.lock();
         if let Some(r) = *decision {
             match r {
-                Ok((_, u)) => u.request(continuation, scope, timelines, env.increment()),
+                Ok((_, u)) => u.request(continuation, false, scope, timelines, env.increment()),
                 Err(_) => {
                     continuation.run(Err(ObservedErrorOutput), scope, timelines, env.increment())
                 }
@@ -122,16 +120,18 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
         }
         drop(decision);
 
-        let mut continuation_lock = self.continuation.lock();
-        debug_assert!(continuation_lock.is_none());
-        *continuation_lock = Some(continuation);
-        drop(continuation_lock);
+        if !already_registered {
+            let mut downstream_lock = self.downstream.lock();
+            debug_assert!(downstream_lock.is_none());
+            *downstream_lock = continuation.to_downstream();
+        }
 
         if !self.ungrounded_upstreams.is_empty() {
             for (i, ungrounded) in self.ungrounded_upstreams[1..].iter().enumerate() {
                 scope.spawn(move |s| {
                     ungrounded.request(
                         Continuation::<peregrine_grounding, M>::MarkedNode(i, self),
+                        false,
                         s,
                         timelines,
                         env.reset(),
@@ -141,6 +141,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
 
             self.ungrounded_upstreams[0].request(
                 Continuation::<peregrine_grounding, M>::MarkedNode(0, self),
+                false,
                 scope,
                 timelines,
                 env.increment(),
@@ -149,9 +150,19 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
     }
 
     fn notify_downstreams(&self, time_of_change: Duration) {
-        if let Some(d) = self.downstream {
-            d.clear_upstream(Some(time_of_change));
+        let mut downstream = self.downstream.lock();
+        let retain = if let Some(d) = &*downstream {
+            d.clear_upstream(Some(time_of_change))
+        } else {
+            false
+        };
+        if !retain {
+            *downstream = None;
         }
+    }
+
+    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R, M>) {
+        *self.downstream.lock() = Some(downstream.into());
     }
 }
 
@@ -210,6 +221,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Downstream<'o, Marked<'o, peregrine_grou
 
                     decision.unwrap().unwrap().1.request(
                         continuation,
+                        false,
                         scope,
                         timelines,
                         env.increment(),
@@ -221,12 +233,12 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Downstream<'o, Marked<'o, peregrine_grou
 
     fn clear_cache(&self) {
         *self.cached_decision.lock() = None;
-        if let Some(d) = self.downstream {
-            d.clear_cache();
+        if let Some(c) = self.downstream.lock().as_ref() {
+            c.clear_cache();
         }
     }
 
     fn clear_upstream(&self, _time_of_change: Option<Duration>) -> bool {
-        self.downstream.unwrap().clear_upstream(_time_of_change)
+        unreachable!()
     }
 }

@@ -5,7 +5,7 @@ pub mod ungrounded;
 
 use crate::Model;
 use crate::exec::ExecEnvironment;
-use crate::operation::ungrounded::{Marked, MarkedValue};
+use crate::operation::ungrounded::{Marked, MarkedValue, peregrine_grounding};
 use crate::resource::Resource;
 use crate::timeline::Timelines;
 use anyhow::Result;
@@ -18,11 +18,11 @@ use std::fmt::{Debug, Display, Formatter};
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
 pub trait Node<'o, M: Model<'o> + 'o>: Sync {
-    fn insert_self(&'o self, timelines: &mut Timelines<'o, M>, disruptive: bool) -> Result<()>;
+    fn insert_self(&'o self, timelines: &mut Timelines<'o, M>) -> Result<()>;
     fn remove_self(&self, timelines: &mut Timelines<'o, M>) -> Result<()>;
 }
 
-pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
+pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
     fn respond<'s>(
         &'o self,
         value: InternalResult<(u64, R::Read)>,
@@ -36,10 +36,11 @@ pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
     fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool;
 }
 
-pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
+pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,
+        already_registered: bool,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -47,6 +48,7 @@ pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Node<'o, M> {
         'o: 's;
 
     fn notify_downstreams(&self, time_of_change: Duration);
+    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R, M>);
 }
 
 pub enum Continuation<'o, R: Resource<'o>, M: Model<'o> + 'o> {
@@ -92,25 +94,89 @@ impl<'o, R: Resource<'o>, M: Model<'o> + 'o> Continuation<'o, R, M> {
             _ => None,
         }
     }
+
+    pub fn to_downstream(&self) -> Option<MaybeMarkedDownstream<'o, R, M>> {
+        match self {
+            Continuation::Node(n) => Some((*n).into()),
+            Continuation::MarkedNode(_, n) => Some((*n).into()),
+            _ => None,
+        }
+    }
 }
 
-pub struct RecordedQueue<N, O> {
-    pub new: SmallVec<N, 1>,
-    pub old: SmallVec<O, 1>,
+pub struct OperationState<O, C, D> {
+    pub response_counter: u8,
+    pub status: OperationStatus<O>,
+    pub continuations: SmallVec<C, 1>,
+    pub downstreams: SmallVec<D, 1>,
 }
 
-impl<N, O> Default for RecordedQueue<N, O> {
+impl<O, C, D> OperationState<O, C, D> {
+    fn new() -> Self {
+        Self {
+            response_counter: 0,
+            status: OperationStatus::Dormant,
+            continuations: SmallVec::new(),
+            downstreams: SmallVec::new(),
+        }
+    }
+}
+
+impl<O, C, D> Default for OperationState<O, C, D> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<N, O> RecordedQueue<N, O> {
-    pub fn new() -> Self {
-        Self {
-            new: SmallVec::new(),
-            old: SmallVec::new(),
+pub enum OperationStatus<O> {
+    Dormant,
+    Working,
+    Done(InternalResult<O>),
+}
+
+impl<O: Copy> OperationStatus<O> {
+    pub fn unwrap_done(&self) -> InternalResult<O> {
+        match self {
+            OperationStatus::Done(r) => *r,
+            _ => panic!("tried to unwrap an operation result that wasn't done"),
         }
+    }
+}
+
+pub enum MaybeMarkedDownstream<'o, R: Resource<'o>, M: Model<'o>> {
+    Unmarked(&'o dyn Downstream<'o, R, M>),
+    Marked(&'o dyn Downstream<'o, Marked<'o, R>, M>),
+}
+
+impl<'o, R: Resource<'o>, M: Model<'o>> MaybeMarkedDownstream<'o, R, M> {
+    pub fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
+        match self {
+            MaybeMarkedDownstream::Unmarked(n) => n.clear_upstream(time_of_change),
+            MaybeMarkedDownstream::Marked(n) => n.clear_upstream(time_of_change),
+        }
+    }
+
+    pub fn clear_cache(&self) {
+        match self {
+            MaybeMarkedDownstream::Unmarked(n) => n.clear_cache(),
+            MaybeMarkedDownstream::Marked(n) => n.clear_cache(),
+        }
+    }
+}
+
+impl<'o, R: Resource<'o>, M: Model<'o>> From<&'o dyn Downstream<'o, R, M>>
+    for MaybeMarkedDownstream<'o, R, M>
+{
+    fn from(value: &'o dyn Downstream<'o, R, M>) -> Self {
+        MaybeMarkedDownstream::Unmarked(value)
+    }
+}
+
+impl<'o, R: Resource<'o>, M: Model<'o>> From<&'o dyn Downstream<'o, Marked<'o, R>, M>>
+    for MaybeMarkedDownstream<'o, R, M>
+{
+    fn from(value: &'o dyn Downstream<'o, Marked<'o, R>, M>) -> Self {
+        MaybeMarkedDownstream::Marked(value)
     }
 }
 
@@ -131,13 +197,64 @@ impl Display for ObservedErrorOutput {
     }
 }
 
-pub type NodeVec<'o, M> = SmallVec<&'o dyn Node<'o, M>, 2>;
 pub type UpstreamVec<'o, R, M> = SmallVec<&'o dyn Upstream<'o, R, M>, 2>;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone, Default)]
-pub enum OperationState {
-    #[default]
-    Dormant,
-    Waiting,
-    Done,
+pub trait Grounder<'o, M: Model<'o> + 'o>: Upstream<'o, peregrine_grounding, M> {
+    fn insert_me<R: Resource<'o>>(
+        &self,
+        me: &'o dyn Upstream<'o, R, M>,
+        timelines: &mut Timelines<'o, M>,
+    ) -> UpstreamVec<'o, R, M>;
+    fn remove_me<R: Resource<'o>>(&self, timelines: &mut Timelines<'o, M>) -> bool;
+
+    fn min(&self) -> Duration;
+    fn get_static(&self) -> Option<Duration>;
+}
+
+impl<'o, M: Model<'o> + 'o> Upstream<'o, peregrine_grounding, M> for Duration {
+    fn request<'s>(
+        &'o self,
+        continuation: Continuation<'o, peregrine_grounding, M>,
+        _already_registered: bool,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o, M>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's,
+    {
+        continuation.run(Ok((0, *self)), scope, timelines, env);
+    }
+
+    fn notify_downstreams(&self, _time_of_change: Duration) {
+        unreachable!()
+    }
+
+    fn register_downstream_early(
+        &self,
+        _downstream: &'o dyn Downstream<'o, peregrine_grounding, M>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl<'o, M: Model<'o> + 'o> Grounder<'o, M> for Duration {
+    fn insert_me<R: Resource<'o>>(
+        &self,
+        me: &'o dyn Upstream<'o, R, M>,
+        timelines: &mut Timelines<'o, M>,
+    ) -> UpstreamVec<'o, R, M> {
+        timelines.insert_grounded::<R>(*self, me)
+    }
+
+    fn remove_me<R: Resource<'o>>(&self, timelines: &mut Timelines<'o, M>) -> bool {
+        timelines.remove_grounded::<R>(*self)
+    }
+
+    fn min(&self) -> Duration {
+        *self
+    }
+
+    fn get_static(&self) -> Option<Duration> {
+        Some(*self)
+    }
 }

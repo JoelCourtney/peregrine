@@ -57,14 +57,13 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
         &mut self,
         time: Duration,
         op: &'o dyn Upstream<'o, R, M>,
-        disruptive: bool,
     ) -> UpstreamVec<'o, R, M> {
         unsafe {
             self.0
                 .get_mut(&R::ID)
                 .unwrap()
                 .downcast_mut::<Timeline<'o, R, M>>()
-                .insert_grounded(time, op, disruptive)
+                .insert_grounded(time, op)
         }
     }
     pub fn remove_grounded<R: Resource<'o> + 'o>(&mut self, time: Duration) -> bool {
@@ -82,14 +81,13 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
         min: Duration,
         max: Duration,
         op: &'o dyn UngroundedUpstream<'o, R, M>,
-        disruptive: bool,
     ) -> UpstreamVec<'o, R, M> {
         unsafe {
             self.0
                 .get_mut(&R::ID)
                 .unwrap()
                 .downcast_mut::<Timeline<'o, R, M>>()
-                .insert_ungrounded(min, max, op, disruptive)
+                .insert_ungrounded(min, max, op)
         }
     }
 
@@ -139,9 +137,9 @@ pub fn duration_to_epoch(duration: Duration) -> Time {
 
 pub struct Timeline<'o, R: Resource<'o>, M: Model<'o>>(BTreeMap<Duration, TimelineEntry<'o, R, M>>);
 
-struct TimelineEntry<'o, R: Resource<'o>, M: Model<'o>> {
-    grounded: Option<&'o dyn Upstream<'o, R, M>>,
-    ungrounded: BTreeMap<Duration, &'o dyn UngroundedUpstream<'o, R, M>>,
+pub struct TimelineEntry<'o, R: Resource<'o>, M: Model<'o>> {
+    pub grounded: Option<&'o dyn Upstream<'o, R, M>>,
+    pub ungrounded: BTreeMap<Duration, &'o dyn UngroundedUpstream<'o, R, M>>,
 }
 
 impl<'o, R: Resource<'o>, M: Model<'o>> TimelineEntry<'o, R, M> {
@@ -174,7 +172,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> TimelineEntry<'o, R, M> {
             .extend(other.ungrounded.iter().map(|(d, n)| (*d, *n)));
     }
 
-    fn into_upstream(
+    pub fn into_upstream(
         self,
         entry_time: Duration,
         eval_time: Duration,
@@ -191,7 +189,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> TimelineEntry<'o, R, M> {
         }
     }
 
-    fn into_upstream_vec(self) -> UpstreamVec<'o, R, M> {
+    pub fn into_upstream_vec(self) -> UpstreamVec<'o, R, M> {
         let mut result: UpstreamVec<'o, R, M> = self
             .ungrounded
             .into_values()
@@ -252,16 +250,11 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Timeline<'o, R, M> {
         &mut self,
         time: Duration,
         value: &'o dyn Upstream<'o, R, M>,
-        disruptive: bool,
     ) -> UpstreamVec<'o, R, M> {
         self.0.insert(time, TimelineEntry::new_grounded(value));
-        if disruptive {
-            self.search_possible_upstreams(time)
-                .map(|(_, e)| e.into_upstream_vec())
-                .unwrap_or_default()
-        } else {
-            UpstreamVec::new()
-        }
+        self.search_possible_upstreams(time)
+            .map(|e| e.1.into_upstream_vec())
+            .unwrap_or_default()
     }
 
     #[cfg(feature = "nightly")]
@@ -269,31 +262,43 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Timeline<'o, R, M> {
         &mut self,
         time: Duration,
         value: &'o dyn Upstream<'o, R, M>,
-        disruptive: bool,
     ) -> UpstreamVec<'o, R, M> {
         let mut cursor_mut = self.0.upper_bound_mut(Unbounded);
-        let fast_inserted = if let Some((t, _)) = cursor_mut.peek_prev() {
+        let mut cursor_mut = if let Some((t, _)) = cursor_mut.peek_prev() {
             if *t < time {
                 cursor_mut
-                    .insert_after(time, TimelineEntry::new_grounded(value))
-                    .unwrap();
-                true
             } else {
-                false
+                self.0.upper_bound_mut(Bound::Included(&time))
             }
         } else {
-            false
+            self.0.upper_bound_mut(Bound::Included(&time))
         };
-        if !fast_inserted {
-            self.0.insert(time, TimelineEntry::new_grounded(value));
-        }
 
-        if disruptive {
-            self.search_possible_upstreams(time)
-                .map(|(_, e)| e.into_upstream_vec())
-                .unwrap_or(UpstreamVec::new())
-        } else {
-            UpstreamVec::new()
+        let mut new_entry = TimelineEntry::new_grounded(value);
+
+        let continuing_ungrounded = cursor_mut
+            .peek_prev()
+            .unwrap()
+            .1
+            .ungrounded
+            .range((Excluded(&time), Unbounded));
+        new_entry.ungrounded.extend(continuing_ungrounded);
+
+        cursor_mut.insert_after(time, new_entry).unwrap();
+
+        let mut result = TimelineEntry::new_empty();
+        loop {
+            let entry = cursor_mut.prev().unwrap();
+            result.merge(entry.1);
+            if result.grounded.is_some()
+                || result
+                    .ungrounded
+                    .first_entry()
+                    .map(|e| e.key() <= &time)
+                    .unwrap_or(false)
+            {
+                break result.into_upstream_vec();
+            }
         }
     }
 
@@ -306,7 +311,6 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Timeline<'o, R, M> {
         min: Duration,
         max: Duration,
         value: &'o dyn UngroundedUpstream<'o, R, M>,
-        disruptive: bool,
     ) -> UpstreamVec<'o, R, M> {
         let mut entry = TimelineEntry::new_ungrounded(value, max);
         entry.ungrounded.extend(
@@ -319,24 +323,22 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Timeline<'o, R, M> {
 
         // Need to collect the list of all nodes that might lose a downstream after this change
         let mut result = UpstreamVec::new();
-        if disruptive {
-            let mut ungrounded_collector = TimelineEntry::new_empty();
-            for (_, e) in self.0.range_mut(min..max) {
-                ungrounded_collector.merge(e);
-                if let Some(gr) = ungrounded_collector.grounded.take() {
-                    result.push(gr);
-                }
-
-                e.ungrounded.insert(max, value);
+        let mut ungrounded_collector = TimelineEntry::new_empty();
+        for (_, e) in self.0.range_mut(min..max) {
+            ungrounded_collector.merge(e);
+            if let Some(gr) = ungrounded_collector.grounded.take() {
+                result.push(gr);
             }
 
-            result.extend(
-                ungrounded_collector
-                    .ungrounded
-                    .into_values()
-                    .map(|ug| ug.as_ref()),
-            );
+            e.ungrounded.insert(max, value);
         }
+
+        result.extend(
+            ungrounded_collector
+                .ungrounded
+                .into_values()
+                .map(|ug| ug.as_ref()),
+        );
         self.0.insert(min, entry);
         result
     }

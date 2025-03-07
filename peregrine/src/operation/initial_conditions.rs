@@ -1,14 +1,16 @@
 use crate::Model;
 use crate::exec::ExecEnvironment;
 use crate::history::PeregrineDefaultHashBuilder;
-use crate::operation::{Continuation, Node, Upstream};
+use crate::operation::{
+    Continuation, Downstream, MaybeMarkedDownstream, Node, OperationState, OperationStatus,
+    Upstream,
+};
 use crate::resource::{ErasedResource, Resource};
 use crate::timeline::Timelines;
 use anyhow::anyhow;
 use hifitime::Duration;
-use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
+use parking_lot::Mutex;
 use rayon::Scope;
-use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
@@ -54,10 +56,12 @@ impl<'h, R: Resource<'h>> ErasedResource<'h> for WriteValue<'h, R> {
     }
 }
 
+type InitialConditionState<'o, R, M> =
+    OperationState<(u64, <R as Resource<'o>>::Read), (), MaybeMarkedDownstream<'o, R, M>>;
+
 pub struct InitialConditionOp<'o, R: Resource<'o>, M: Model<'o>> {
     value: R::Write,
-    result: RwLock<Option<(u64, R::Read)>>,
-    downstreams: Mutex<SmallVec<Continuation<'o, R, M>, 2>>,
+    state: Mutex<InitialConditionState<'o, R, M>>,
     _time: Duration,
 }
 
@@ -65,19 +69,14 @@ impl<'o, R: Resource<'o>, M: Model<'o>> InitialConditionOp<'o, R, M> {
     pub fn new(time: Duration, value: R::Write) -> Self {
         Self {
             value,
-            result: RwLock::new(None),
-            downstreams: Mutex::default(),
+            state: Default::default(),
             _time: time,
         }
     }
 }
 
 impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for InitialConditionOp<'o, R, M> {
-    fn insert_self(
-        &'o self,
-        _timelines: &mut Timelines<'o, M>,
-        _disruptive: bool,
-    ) -> anyhow::Result<()> {
+    fn insert_self(&'o self, _timelines: &mut Timelines<'o, M>) -> anyhow::Result<()> {
         unreachable!()
     }
 
@@ -90,43 +89,52 @@ impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialCondi
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,
+        already_registered: bool,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
     ) where
         'o: 's,
     {
-        let read = if let Some(mut write) = self.result.try_write() {
-            if write.is_none() {
+        let mut state = self.state.lock();
+        let result = match state.status {
+            OperationStatus::Dormant => {
                 let hash = PeregrineDefaultHashBuilder::default().hash_one(
                     bincode::serde::encode_to_vec(&self.value, bincode::config::standard())
                         .expect("could not hash initial condition"),
                 );
-                if let Some(r) = env.history.get::<R>(hash) {
-                    *write = Some((hash, r));
+                let output = if let Some(r) = env.history.get::<R>(hash) {
+                    (hash, r)
                 } else {
-                    *write = Some((hash, env.history.insert::<R>(hash, self.value.clone())));
-                }
+                    (hash, env.history.insert::<R>(hash, self.value.clone()))
+                };
+                state.status = OperationStatus::Done(Ok(output));
+                output
             }
-            RwLockWriteGuard::downgrade(write)
-        } else {
-            self.result.read()
+            OperationStatus::Done(o) => o.unwrap(),
+            _ => unreachable!(),
         };
 
-        if let Some(c) = continuation.copy_node() {
-            self.downstreams.lock().push(c);
+        if !already_registered {
+            if let Some(d) = continuation.to_downstream() {
+                state.downstreams.push(d);
+            }
         }
 
-        continuation.run(Ok(read.unwrap()), scope, timelines, env.increment());
+        drop(state);
+
+        continuation.run(Ok(result), scope, timelines, env.increment());
     }
 
     fn notify_downstreams(&self, time_of_change: Duration) {
-        self.downstreams
-            .lock()
-            .retain(|downstream| match downstream {
-                Continuation::Node(n) => n.clear_upstream(Some(time_of_change)),
-                Continuation::MarkedNode(_, n) => n.clear_upstream(Some(time_of_change)),
-                _ => unreachable!(),
-            });
+        let mut state = self.state.lock();
+
+        state
+            .downstreams
+            .retain(|d| d.clear_upstream(Some(time_of_change)));
+    }
+
+    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R, M>) {
+        self.state.lock().downstreams.push(downstream.into());
     }
 }

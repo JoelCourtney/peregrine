@@ -49,8 +49,7 @@ impl_activity! ( for AddCToA
     Duration::ZERO
 );
 
-#[tokio::main]
-async fn main() -> peregrine::Result<()> {
+fn main() -> peregrine::Result<()> {
     let session = Session::new();
 
     let plan_start = Time::now()?.to_time_scale(TimeScale::TAI);

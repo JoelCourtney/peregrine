@@ -3,7 +3,6 @@
 use crate::resource::Resource;
 use crate::resource::ResourceHistoryPlugin;
 use dashmap::DashMap;
-use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use stable_deref_trait::StableDeref;
 use std::hash::{BuildHasher, Hasher};
@@ -15,14 +14,14 @@ pub type PeregrineDefaultHashBuilder = foldhash::fast::FixedState;
 
 #[derive(Default)]
 #[repr(transparent)]
-pub struct History(RwLock<TypeMap>);
+pub struct History(TypeMap);
 
 impl History {
     pub fn new() -> Self {
-        History(RwLock::new(TypeMap::new()))
+        History(TypeMap::new())
     }
-    pub fn init<'h, R: Resource<'h>>(&self) {
-        match self.0.write().entry::<R::History>() {
+    pub fn init<'h, R: Resource<'h>>(&mut self) {
+        match self.0.entry::<R::History>() {
             Entry::Occupied(_) => {}
             Entry::Vacant(v) => {
                 v.insert(R::History::default());
@@ -30,28 +29,24 @@ impl History {
         }
     }
     pub fn insert<'h, R: Resource<'h>>(&'h self, hash: u64, value: R::Write) -> R::Read {
-        self.0
-            .read()
-            .get::<R::History>()
-            .unwrap()
-            .insert(hash, value)
+        self.0.get::<R::History>().unwrap().insert(hash, value)
     }
     pub fn get<'h, R: Resource<'h>>(&'h self, hash: u64) -> Option<R::Read> {
-        self.0.read().get::<R::History>().and_then(|h| h.get(hash))
+        self.0.get::<R::History>().and_then(|h| h.get(hash))
     }
-    pub fn take_inner(&self) -> TypeMap {
+    pub fn take_inner(&mut self) -> TypeMap {
         let mut replacement = TypeMap::new();
-        swap(&mut *self.0.write(), &mut replacement);
+        swap(&mut self.0, &mut replacement);
         replacement
     }
     pub fn into_inner(self) -> TypeMap {
-        self.0.into_inner()
+        self.0
     }
 }
 
 impl From<TypeMap> for History {
     fn from(value: TypeMap) -> Self {
-        History(RwLock::new(value))
+        History(value)
     }
 }
 
@@ -177,11 +172,9 @@ impl Serialize for History {
     {
         let mut ser_type_map = type_reg::untagged::TypeMap::<String>::new();
 
-        let mut taken = self.take_inner();
-
         for plugin in inventory::iter::<&'static dyn ResourceHistoryPlugin> {
             if !ser_type_map.contains_key(&plugin.write_type_string()) {
-                plugin.ser(&mut taken, &mut ser_type_map)
+                plugin.ser(&self.0, &mut ser_type_map)
             }
         }
 

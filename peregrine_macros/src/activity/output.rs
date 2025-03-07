@@ -60,7 +60,14 @@ impl ToTokens for Invocation {
         let op = &self.target;
         let result = match self.target {
             Target::Inline(_) => quote! {
-                operations.push((#op)(#placement, self, bump));
+                operations.push((#op)(
+                    match #placement {
+                        peregrine::Grounding::Static(t) => t,
+                        _ => todo!()
+                    },
+                    self,
+                    bump
+                ));
             },
             _ => quote! {
                 operations.extend((#op)(#placement, self, bump)?);

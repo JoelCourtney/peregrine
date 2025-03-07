@@ -6,7 +6,7 @@ use std::cell::UnsafeCell;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-pub const STACK_LIMIT: usize = 1000;
+pub const STACK_LIMIT: usize = 2000;
 
 #[derive(Copy, Clone)]
 pub struct ExecEnvironment<'s, 'o: 's> {
