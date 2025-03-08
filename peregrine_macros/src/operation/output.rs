@@ -258,6 +258,8 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     let mut state = PeregrineDefaultHashBuilder::default().build_hasher();
                     std::any::TypeId::of::<#output>().hash(&mut state);
 
+                    self.activity.hash(&mut state);
+
                     #(#all_read_response_hashes.hash(&mut state);)*
 
                     state.finish()

@@ -4,7 +4,7 @@ use peregrine::impl_activity;
 use peregrine::reexports::hifitime::TimeUnits;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Hash, Serialize, Deserialize)]
 pub struct RechargePotato {
     pub amount: u32,
 }

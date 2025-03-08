@@ -103,7 +103,7 @@
 //! # use peregrine::{resource, impl_activity, Duration};
 //! # resource!(sol_counter: u32);
 //! # resource!(ref downlink_buffer: Vec<String>);
-//! #[derive(Serialize, Deserialize)]
+//! #[derive(Hash, Serialize, Deserialize)]
 //! struct LogCurrentSol {
 //!     /// Verbosity is taken in as an activity argument.
 //!     verbose: bool,
@@ -270,7 +270,7 @@ pub use peregrine_macros::model;
 ///
 /// resource!(sol_counter: u32);
 ///
-/// #[derive(Serialize, Deserialize)]
+/// #[derive(Hash, Serialize, Deserialize)]
 /// struct IncrementSol;
 ///
 /// impl_activity! { for IncrementSol

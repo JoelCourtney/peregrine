@@ -1,12 +1,14 @@
 #![allow(clippy::self_assignment)]
 
 use peregrine::*;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 resource!(pub a: u32);
 resource!(pub b: u32);
 
+#[derive(Hash)]
 pub struct IncrementA;
 impl_activity! { for IncrementA
     @(start) {
@@ -15,6 +17,7 @@ impl_activity! { for IncrementA
     Duration::ZERO
 }
 
+#[derive(Hash)]
 pub struct IncrementB;
 impl_activity! { for IncrementB
     @(start) {
@@ -23,6 +26,7 @@ impl_activity! { for IncrementB
     Duration::ZERO
 }
 
+#[derive(Hash)]
 pub struct SetBToA;
 impl_activity! { for SetBToA
     @(start) {
@@ -31,6 +35,7 @@ impl_activity! { for SetBToA
     Duration::ZERO
 }
 
+#[derive(Hash)]
 pub struct SetAToB;
 impl_activity! { for SetAToB
     @(start) {
@@ -39,6 +44,7 @@ impl_activity! { for SetAToB
     Duration::ZERO
 }
 
+#[derive(Hash)]
 pub struct AddBToA;
 impl_activity! { for AddBToA
     @(start) {
@@ -54,6 +60,10 @@ impl_activity! { for EvalCounter
         self.0.fetch_add(1, Ordering::SeqCst);
     }
     Duration::ZERO
+}
+
+impl Hash for EvalCounter {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
 impl EvalCounter {

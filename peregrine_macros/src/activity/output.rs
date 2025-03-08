@@ -33,7 +33,7 @@ impl ToTokens for Activity {
                 }
             }
 
-            impl peregrine::activity::ActivityLabel for #path {
+            impl peregrine::activity::StaticActivity for #path {
                 const LABEL: &'static str = peregrine::reexports::peregrine_macros::code_to_str!(#path);
             }
 

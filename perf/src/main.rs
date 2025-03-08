@@ -9,6 +9,7 @@ resource!(a: u32);
 resource!(ref b: String);
 resource!(c: u32);
 
+#[derive(Hash)]
 struct IncrementA;
 impl_activity! { for IncrementA
     @(start) {
@@ -17,6 +18,7 @@ impl_activity! { for IncrementA
     Duration::ZERO
 }
 
+#[derive(Hash)]
 struct IncrementC;
 impl_activity! { for IncrementC
     @(start) {
@@ -25,6 +27,7 @@ impl_activity! { for IncrementC
     Duration::ZERO
 }
 
+#[derive(Hash)]
 struct ConvertAToB;
 impl_activity! { for ConvertAToB
     @(start) {
@@ -33,6 +36,7 @@ impl_activity! { for ConvertAToB
     Duration::ZERO
 }
 
+#[derive(Hash)]
 struct ConvertBToA;
 impl_activity! { for ConvertBToA
     @(start) {
@@ -41,6 +45,7 @@ impl_activity! { for ConvertBToA
     Duration::ZERO
 }
 
+#[derive(Hash)]
 struct AddCToA;
 impl_activity! ( for AddCToA
     @(start) {

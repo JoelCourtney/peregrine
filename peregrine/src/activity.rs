@@ -5,6 +5,7 @@ use anyhow::Result;
 use bumpalo_herd::Member;
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 use std::ops::Add;
 
 /// An activity, which decomposes into a statically-known set of operations. Implemented
@@ -17,7 +18,7 @@ pub trait Activity<'o, M: Model<'o>>: Send + Sync {
     ) -> Result<(Duration, Vec<&'o dyn Node<'o, M>>)>;
 }
 
-pub trait ActivityLabel {
+pub trait StaticActivity: Hash {
     const LABEL: &'static str;
 }
 
