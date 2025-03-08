@@ -2,8 +2,8 @@
 
 use crate::Model;
 use crate::history::PassThroughHashBuilder;
+use crate::operation::grounding::{UngroundedUpstream, UngroundedUpstreamResolver};
 use crate::operation::initial_conditions::InitialConditionOp;
-use crate::operation::ungrounded::{UngroundedUpstream, UngroundedUpstreamResolver};
 use crate::operation::{Upstream, UpstreamVec};
 use crate::resource::{ErasedResource, Resource};
 use bumpalo_herd::{Herd, Member};

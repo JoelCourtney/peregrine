@@ -1,19 +1,21 @@
 #![doc(hidden)]
 
+pub mod grounding;
 pub mod initial_conditions;
-pub mod ungrounded;
 
+use crate as peregrine;
 use crate::Model;
 use crate::exec::ExecEnvironment;
-use crate::operation::ungrounded::{Marked, MarkedValue, peregrine_grounding};
 use crate::resource::Resource;
 use crate::timeline::Timelines;
 use anyhow::Result;
 use derive_more::with_trait::Error as DeriveError;
 use hifitime::Duration;
 use rayon::Scope;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::fmt::{Debug, Display, Formatter};
+use std::marker::PhantomData;
 
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
@@ -143,6 +145,38 @@ impl<O: Copy> OperationStatus<O> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(crate = "peregrine::reexports::serde")]
+pub enum Marked<'o, R: Resource<'o>> {
+    Unit,
+    Phantom(PhantomData<&'o R>),
+}
+
+impl<'o, R: 'o + Resource<'o>> Resource<'o> for Marked<'o, R> {
+    const LABEL: &'static str = R::LABEL;
+    const STATIC: bool = R::STATIC;
+    const ID: u64 = peregrine_macros::random_u64!();
+    type Read = MarkedValue<R::Read>;
+    type Write = MarkedValue<R::Write>;
+    type History = ();
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MarkedValue<T> {
+    pub(crate) marker: usize,
+    pub(crate) value: T,
+}
+
+impl<T: Copy + Clone + Debug> Copy for MarkedValue<T> {}
+impl<T: Clone + Debug> Clone for MarkedValue<T> {
+    fn clone(&self) -> Self {
+        MarkedValue {
+            marker: self.marker,
+            value: self.value.clone(),
+        }
+    }
+}
+
 pub enum MaybeMarkedDownstream<'o, R: Resource<'o>, M: Model<'o>> {
     Unmarked(&'o dyn Downstream<'o, R, M>),
     Marked(&'o dyn Downstream<'o, Marked<'o, R>, M>),
@@ -198,63 +232,3 @@ impl Display for ObservedErrorOutput {
 }
 
 pub type UpstreamVec<'o, R, M> = SmallVec<&'o dyn Upstream<'o, R, M>, 2>;
-
-pub trait Grounder<'o, M: Model<'o> + 'o>: Upstream<'o, peregrine_grounding, M> {
-    fn insert_me<R: Resource<'o>>(
-        &self,
-        me: &'o dyn Upstream<'o, R, M>,
-        timelines: &mut Timelines<'o, M>,
-    ) -> UpstreamVec<'o, R, M>;
-    fn remove_me<R: Resource<'o>>(&self, timelines: &mut Timelines<'o, M>) -> bool;
-
-    fn min(&self) -> Duration;
-    fn get_static(&self) -> Option<Duration>;
-}
-
-impl<'o, M: Model<'o> + 'o> Upstream<'o, peregrine_grounding, M> for Duration {
-    fn request<'s>(
-        &'o self,
-        continuation: Continuation<'o, peregrine_grounding, M>,
-        _already_registered: bool,
-        scope: &Scope<'s>,
-        timelines: &'s Timelines<'o, M>,
-        env: ExecEnvironment<'s, 'o>,
-    ) where
-        'o: 's,
-    {
-        continuation.run(Ok((0, *self)), scope, timelines, env);
-    }
-
-    fn notify_downstreams(&self, _time_of_change: Duration) {
-        unreachable!()
-    }
-
-    fn register_downstream_early(
-        &self,
-        _downstream: &'o dyn Downstream<'o, peregrine_grounding, M>,
-    ) {
-        unreachable!()
-    }
-}
-
-impl<'o, M: Model<'o> + 'o> Grounder<'o, M> for Duration {
-    fn insert_me<R: Resource<'o>>(
-        &self,
-        me: &'o dyn Upstream<'o, R, M>,
-        timelines: &mut Timelines<'o, M>,
-    ) -> UpstreamVec<'o, R, M> {
-        timelines.insert_grounded::<R>(*self, me)
-    }
-
-    fn remove_me<R: Resource<'o>>(&self, timelines: &mut Timelines<'o, M>) -> bool {
-        timelines.remove_grounded::<R>(*self)
-    }
-
-    fn min(&self) -> Duration {
-        *self
-    }
-
-    fn get_static(&self) -> Option<Duration> {
-        Some(*self)
-    }
-}

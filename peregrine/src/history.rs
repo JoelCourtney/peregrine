@@ -118,7 +118,7 @@ impl<W, R> HistoryAdapter<W, R> for () {
     }
 
     fn get(&self, _hash: u64) -> Option<R> {
-        None
+        unreachable!()
     }
 }
 

@@ -5,6 +5,38 @@ use std::fmt::Debug;
 use type_map::concurrent::TypeMap;
 use type_reg::untagged::TypeReg;
 
+/// Marks a type as a resource label.
+///
+/// Resources are not part of a model, the model is a selection of existing resources. This allows
+/// activities, which are also not part of a model, to be applied to any model that has the relevant
+/// resources.
+///
+/// ## Reading & Writing
+///
+/// Resources are not represented one data type, but two, one for reading and one for writing.
+/// For simple [Copy] resources these two types will be the same, and you won't have to worry about it.
+/// For more complex resources they may be different but related types, like [String] and [&str][str].
+/// This is for performance reasons, to avoid unnecessary cloning of heap-allocated data.
+pub trait Resource<'h>: Sync + ErasedResource<'h> {
+    const LABEL: &'static str;
+
+    /// Whether the resource represents a value that can vary even when not actively written to by
+    /// an operation. This is used for cache invalidation.
+    const STATIC: bool;
+
+    const ID: u64;
+
+    /// The type that is read from history.
+    type Read: 'h + Copy + Send + Sync + Debug;
+
+    /// The type that is written from operations to history.
+    type Write: 'h + Clone + Debug + Serialize + DeserializeOwned + Send + Sync;
+
+    /// The type of history container to use to store instances of the `Write` type, currently
+    /// either [CopyHistory] or [DerefHistory]. See [Resource] for details.
+    type History: 'static + HistoryAdapter<Self::Write, Self::Read> + Debug + Default + Send + Sync;
+}
+
 #[macro_export]
 macro_rules! resource {
     ($vis:vis $name:ident: $ty:ty) => {
@@ -106,38 +138,6 @@ macro_rules! resource {
 
         $crate::reexports::inventory::submit!(&$name::Unit as &dyn $crate::resource::ResourceHistoryPlugin);
     };
-}
-
-/// Marks a type as a resource label.
-///
-/// Resources are not part of a model, the model is a selection of existing resources. This allows
-/// activities, which are also not part of a model, to be applied to any model that has the relevant
-/// resources.
-///
-/// ## Reading & Writing
-///
-/// Resources are not represented one data type, but two, one for reading and one for writing.
-/// For simple [Copy] resources these two types will be the same, and you won't have to worry about it.
-/// For more complex resources they may be different but related types, like [String] and [&str][str].
-/// This is for performance reasons, to avoid unnecessary cloning of heap-allocated data.
-pub trait Resource<'h>: Sync + ErasedResource<'h> {
-    const LABEL: &'static str;
-
-    /// Whether the resource represents a value that can vary even when not actively written to by
-    /// an operation. This is used for cache invalidation.
-    const STATIC: bool;
-
-    const ID: u64;
-
-    /// The type that is read from history.
-    type Read: 'h + Copy + Send + Sync + Debug;
-
-    /// The type that is written from operations to history.
-    type Write: 'h + Clone + Debug + Serialize + DeserializeOwned + Send + Sync;
-
-    /// The type of history container to use to store instances of the `Write` type, currently
-    /// either [CopyHistory] or [DerefHistory]. See [Resource] for details.
-    type History: 'static + HistoryAdapter<Self::Write, Self::Read> + Debug + Default + Send + Sync;
 }
 
 pub trait ResourceHistoryPlugin: Sync {

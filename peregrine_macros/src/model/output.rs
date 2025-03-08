@@ -11,57 +11,35 @@ impl ToTokens for Model {
             ..
         } = self;
 
-        let resource_idents = resources
-            .iter()
-            .map(|r| {
-                format_ident!(
-                    "{}",
-                    r.into_token_stream()
-                        .to_string()
-                        .chars()
-                        .filter(|c| c.is_alphanumeric() || *c == '_')
-                        .collect::<String>()
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let timeline_names = resource_idents
-            .iter()
-            .map(|i| format_ident!("{}_operation_timeline", i))
-            .collect::<Vec<_>>();
-
-        let timelines_struct_name = format_ident!("{name}Timelines");
-        let initial_conditions_struct_name = format_ident!("{name}InitialConditions");
+        let mod_name = format_ident!("peregrine_model_mod_{name}");
 
         let result = quote! {
             #visibility enum #name {}
 
-            impl<'o> peregrine::Model<'o> for #name {
-                fn init_history(history: &mut peregrine::history::History) {
-                    #(history.init::<#resources>();)*
-                }
-                fn init_timelines(time: peregrine::Duration, mut initial_conditions: peregrine::operation::initial_conditions::InitialConditions, herd: &'o peregrine::reexports::bumpalo_herd::Herd) -> peregrine::timeline::Timelines<'o, Self> {
-                    let mut timelines = peregrine::timeline::Timelines::new(herd);
-                    #(timelines.init_for_resource::<#resources>(time, peregrine::operation::initial_conditions::InitialConditionOp::new(time, initial_conditions.take::<#resources>().expect(&format!("expected to find initial condition for resource {}, but found none", <#resources as peregrine::resource::Resource<'o>>::LABEL))));)*
-                    timelines
-                }
-            }
-
-            #visibility struct #initial_conditions_struct_name<'h> {
-                #(#resource_idents: <#resources as peregrine::resource::Resource<'h>>::Write,)*
-            }
-
-            #visibility struct #timelines_struct_name<'o> {
-                #(#timeline_names: peregrine::timeline::Timeline<'o, #resources, #name>,)*
-            }
-
-            impl<'o> From<(peregrine::Duration, &peregrine::reexports::bumpalo_herd::Member<'o>, #initial_conditions_struct_name<'o>)> for #timelines_struct_name<'o> {
-                fn from((time, bump, inish_condish): (peregrine::Duration, &peregrine::reexports::bumpalo_herd::Member<'o>, #initial_conditions_struct_name)) -> Self {
-                    Self {
-                        #(#timeline_names: peregrine::timeline::Timeline::<#resources, #name>::init(
-                            time,
-                            bump.alloc(peregrine::operation::initial_conditions::InitialConditionOp::<'o, #resources, #name>::new(time, inish_condish.#resource_idents))
-                        ),)*
+            #visibility mod #mod_name {
+                use super::*;
+                use peregrine::macro_prelude::*;
+                impl<'o> Model<'o> for #name {
+                    fn init_history(history: &mut History) {
+                        #(history.init::<#resources>();)*
+                    }
+                    fn init_timelines(
+                        time: Duration,
+                        mut initial_conditions: InitialConditions,
+                        herd: &'o bumpalo_herd::Herd
+                    ) -> Timelines<'o, Self> {
+                        let mut timelines = Timelines::new(herd);
+                        #(
+                            timelines.init_for_resource::<#resources>(
+                                time,
+                                InitialConditionOp::new(
+                                    time,
+                                    initial_conditions.take::<#resources>()
+                                        .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as Resource<'o>>::LABEL))
+                                )
+                            );
+                        )*
+                        timelines
                     }
                 }
             }

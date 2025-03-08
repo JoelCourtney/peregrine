@@ -194,8 +194,6 @@
 //!
 //! Peregrine has to impose some restrictions on your activities and operations, so some things are
 //! impossible:
-//! - **Operation placement at runtime;** the exact placement of all activities and operations must
-//!   be determined by only statically-known values like activity arguments and start time.
 //! - **Hidden state;** all state in the simulation must be recorded by the history. Getting around
 //!   this restriction is UB.
 //! - **Non-reentrant or non-deterministic activities;** the engine assumes that for the same input,
@@ -204,8 +202,33 @@
 
 #![cfg_attr(feature = "nightly", feature(btree_cursors))]
 
+pub mod activity;
+pub mod exec;
+pub mod history;
+pub mod macro_prelude;
+pub mod operation;
+pub mod reexports;
+pub mod resource;
+pub mod timeline;
+
+pub use crate::activity::{Activity, ActivityId};
+use crate::activity::{DecomposedActivity, Placement};
+use crate::exec::{ErrorAccumulator, ExecEnvironment};
+pub use crate::history::History;
+use crate::operation::InternalResult;
+use crate::operation::grounding::peregrine_grounding;
+pub use crate::operation::initial_conditions::InitialConditions;
+use crate::timeline::{MaybeGrounded, Timelines, duration_to_epoch, epoch_to_duration};
+pub use anyhow::{Context, Error, Result, anyhow, bail};
+use bumpalo_herd::Herd;
+pub use hifitime::{Duration, Epoch as Time};
+use oneshot::Receiver;
+use operation::Continuation;
+use parking_lot::RwLock;
+use resource::Resource;
+
 use std::collections::HashMap;
-use std::ops::{Add, RangeBounds};
+use std::ops::RangeBounds;
 
 /// Creates a model and associated structs from a selection of resources.
 ///
@@ -278,29 +301,6 @@ pub use peregrine_macros::model;
 /// It would just be very un-hygienic and potentially hard to debug.
 pub use peregrine_macros::impl_activity;
 
-pub mod activity;
-pub mod exec;
-pub mod history;
-pub mod operation;
-pub mod reexports;
-pub mod resource;
-pub mod timeline;
-
-pub use crate::activity::{Activity, ActivityId};
-use crate::exec::{ErrorAccumulator, ExecEnvironment};
-pub use crate::history::History;
-pub use crate::operation::initial_conditions::InitialConditions;
-use crate::operation::ungrounded::peregrine_grounding;
-use crate::operation::{InternalResult, Upstream};
-use crate::timeline::{MaybeGrounded, Timelines, duration_to_epoch, epoch_to_duration};
-pub use anyhow::{Context, Error, Result, anyhow, bail};
-use bumpalo_herd::Herd;
-pub use hifitime::{Duration, Epoch as Time};
-use oneshot::Receiver;
-use operation::{Continuation, Node};
-use parking_lot::RwLock;
-use resource::Resource;
-
 #[derive(Default)]
 pub struct Session {
     herd: Herd,
@@ -349,11 +349,6 @@ pub struct Plan<'o, M: Model<'o>> {
     session: &'o Session,
 }
 
-struct DecomposedActivity<'o, M> {
-    activity: *mut dyn Activity<'o, M>,
-    operations: Vec<&'o dyn Node<'o, M>>,
-}
-
 impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
     /// Create a new empty plan from initial conditions and a session.
     fn new(session: &'o Session, time: Time, initial_conditions: InitialConditions) -> Self {
@@ -386,7 +381,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let activity = bump.alloc(activity);
         let activity_pointer = activity as *mut dyn Activity<'o, M>;
         let (_duration, operations) =
-            activity.decompose(Grounding::Static(epoch_to_duration(time)), bump)?;
+            activity.decompose(Placement::Static(epoch_to_duration(time)), bump)?;
 
         for op in &operations {
             op.insert_self(&mut self.timelines)?;
@@ -542,52 +537,4 @@ pub trait Model<'o>: Sync {
         initial_conditions: InitialConditions,
         herd: &'o Herd,
     ) -> Timelines<'o, Self>;
-}
-
-pub enum Grounding<'o, M: Model<'o>> {
-    Static(Duration),
-    Dynamic {
-        min: Duration,
-        max: Duration,
-        node: &'o dyn Upstream<'o, peregrine_grounding, M>,
-    },
-}
-
-impl<'o, M: Model<'o>> Clone for Grounding<'o, M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'o, M: Model<'o>> Copy for Grounding<'o, M> {}
-
-impl<'o, M: Model<'o>> Grounding<'o, M> {
-    pub fn unwrap_node(&self) -> &dyn Upstream<'o, peregrine_grounding, M> {
-        match self {
-            Grounding::Static(_) => panic!("tried to unwrap a static grounding"),
-            Grounding::Dynamic { node, .. } => *node,
-        }
-    }
-
-    pub fn min(&self) -> Duration {
-        match self {
-            Grounding::Static(start) => *start,
-            Grounding::Dynamic { min, .. } => *min,
-        }
-    }
-}
-
-impl<'o, M: Model<'o>> Add<Duration> for Grounding<'o, M> {
-    type Output = Self;
-
-    fn add(self, rhs: Duration) -> Self::Output {
-        match self {
-            Grounding::Static(start) => Grounding::Static(start + rhs),
-            Grounding::Dynamic { min, max, node } => Grounding::Dynamic {
-                min: min + rhs,
-                max: max + rhs,
-                node,
-            },
-        }
-    }
 }

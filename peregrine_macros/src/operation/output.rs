@@ -1,4 +1,5 @@
 use crate::operation::{Context, Op};
+use heck::ToSnekCase;
 use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 
@@ -16,9 +17,11 @@ impl Op {
         let body = &self.body;
 
         quote! {
-            fn #op_body_function<'h>(&self, #(#all_reads: <#all_reads as peregrine::resource::Resource<'h>>::Read,)*) -> peregrine::Result<(#(<#all_writes as peregrine::resource::Resource<'h>>::Write,)*)> {
-                #(let mut #write_onlys: <#write_onlys as peregrine::resource::Resource<'h>>::Write;)*
-                #(let mut #read_writes: <#read_writes as peregrine::resource::Resource<'h>>::Write = #read_writes.into();)*
+            fn #op_body_function<'h>(&self,
+                #(#all_reads: <#all_reads as peregrine::resource::Resource<'h>>::Read,)*
+            ) -> peregrine::Result<(#(<#all_writes as peregrine::resource::Resource<'h>>::Write,)*)> {
+                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as peregrine::resource::Resource<'h>>::Write;)*
+                #(#[allow(clippy::useless_conversion)] let mut #read_writes: <#read_writes as peregrine::resource::Resource<'h>>::Write = #read_writes.into();)*
                 #body
                 Ok((#(#all_writes,)*))
             }
@@ -43,12 +46,15 @@ impl Op {
 
         let activity_ident = activity.get_ident().unwrap();
 
-        let output = format_ident!("{activity_ident}OpOutput_{uuid}");
-        let op = format_ident!("{activity_ident}Op_{uuid}");
-        let op_internals = format_ident!("{activity_ident}OpInternals_{uuid}");
-        let op_body_function = format_ident!("{activity_ident}_op_body_{uuid}");
-        let continuations = format_ident!("{activity_ident}Continuations_{uuid}");
-        let downstreams = format_ident!("{activity_ident}Downstreams_{uuid}");
+        let output = format_ident!("{activity_ident}OpOutput{uuid}");
+        let op = format_ident!("{activity_ident}Op{uuid}");
+        let op_internals = format_ident!("{activity_ident}OpInternals{uuid}");
+        let op_body_function = format_ident!(
+            "{}_op_body_{uuid}",
+            activity_ident.to_string().to_snek_case()
+        );
+        let continuations = format_ident!("{activity_ident}Continuations{uuid}");
+        let downstreams = format_ident!("{activity_ident}Downstreams{uuid}");
 
         Idents {
             op_internals,
@@ -74,6 +80,7 @@ impl ToTokens for Op {
 
         let result = quote! {
             {
+                use peregrine::macro_prelude::*;
                 #definition
                 #instantiation
             }
@@ -132,46 +139,46 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         .collect::<Vec<_>>();
 
     quote! {
-        struct #op_internals<'o, M: peregrine::Model<'o>> {
-            grounding_result: Option<peregrine::operation::InternalResult<peregrine::Duration>>,
+        struct #op_internals<'o, M: Model<'o>> {
+            grounding_result: Option<InternalResult<Duration>>,
 
-            #(#all_reads: Option<&'o dyn peregrine::operation::Upstream<'o, #all_reads, M>>,)*
-            #(#all_read_responses: Option<peregrine::operation::InternalResult<(u64, <#all_reads as peregrine::resource::Resource<'o>>::Read)>>,)*
+            #(#all_reads: Option<&'o dyn Upstream<'o, #all_reads, M>>,)*
+            #(#all_read_responses: Option<InternalResult<(u64, <#all_reads as Resource<'o>>::Read)>>,)*
         }
 
-        struct #op<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> {
+        struct #op<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> {
             grounder: G,
 
-            state: peregrine::reexports::parking_lot::Mutex<peregrine::operation::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>,
+            state: parking_lot::Mutex<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>,
 
             activity: &'o #activity,
-            internals: peregrine::exec::UnsafeSyncCell<#op_internals<'o, M>>
+            internals: UnsafeSyncCell<#op_internals<'o, M>>
         }
 
         #[derive(Copy, Clone, Default)]
         struct #output<'h> {
             hash: u64,
-            #(#all_writes: <#all_writes as peregrine::resource::Resource<'h>>::Read,)*
+            #(#all_writes: <#all_writes as Resource<'h>>::Read,)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #continuations<'o, M: peregrine::Model<'o>> {
-            #(#all_writes(peregrine::operation::Continuation<'o, #all_writes, M>),)*
+        enum #continuations<'o, M: Model<'o>> {
+            #(#all_writes(Continuation<'o, #all_writes, M>),)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #downstreams<'o, M: peregrine::Model<'o>> {
-            #(#all_writes(peregrine::operation::MaybeMarkedDownstream<'o, #all_writes, M>),)*
+        enum #downstreams<'o, M: Model<'o>> {
+            #(#all_writes(MaybeMarkedDownstream<'o, #all_writes, M>),)*
         }
 
-        impl<'s, 'o: 's, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> #op<'o, M, G> {
+        impl<'s, 'o: 's, M: Model<'o> + 'o, G: Grounder<'o, M>> #op<'o, M, G> {
             fn new(grounder: G, activity: &'o #activity) -> Self {
                 #op {
                     state: Default::default(),
 
                     activity,
-                    internals: peregrine::exec::UnsafeSyncCell::new(#op_internals {
-                        grounding_result: grounder.get_static().map(|d| Ok(d)),
+                    internals: UnsafeSyncCell::new(#op_internals {
+                        grounding_result: grounder.get_static().map(Ok),
 
                         #(#all_reads: None,)*
                         #(#all_read_responses: None,)*
@@ -179,13 +186,13 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     grounder,
                 }
             }
-            fn run_continuations(&self, mut state: peregrine::reexports::parking_lot::MutexGuard<peregrine::operation::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, scope: &peregrine::reexports::rayon::Scope<'s>, timelines: &'s peregrine::timeline::Timelines<'o, M>, env: peregrine::exec::ExecEnvironment<'s, 'o>) {
-                let mut swapped_continuations = peregrine::reexports::smallvec::SmallVec::new();
+            fn run_continuations(&self, mut state: parking_lot::MutexGuard<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o, M>, env: ExecEnvironment<'s, 'o>) {
+                let mut swapped_continuations = smallvec::SmallVec::new();
                 std::mem::swap(&mut state.continuations, &mut swapped_continuations);
                 let output = state.status.unwrap_done();
                 drop(state);
 
-                let start_index = if env.stack_counter < peregrine::exec::STACK_LIMIT { 1 } else { 0 };
+                let start_index = if env.stack_counter < STACK_LIMIT { 1 } else { 0 };
 
                 for c in swapped_continuations.drain(start_index..) {
                     match c {
@@ -195,7 +202,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     }
                 }
 
-                if env.stack_counter < peregrine::exec::STACK_LIMIT {
+                if env.stack_counter < STACK_LIMIT {
                     match swapped_continuations.remove(0) {
                         #(#continuations::#all_writes(c) => {
                             c.run(output.map(|r| (r.hash, r.#all_writes)), scope, timelines, env.increment());
@@ -204,18 +211,15 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 }
             }
 
-            fn send_requests(&'o self, mut state: peregrine::reexports::parking_lot::MutexGuard<peregrine::operation::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, time: peregrine::Duration, scope: &peregrine::reexports::rayon::Scope<'s>, timelines: &'s peregrine::timeline::Timelines<'o, M>, env: peregrine::exec::ExecEnvironment<'s, 'o>) {
+            fn send_requests(&'o self, mut state: parking_lot::MutexGuard<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, time: Duration, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o, M>, env: ExecEnvironment<'s, 'o>) {
                 let internals = self.internals.get();
                 let (#(#all_read_responses,)*) = unsafe {
                     (#((*internals).#all_read_responses,)*)
                 };
-                let mut num_requests = 0u8
-                    #(+ #all_read_responses.is_none() as u8)*;
+                let mut num_requests =
+                    #(#all_read_responses.is_none() as u8)+*;
                 state.response_counter = num_requests;
                 drop(state);
-                let time = unsafe {
-                    (*internals).grounding_result.unwrap().unwrap()
-                };
                 #(
                     let already_registered = unsafe {
                         if (*internals).#all_reads.is_none() {
@@ -231,8 +235,8 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                         let #all_reads = unsafe {
                             (*internals).#all_reads
                         };
-                        let continuation = peregrine::operation::Continuation::Node(self);
-                        if num_requests == 0 && env.stack_counter < peregrine::exec::STACK_LIMIT {
+                        let continuation = Continuation::Node(self);
+                        if num_requests == 0 && env.stack_counter < STACK_LIMIT {
                             #all_reads.unwrap().request(continuation, already_registered, scope, timelines, env.increment());
                         } else {
                             scope.spawn(move |s| #all_reads.unwrap().request(continuation, already_registered, s, timelines, env.reset()));
@@ -241,10 +245,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 )*
             }
 
-            fn run(&'o self, env: peregrine::exec::ExecEnvironment<'s, 'o>) -> peregrine::operation::InternalResult<#output<'o>> {
-                use peregrine::Context;
-                use peregrine::activity::ActivityLabel;
-
+            fn run(&'o self, env: ExecEnvironment<'s, 'o>) -> InternalResult<#output<'o>> {
                 let internals = self.internals.get();
 
                 let (#((#all_read_response_hashes, #all_reads),)*) = unsafe {
@@ -254,7 +255,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 let hash = {
                     use std::hash::{Hasher, BuildHasher, Hash};
 
-                    let mut state = peregrine::history::PeregrineDefaultHashBuilder::default().build_hasher();
+                    let mut state = PeregrineDefaultHashBuilder::default().build_hasher();
                     std::any::TypeId::of::<#output>().hash(&mut state);
 
                     #(#all_read_response_hashes.hash(&mut state);)*
@@ -269,11 +270,6 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                         #(#all_writes),*
                     })
                 } else {
-                    use peregrine::{Activity, Context};
-                    use peregrine::activity::ActivityLabel;
-                    let time = unsafe {
-                        (*self.internals.get()).grounding_result.unwrap().unwrap()
-                    };
                     self.activity.#op_body_function(#(#all_reads,)*)
                         .with_context(|| {
                             let time = unsafe {
@@ -289,18 +285,16 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
                 result.map_err(|e| {
                     env.errors.push(e);
-                    peregrine::operation::ObservedErrorOutput
+                    ObservedErrorOutput
                 })
             }
 
             fn clear_cached_downstreams(&self) {
-                use peregrine::operation::OperationState;
-
                 let mut state = self.state.lock();
                 match state.status {
-                    peregrine::operation::OperationStatus::Dormant => {},
-                    peregrine::operation::OperationStatus::Done(_) => {
-                        state.status = peregrine::operation::OperationStatus::Dormant;
+                    OperationStatus::Dormant => {},
+                    OperationStatus::Done(_) => {
+                        state.status = OperationStatus::Dormant;
                         for downstream in &state.downstreams {
                             match downstream {
                                 #(#downstreams::#all_writes(d) => d.clear_cache(),)*
@@ -312,12 +306,12 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             }
         }
 
-        impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> peregrine::operation::Node<'o, M> for #op<'o, M, G> {
-            fn insert_self(&'o self, timelines: &mut peregrine::timeline::Timelines<'o, M>) -> peregrine::Result<()> {
+        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Node<'o, M> for #op<'o, M, G> {
+            fn insert_self(&'o self, timelines: &mut Timelines<'o, M>) -> Result<()> {
                 let notify_time = self.grounder.min();
                 #(
                     let previous = self.grounder.insert_me::<#write_onlys>(self, timelines);
-                    assert!(previous.len() > 0);
+                    assert!(!previous.is_empty());
                     for p in previous {
                         p.notify_downstreams(notify_time);
                     }
@@ -342,11 +336,11 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 )*
                 Ok(())
             }
-            fn remove_self(&self, timelines: &mut peregrine::timeline::Timelines<'o, M>) -> peregrine::Result<()> {
+            fn remove_self(&self, timelines: &mut Timelines<'o, M>) -> Result<()> {
                 #(
                     let removed = self.grounder.remove_me::<#all_writes>(timelines);
                     if !removed {
-                        peregrine::bail!("Removal failed; could not find self at the expected time.")
+                        bail!("Removal failed; could not find self at the expected time.")
                     }
                 )*
 
@@ -365,18 +359,14 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         }
 
         #(
-            impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> peregrine::operation::Downstream<'o, #all_reads, M> for #op<'o, M, G> {
+            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Downstream<'o, #all_reads, M> for #op<'o, M, G> {
                 fn respond<'s>(
                     &'o self,
-                    value: peregrine::operation::InternalResult<(u64, <#all_reads as peregrine::resource::Resource<'o>>::Read)>,
-                    scope: &peregrine::reexports::rayon::Scope<'s>,
-                    timelines: &'s peregrine::timeline::Timelines<'o, M>,
-                    env: peregrine::exec::ExecEnvironment<'s, 'o>
+                    value: InternalResult<(u64, <#all_reads as Resource<'o>>::Read)>,
+                    scope: &rayon::Scope<'s>,
+                    timelines: &'s Timelines<'o, M>,
+                    env: ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
-                    use peregrine::operation::OperationState;
-                    use peregrine::activity::ActivityLabel;
-
-
                     unsafe {
                         (*self.internals.get()).#all_read_responses = Some(value);
                     }
@@ -391,7 +381,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                         let result = self.run(env);
 
                         let mut state = self.state.lock();
-                        state.status = peregrine::operation::OperationStatus::Done(result);
+                        state.status = OperationStatus::Done(result);
 
                         self.run_continuations(state, scope, timelines, env);
                     }
@@ -404,7 +394,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     self.clear_cached_downstreams();
                 }
 
-                fn clear_upstream(&self, time_of_change: Option<peregrine::Duration>) -> bool {
+                fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
                     let internals = self.internals.get();
                     let (clear, retain) = if let Some(time_of_change) = time_of_change {
                         unsafe {
@@ -423,7 +413,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                             (*internals).#all_reads = None;
                             (*internals).#all_read_responses = None;
                         }
-                        <Self as peregrine::operation::Downstream::<'o, #all_reads, M>>::clear_cache(self);
+                        <Self as Downstream::<'o, #all_reads, M>>::clear_cache(self);
                     }
 
                     retain
@@ -432,17 +422,15 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         )*
 
         #(
-            impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> peregrine::operation::Upstream<'o, #all_writes, M> for #op<'o, M, G> {
+            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Upstream<'o, #all_writes, M> for #op<'o, M, G> {
                 fn request<'s>(
                     &'o self,
-                    continuation: peregrine::operation::Continuation<'o, #all_writes, M>,
+                    continuation: Continuation<'o, #all_writes, M>,
                     already_registered: bool,
-                    scope: &peregrine::reexports::rayon::Scope<'s>,
-                    timelines: &'s peregrine::timeline::Timelines<'o, M>,
-                    env: peregrine::exec::ExecEnvironment<'s, 'o>
+                    scope: &rayon::Scope<'s>,
+                    timelines: &'s Timelines<'o, M>,
+                    env: ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
-                    use peregrine::operation::OperationStatus;
-
                     let mut state = self.state.lock();
                     if !already_registered {
                         if let Some(d) = continuation.to_downstream() {
@@ -461,10 +449,10 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                                         Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
                                         Some(Err(_)) => {
                                             let mut state = self.state.lock();
-                                            state.status = peregrine::operation::OperationStatus::Done(Err(peregrine::operation::ObservedErrorOutput));
+                                            state.status = OperationStatus::Done(Err(ObservedErrorOutput));
                                             self.run_continuations(state, scope, timelines, env);
                                         }
-                                        None => self.grounder.request(peregrine::operation::Continuation::Node(self), false, scope, timelines, env.increment())
+                                        None => self.grounder.request(Continuation::Node(self), false, scope, timelines, env.increment())
                                     }
                                 }
                             }
@@ -479,7 +467,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     }
                 }
 
-                fn notify_downstreams(&self, time_of_change: peregrine::Duration) {
+                fn notify_downstreams(&self, time_of_change: Duration) {
                     let mut state = self.state.lock();
 
                     state.downstreams.retain(|downstream| {
@@ -490,55 +478,52 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     });
                 }
 
-                fn register_downstream_early(&self, downstream: &'o dyn peregrine::operation::Downstream<'o, #all_writes, M>) {
+                fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, #all_writes, M>) {
                     self.state.lock().downstreams.push(#downstreams::#all_writes(downstream.into()));
                 }
             }
         )*
 
-        impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> peregrine::operation::Upstream<'o, peregrine::operation::ungrounded::peregrine_grounding, M> for #op<'o, M, G> {
+        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Upstream<'o, peregrine_grounding, M> for #op<'o, M, G> {
             fn request<'s>(
                 &'o self,
-                continuation: peregrine::operation::Continuation<'o, peregrine::operation::ungrounded::peregrine_grounding, M>,
+                continuation: Continuation<'o, peregrine_grounding, M>,
                 already_registered: bool,
-                scope: &peregrine::reexports::rayon::Scope<'s>,
-                timelines: &'s peregrine::timeline::Timelines<'o, M>,
-                env: peregrine::exec::ExecEnvironment<'s, 'o>
+                scope: &rayon::Scope<'s>,
+                timelines: &'s Timelines<'o, M>,
+                env: ExecEnvironment<'s, 'o>
             ) where 'o: 's {
                 self.grounder.request(continuation, already_registered, scope, timelines, env);
             }
 
-            fn notify_downstreams(&self, time_of_change: peregrine::Duration) {
+            fn notify_downstreams(&self, _time_of_change: Duration) {
                 unreachable!()
             }
 
-            fn register_downstream_early(&self, downstream: &'o dyn peregrine::operation::Downstream<'o, peregrine::operation::ungrounded::peregrine_grounding, M>) {
+            fn register_downstream_early(&self, _downstream: &'o dyn Downstream<'o, peregrine_grounding, M>) {
                 unreachable!()
             }
         }
 
-        impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M>> peregrine::operation::Downstream<'o, peregrine::operation::ungrounded::peregrine_grounding, M> for #op<'o, M, G> {
+        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Downstream<'o, peregrine_grounding, M> for #op<'o, M, G> {
             fn respond<'s>(
                 &'o self,
-                value: peregrine::operation::InternalResult<(u64, peregrine::Duration)>,
-                scope: &peregrine::reexports::rayon::Scope<'s>,
-                timelines: &'s peregrine::timeline::Timelines<'o, M>,
-                env: peregrine::exec::ExecEnvironment<'s, 'o>
+                value: InternalResult<(u64, Duration)>,
+                scope: &rayon::Scope<'s>,
+                timelines: &'s Timelines<'o, M>,
+                env: ExecEnvironment<'s, 'o>
             ) where 'o: 's {
-                use peregrine::operation::OperationState;
-                use peregrine::activity::ActivityLabel;
-
                 unsafe {
                     (*self.internals.get()).grounding_result = Some(value.map(|r| r.1));
                 }
 
                 let mut state = self.state.lock();
 
-                if value.is_err() {
-                    state.status = peregrine::operation::OperationStatus::Done(Err(peregrine::operation::ObservedErrorOutput));
+                if let Ok((_, t)) = value {
+                    self.send_requests(state, t, scope, timelines, env);
+                } else {
+                    state.status = OperationStatus::Done(Err(ObservedErrorOutput));
                     self.run_continuations(state, scope, timelines, env);
-                } else if matches!(state.status, peregrine::operation::OperationStatus::Working) {
-                    self.send_requests(state, value.unwrap().1, scope, timelines, env);
                 }
             }
 
@@ -553,19 +538,19 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
                 self.clear_cached_downstreams();
             }
-            fn clear_upstream(&self, time_of_change: Option<peregrine::Duration>) -> bool {
+            fn clear_upstream(&self, _time_of_change: Option<Duration>) -> bool {
                 unreachable!()
             }
         }
 
         #(
-            impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M> + 'o> AsRef<dyn peregrine::operation::Upstream<'o, #all_writes, M> + 'o> for #op<'o, M, G> {
-                fn as_ref(&self) -> &(dyn peregrine::operation::Upstream<'o, #all_writes, M> + 'o) {
+            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M> + 'o> AsRef<dyn Upstream<'o, #all_writes, M> + 'o> for #op<'o, M, G> {
+                fn as_ref(&self) -> &(dyn Upstream<'o, #all_writes, M> + 'o) {
                     self
                 }
             }
 
-            impl<'o, M: peregrine::Model<'o> + 'o, G: peregrine::operation::Grounder<'o, M> + 'o> peregrine::operation::ungrounded::UngroundedUpstream<'o, #all_writes, M> for #op<'o, M, G> {}
+            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M> + 'o> UngroundedUpstream<'o, #all_writes, M> for #op<'o, M, G> {}
         )*
     }
 }
@@ -574,6 +559,6 @@ fn result(idents: &Idents) -> TokenStream {
     let Idents { op, .. } = idents;
 
     quote! {
-        |grounder, context, bump: peregrine::reexports::bumpalo_herd::Member<'o>| bump.alloc(#op::<'o, M, _>::new(grounder, context))
+        |grounder, context, bump: bumpalo_herd::Member<'o>| bump.alloc(#op::<'o, M, _>::new(grounder, context))
     }
 }
