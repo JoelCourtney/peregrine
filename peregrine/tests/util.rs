@@ -67,7 +67,11 @@ impl EvalCounter {
 }
 
 model! {
-    pub AB(a, b)
+    pub B(b)
+}
+model! {
+    use B;
+    pub AB(a)
 }
 
 pub fn init_plan(session: &Session) -> Plan<AB> {

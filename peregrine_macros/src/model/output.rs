@@ -8,7 +8,7 @@ impl ToTokens for Model {
             visibility,
             name,
             resources,
-            ..
+            sub_models,
         } = self;
 
         let mod_name = format_ident!("peregrine_model_mod_{name}");
@@ -23,23 +23,25 @@ impl ToTokens for Model {
                     fn init_history(history: &mut History) {
                         #(history.init::<#resources>();)*
                     }
-                    fn init_timelines(
+                    fn init_timelines<M: Model<'o>>(
                         time: Duration,
-                        mut initial_conditions: InitialConditions,
-                        herd: &'o bumpalo_herd::Herd
-                    ) -> Timelines<'o, Self> {
-                        let mut timelines = Timelines::new(herd);
+                        initial_conditions: &mut InitialConditions,
+                        timelines: &mut Timelines<'o, M>
+                    ) {
                         #(
-                            timelines.init_for_resource::<#resources>(
-                                time,
-                                InitialConditionOp::new(
+                            if !timelines.contains_resource::<#resources>() {
+                                timelines.init_for_resource::<#resources>(
                                     time,
-                                    initial_conditions.take::<#resources>()
-                                        .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as Resource<'o>>::LABEL))
-                                )
-                            );
+                                    InitialConditionOp::new(
+                                        time,
+                                        initial_conditions.take::<#resources>()
+                                            .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as Resource<'o>>::LABEL))
+                                    )
+                                );
+                            }
                         )*
-                        timelines
+
+                        #(#sub_models::init_timelines::<M>(time, initial_conditions, timelines);)*
                     }
                 }
             }

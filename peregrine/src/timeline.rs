@@ -41,6 +41,10 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
         );
     }
 
+    pub fn contains_resource<R: Resource<'o>>(&self) -> bool {
+        self.0.contains_key(&R::ID)
+    }
+
     pub fn find_upstream<R: Resource<'o>>(
         &self,
         time: Duration,

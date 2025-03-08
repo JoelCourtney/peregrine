@@ -8,5 +8,5 @@ pub struct Model {
     visibility: Visibility,
     name: Ident,
     resources: Vec<Path>,
-    _sub_models: Vec<Path>,
+    sub_models: Vec<Path>,
 }

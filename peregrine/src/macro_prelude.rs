@@ -1,3 +1,5 @@
+#![doc(hidden)]
+
 pub use crate::{
     activity::*,
     exec::*,
