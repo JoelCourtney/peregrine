@@ -197,7 +197,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 for c in swapped_continuations.drain(start_index..) {
                     match c {
                         #(#continuations::#all_writes(c) => {
-                            scope.spawn(move |s| c.run(output.map(|r| (r.hash, r.#all_writes)), s, timelines, env.reset()));
+                            scope.spawn(move |s| c.run(output.map(|r| (maybe_hash_or!(r.#all_writes, r.hash), r.#all_writes)), s, timelines, env.reset()));
                         })*
                     }
                 }
@@ -205,7 +205,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 if env.stack_counter < STACK_LIMIT {
                     match swapped_continuations.remove(0) {
                         #(#continuations::#all_writes(c) => {
-                            c.run(output.map(|r| (r.hash, r.#all_writes)), scope, timelines, env.increment());
+                            c.run(output.map(|r| (maybe_hash_or!(r.#all_writes, r.hash), r.#all_writes)), scope, timelines, env.increment());
                         })*
                     }
                 }
@@ -255,7 +255,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 let hash = {
                     use std::hash::{Hasher, BuildHasher, Hash};
 
-                    let mut state = PeregrineDefaultHashBuilder::default().build_hasher();
+                    let mut state = PeregrineDefaultHashBuilder::default();
                     std::any::TypeId::of::<#output>().hash(&mut state);
 
                     self.activity.hash(&mut state);
@@ -461,7 +461,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                         }
                         OperationStatus::Done(r) => {
                             drop(state);
-                            continuation.run(r.map(|o| (o.hash, o.#all_writes)), scope, timelines, env.increment());
+                            continuation.run(r.map(|o| (maybe_hash_or!(o.#all_writes, o.hash), o.#all_writes)), scope, timelines, env.increment());
                         }
                         OperationStatus::Working => {
                             state.continuations.push(#continuations::#all_writes(continuation));

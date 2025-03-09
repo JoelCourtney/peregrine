@@ -29,7 +29,7 @@ bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 
 ## HISTORY
 # A fast stable hashing algorithm, used for history caching.
-foldhash = "0.1.4"
+ahash = { version = "0.8.11", features = ["compile-time-rng"] }
 # A concurrent hashmap for storing history. Used for copiable resources.
 dashmap = { version = "6.1.0", features = ["serde"] }
 stable_deref_trait = "1.2.0"

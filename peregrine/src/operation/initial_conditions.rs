@@ -12,7 +12,7 @@ use hifitime::Duration;
 use parking_lot::Mutex;
 use rayon::Scope;
 use std::collections::HashMap;
-use std::hash::BuildHasher;
+use std::hash::Hasher;
 
 #[macro_export]
 macro_rules! initial_conditions {
@@ -99,10 +99,11 @@ impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialCondi
         let mut state = self.state.lock();
         let result = match state.status {
             OperationStatus::Dormant => {
-                let hash = PeregrineDefaultHashBuilder::default().hash_one(
-                    bincode::serde::encode_to_vec(&self.value, bincode::config::standard())
-                        .expect("could not hash initial condition"),
-                );
+                let bytes = bincode::serde::encode_to_vec(&self.value, bincode::config::standard())
+                    .expect("could not hash initial condition");
+                let mut hasher = PeregrineDefaultHashBuilder::default();
+                hasher.write(&bytes);
+                let hash = hasher.finish();
                 let output = if let Some(r) = env.history.get::<R>(hash) {
                     (hash, r)
                 } else {

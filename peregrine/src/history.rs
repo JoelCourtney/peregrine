@@ -2,6 +2,7 @@
 
 use crate::resource::Resource;
 use crate::resource::ResourceHistoryPlugin;
+use ahash::AHasher;
 use dashmap::DashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use stable_deref_trait::StableDeref;
@@ -10,7 +11,7 @@ use std::mem::swap;
 use type_map::concurrent::{Entry, TypeMap};
 use type_reg::untagged::TypeReg;
 
-pub type PeregrineDefaultHashBuilder = foldhash::fast::FixedState;
+pub type PeregrineDefaultHashBuilder = AHasher;
 
 #[derive(Default)]
 #[repr(transparent)]

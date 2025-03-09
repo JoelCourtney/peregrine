@@ -1,7 +1,8 @@
-use crate::history::HistoryAdapter;
+use crate::history::{HistoryAdapter, PeregrineDefaultHashBuilder};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use type_map::concurrent::TypeMap;
 use type_reg::untagged::TypeReg;
 
@@ -35,6 +36,59 @@ pub trait Resource<'h>: Sync + ErasedResource<'h> {
     /// The type of history container to use to store instances of the `Write` type, currently
     /// either [CopyHistory] or [DerefHistory]. See [Resource] for details.
     type History: 'static + HistoryAdapter<Self::Write, Self::Read> + Debug + Default + Send + Sync;
+}
+
+#[macro_export]
+macro_rules! maybe_hash_or {
+    ($value:expr, $default:expr) => {
+        (&mut &mut &$value).maybe_hash().unwrap_or_else(|| $default)
+    };
+}
+
+pub trait MaybeHash {
+    fn maybe_hash(&self) -> Option<u64>;
+}
+
+impl<T> MaybeHash for &T {
+    #[inline]
+    fn maybe_hash(&self) -> Option<u64> {
+        None
+    }
+}
+
+impl<T: Hash + Debug> MaybeHash for &mut &T {
+    #[inline]
+    fn maybe_hash(&self) -> Option<u64> {
+        let mut state = PeregrineDefaultHashBuilder::default();
+        self.hash(&mut state);
+        Some(state.finish())
+    }
+}
+
+impl MaybeHash for &mut &mut &f32 {
+    #[inline]
+    fn maybe_hash(&self) -> Option<u64> {
+        if self.is_normal() {
+            let mut state = PeregrineDefaultHashBuilder::default();
+            self.to_be_bytes().hash(&mut state);
+            Some(state.finish())
+        } else {
+            None
+        }
+    }
+}
+
+impl MaybeHash for &mut &mut &f64 {
+    #[inline]
+    fn maybe_hash(&self) -> Option<u64> {
+        if self.is_normal() {
+            let mut state = PeregrineDefaultHashBuilder::default();
+            self.to_be_bytes().hash(&mut state);
+            Some(state.finish())
+        } else {
+            None
+        }
+    }
 }
 
 #[macro_export]

@@ -139,7 +139,7 @@ fn load_cache_after_rollbacks_sim_in_between() -> Result<()> {
 
     assert_eq!(3, plan.sample::<a>(seconds(4))?);
     assert_eq!(1, counter1.load(Ordering::SeqCst));
-    assert_eq!(2, counter2.load(Ordering::SeqCst));
+    assert_eq!(1, counter2.load(Ordering::SeqCst));
 
     Ok(())
 }
