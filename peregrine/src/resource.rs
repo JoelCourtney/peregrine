@@ -28,14 +28,14 @@ pub trait Resource<'h>: Sync + ErasedResource<'h> {
     const ID: u64;
 
     /// The type that is read from history.
-    type Read: 'h + Copy + Send + Sync + Debug;
+    type Read: 'h + Copy + Send + Sync;
 
     /// The type that is written from operations to history.
-    type Write: 'h + Clone + Debug + Serialize + DeserializeOwned + Send + Sync;
+    type Write: 'h + Clone + Serialize + DeserializeOwned + Send + Sync;
 
     /// The type of history container to use to store instances of the `Write` type, currently
     /// either [CopyHistory] or [DerefHistory]. See [Resource] for details.
-    type History: 'static + HistoryAdapter<Self::Write, Self::Read> + Debug + Default + Send + Sync;
+    type History: 'static + HistoryAdapter<Self::Write, Self::Read> + Default + Send + Sync;
 }
 
 #[macro_export]

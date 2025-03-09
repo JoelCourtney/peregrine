@@ -167,8 +167,8 @@ pub struct MarkedValue<T> {
     pub(crate) value: T,
 }
 
-impl<T: Copy + Clone + Debug> Copy for MarkedValue<T> {}
-impl<T: Clone + Debug> Clone for MarkedValue<T> {
+impl<T: Copy + Clone> Copy for MarkedValue<T> {}
+impl<T: Clone> Clone for MarkedValue<T> {
     fn clone(&self) -> Self {
         MarkedValue {
             marker: self.marker,
