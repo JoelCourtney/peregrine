@@ -230,6 +230,8 @@ use resource::Resource;
 use std::collections::HashMap;
 use std::ops::RangeBounds;
 
+pub use peregrine_macros::resource;
+
 /// Creates a model and associated structs from a selection of resources.
 ///
 /// Expects a struct-like item, but without the `struct` keyword. For example:
@@ -510,12 +512,17 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         }
     }
 
-    pub fn sample<R: Resource<'o> + 'o>(&self, time: Time) -> Result<R::Read> {
-        Ok(self
+    pub fn sample<R: Resource<'o> + 'o>(&self, time: Time) -> Result<R::Sample> {
+        let (written_at, read) = self
             .view::<R>(time..=time)?
             .first()
-            .ok_or_else(|| anyhow!("No operations to sample found at or before {time}"))?
-            .1)
+            .cloned()
+            .ok_or_else(|| anyhow!("No operations to sample found at or before {time}"))?;
+        let read_wrapper = R::convert_for_reading(
+            R::wrap(read, epoch_to_duration(written_at)),
+            epoch_to_duration(time),
+        );
+        Ok(R::sample(&read_wrapper))
     }
 }
 

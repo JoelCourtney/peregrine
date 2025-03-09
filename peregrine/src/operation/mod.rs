@@ -27,7 +27,7 @@ pub trait Node<'o, M: Model<'o> + 'o>: Sync {
 pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
     fn respond<'s>(
         &'o self,
-        value: InternalResult<(u64, R::Read)>,
+        value: InternalResult<(u64, R::SendWrapper)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -62,7 +62,7 @@ pub enum Continuation<'o, R: Resource<'o>, M: Model<'o> + 'o> {
 impl<'o, R: Resource<'o>, M: Model<'o> + 'o> Continuation<'o, R, M> {
     pub fn run<'s>(
         self,
-        value: InternalResult<(u64, R::Read)>,
+        value: InternalResult<(u64, R::SendWrapper)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -72,12 +72,12 @@ impl<'o, R: Resource<'o>, M: Model<'o> + 'o> Continuation<'o, R, M> {
         match self {
             Continuation::Node(n) => n.respond(value, scope, timelines, env),
             Continuation::MarkedNode(marker, n) => n.respond(
-                value.map(|(hash, when)| {
+                value.map(|(hash, v)| {
                     (
                         hash,
                         MarkedValue {
                             marker,
-                            value: when,
+                            value: R::unwrap_read(v),
                         },
                     )
                 }),
@@ -85,7 +85,7 @@ impl<'o, R: Resource<'o>, M: Model<'o> + 'o> Continuation<'o, R, M> {
                 timelines,
                 env,
             ),
-            Continuation::Root(s) => s.send(value.map(|r| r.1)).unwrap(),
+            Continuation::Root(s) => s.send(value.map(|r| R::unwrap_read(r.1))).unwrap(),
         }
     }
 
@@ -154,11 +154,35 @@ pub enum Marked<'o, R: Resource<'o>> {
 
 impl<'o, R: 'o + Resource<'o>> Resource<'o> for Marked<'o, R> {
     const LABEL: &'static str = R::LABEL;
-    const STATIC: bool = R::STATIC;
+    const DYNAMIC: bool = R::DYNAMIC;
     const ID: u64 = peregrine_macros::random_u64!();
     type Read = MarkedValue<R::Read>;
     type Write = MarkedValue<R::Write>;
     type History = ();
+
+    type SendWrapper = Self::Read;
+    type ReadWrapper = Self::Read;
+    type WriteWrapper = Self::Write;
+    fn wrap(value: Self::Read, _at: Duration) -> Self::SendWrapper {
+        value
+    }
+    fn convert_for_reading(wrapped: Self::SendWrapper, _at: Duration) -> Self::ReadWrapper {
+        wrapped
+    }
+    fn convert_for_writing(_wrapped: Self::SendWrapper) -> Self::WriteWrapper {
+        unreachable!()
+    }
+    fn unwrap_write(wrapped: Self::WriteWrapper) -> Self::Write {
+        wrapped
+    }
+    fn unwrap_read(wrapped: Self::SendWrapper) -> Self::Read {
+        wrapped
+    }
+
+    type Sample = MarkedValue<R::Sample>;
+    fn sample(_value: &Self::ReadWrapper) -> Self::Sample {
+        unreachable!()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

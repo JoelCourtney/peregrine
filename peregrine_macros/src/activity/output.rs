@@ -22,7 +22,7 @@ impl ToTokens for Activity {
         let result = quote! {
             impl<'o, M: peregrine::Model<'o>> peregrine::activity::Activity<'o, M> for #path {
                 fn decompose(
-                    &'o self,
+                    &'o mut self,
                     start: peregrine::activity::Placement<'o, M>,
                     bump: peregrine::reexports::bumpalo_herd::Member<'o>
                 ) -> peregrine::Result<(peregrine::Duration, Vec<&'o dyn peregrine::operation::Node<'o, M>>)> {
@@ -71,11 +71,11 @@ impl ToTokens for Invocation {
                         _ => todo!()
                     },
                     self,
-                    bump
+                    &bump
                 ));
             },
             _ => quote! {
-                operations.extend((#op)(#placement, self, bump)?);
+                operations.extend((#op)(#placement, self, &bump)?);
             },
         };
         tokens.extend(result);

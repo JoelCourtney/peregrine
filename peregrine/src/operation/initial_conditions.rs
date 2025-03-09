@@ -62,7 +62,7 @@ type InitialConditionState<'o, R, M> =
 pub struct InitialConditionOp<'o, R: Resource<'o>, M: Model<'o>> {
     value: R::Write,
     state: Mutex<InitialConditionState<'o, R, M>>,
-    _time: Duration,
+    time: Duration,
 }
 
 impl<'o, R: Resource<'o>, M: Model<'o>> InitialConditionOp<'o, R, M> {
@@ -70,7 +70,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> InitialConditionOp<'o, R, M> {
         Self {
             value,
             state: Default::default(),
-            _time: time,
+            time,
         }
     }
 }
@@ -124,7 +124,12 @@ impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialCondi
 
         drop(state);
 
-        continuation.run(Ok(result), scope, timelines, env.increment());
+        continuation.run(
+            Ok((result.0, R::wrap(result.1, self.time))),
+            scope,
+            timelines,
+            env.increment(),
+        );
     }
 
     fn notify_downstreams(&self, time_of_change: Duration) {

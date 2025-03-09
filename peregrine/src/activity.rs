@@ -12,7 +12,7 @@ use std::ops::Add;
 /// with the [impl_activity] macro.
 pub trait Activity<'o, M: Model<'o>>: Send + Sync {
     fn decompose(
-        &'o self,
+        &'o mut self,
         start: Placement<'o, M>,
         bump: Member<'o>,
     ) -> Result<(Duration, Vec<&'o dyn Node<'o, M>>)>;

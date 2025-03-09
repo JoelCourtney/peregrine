@@ -26,6 +26,7 @@ peregrine_macros = { path = "../peregrine_macros" }
 serde = { version = "1.0.210", features = ["derive"] }
 # A non-self-describing efficient serde backend.
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+serde_arrays = "0.1.0"
 
 ## HISTORY
 # A fast stable hashing algorithm, used for history caching.
@@ -58,6 +59,8 @@ hifitime = "4.0.2"
 # Used for convience, not having to manually implement simple traits.
 derive_more = { version = "2.0.1", features = ["deref", "deref_mut", "error"] }
 smallvec = "2.0.0-alpha.10"
+spez = "0.1.2"
+num-traits = "0.2.19"
 
 ## ERROR HANDLING
 # Used to allow modellers to return errors from activities and operations

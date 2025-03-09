@@ -65,7 +65,12 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
         unsafe {
             self.0
                 .get_mut(&R::ID)
-                .unwrap()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Could not find resource {}. Is it included in the model?",
+                        R::LABEL
+                    )
+                })
                 .downcast_mut::<Timeline<'o, R, M>>()
                 .insert_grounded(time, op)
         }
