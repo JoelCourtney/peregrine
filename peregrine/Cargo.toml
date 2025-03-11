@@ -58,9 +58,11 @@ hifitime = "4.0.2"
 ## MISC
 # Used for convience, not having to manually implement simple traits.
 derive_more = { version = "2.0.1", features = ["deref", "deref_mut", "error"] }
-smallvec = "2.0.0-alpha.10"
+smallvec = { version = "2.0.0-alpha.10", features = ["serde"] }
 spez = "0.1.2"
 num-traits = "0.2.19"
+duplicate = "2.0.0"
+
 
 ## ERROR HANDLING
 # Used to allow modellers to return errors from activities and operations

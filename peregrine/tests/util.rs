@@ -6,11 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 resource!(pub a: u32);
-resource!(
-    pub b: u32;
-
-    history = copy;
-);
+resource!(pub b: u32);
 
 #[derive(Hash)]
 pub struct IncrementA;

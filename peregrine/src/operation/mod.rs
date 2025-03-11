@@ -4,10 +4,11 @@ pub mod grounding;
 pub mod initial_conditions;
 
 use crate as peregrine;
-use crate::Model;
 use crate::exec::ExecEnvironment;
+use crate::macro_prelude::{Data, MaybeHash};
 use crate::resource::Resource;
 use crate::timeline::Timelines;
+use crate::{Model, Time};
 use anyhow::Result;
 use derive_more::with_trait::Error as DeriveError;
 use hifitime::Duration;
@@ -15,6 +16,7 @@ use rayon::Scope;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hasher;
 use std::marker::PhantomData;
 
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
@@ -24,10 +26,14 @@ pub trait Node<'o, M: Model<'o> + 'o>: Sync {
     fn remove_self(&self, timelines: &mut Timelines<'o, M>) -> Result<()>;
 }
 
-pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
+pub trait NodeId {
+    const ID: u64;
+}
+
+pub trait Downstream<'o, R: Resource, M: Model<'o> + 'o>: Sync {
     fn respond<'s>(
         &'o self,
-        value: InternalResult<(u64, R::SendWrapper)>,
+        value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -38,7 +44,7 @@ pub trait Downstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
     fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool;
 }
 
-pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
+pub trait Upstream<'o, R: Resource, M: Model<'o> + 'o>: Sync {
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,
@@ -53,16 +59,16 @@ pub trait Upstream<'o, R: Resource<'o>, M: Model<'o> + 'o>: Sync {
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R, M>);
 }
 
-pub enum Continuation<'o, R: Resource<'o>, M: Model<'o> + 'o> {
+pub enum Continuation<'o, R: Resource, M: Model<'o> + 'o> {
     Node(&'o dyn Downstream<'o, R, M>),
-    MarkedNode(usize, &'o dyn Downstream<'o, Marked<'o, R>, M>),
-    Root(oneshot::Sender<InternalResult<R::Read>>),
+    MarkedNode(usize, &'o dyn Downstream<'o, Marked<R>, M>),
+    Root(oneshot::Sender<InternalResult<<R::Data as Data<'o>>::Read>>),
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o> + 'o> Continuation<'o, R, M> {
+impl<'o, R: Resource, M: Model<'o> + 'o> Continuation<'o, R, M> {
     pub fn run<'s>(
         self,
-        value: InternalResult<(u64, R::SendWrapper)>,
+        value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -72,20 +78,12 @@ impl<'o, R: Resource<'o>, M: Model<'o> + 'o> Continuation<'o, R, M> {
         match self {
             Continuation::Node(n) => n.respond(value, scope, timelines, env),
             Continuation::MarkedNode(marker, n) => n.respond(
-                value.map(|(hash, v)| {
-                    (
-                        hash,
-                        MarkedValue {
-                            marker,
-                            value: R::unwrap_read(v),
-                        },
-                    )
-                }),
+                value.map(|(hash, value)| (hash, (marker, value))),
                 scope,
                 timelines,
                 env,
             ),
-            Continuation::Root(s) => s.send(value.map(|r| R::unwrap_read(r.1))).unwrap(),
+            Continuation::Root(s) => s.send(value.map(|r| r.1)).unwrap(),
         }
     }
 
@@ -147,52 +145,55 @@ impl<O: Copy> OperationStatus<O> {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(crate = "peregrine::reexports::serde")]
-pub enum Marked<'o, R: Resource<'o>> {
+pub enum Marked<R: Resource> {
     Unit,
-    Phantom(PhantomData<&'o R>),
+    Phantom(PhantomData<R>),
 }
 
-impl<'o, R: 'o + Resource<'o>> Resource<'o> for Marked<'o, R> {
+impl<R: Resource> Resource for Marked<R> {
     const LABEL: &'static str = R::LABEL;
-    const DYNAMIC: bool = R::DYNAMIC;
     const ID: u64 = peregrine_macros::random_u64!();
-    type Read = MarkedValue<R::Read>;
-    type Write = MarkedValue<R::Write>;
-    type History = ();
-
-    type SendWrapper = Self::Read;
-    type ReadWrapper = Self::Read;
-    type WriteWrapper = Self::Write;
-    fn wrap(value: Self::Read, _at: Duration) -> Self::SendWrapper {
-        value
-    }
-    fn convert_for_reading(wrapped: Self::SendWrapper, _at: Duration) -> Self::ReadWrapper {
-        wrapped
-    }
-    fn convert_for_writing(_wrapped: Self::SendWrapper) -> Self::WriteWrapper {
-        unreachable!()
-    }
-    fn unwrap_write(wrapped: Self::WriteWrapper) -> Self::Write {
-        wrapped
-    }
-    fn unwrap_read(wrapped: Self::SendWrapper) -> Self::Read {
-        wrapped
-    }
-
-    type Sample = MarkedValue<R::Sample>;
-    fn sample(_value: &Self::ReadWrapper) -> Self::Sample {
-        unreachable!()
-    }
+    type Data = MarkedValue<R>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct MarkedValue<T> {
+pub struct MarkedValue<R: Resource> {
     pub(crate) marker: usize,
-    pub(crate) value: T,
+    pub(crate) value: R::Data,
 }
 
-impl<T: Copy + Clone> Copy for MarkedValue<T> {}
-impl<T: Clone> Clone for MarkedValue<T> {
+impl<R: Resource> MaybeHash for MarkedValue<R> {
+    fn is_hashable(&self) -> bool {
+        self.value.is_hashable()
+    }
+    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
+        self.value.hash_unchecked(state);
+    }
+}
+
+impl<'h, R: Resource> Data<'h> for MarkedValue<R> {
+    type Read = (usize, <R::Data as Data<'h>>::Read);
+    type Sample = <R::Data as Data<'h>>::Sample;
+
+    fn to_read(&self, written: Time) -> Self::Read {
+        (self.marker, self.value.to_read(written))
+    }
+    fn from_read(read: Self::Read, now: Time) -> Self {
+        MarkedValue {
+            marker: read.0,
+            value: R::Data::from_read(read.1, now),
+        }
+    }
+    fn sample(read: &Self::Read, now: Time) -> Self::Sample {
+        R::Data::sample(&read.1, now)
+    }
+}
+
+impl<R: Resource> Copy for MarkedValue<R> where R::Data: Copy {}
+impl<R: Resource> Clone for MarkedValue<R>
+where
+    R::Data: Clone,
+{
     fn clone(&self) -> Self {
         MarkedValue {
             marker: self.marker,
@@ -201,12 +202,12 @@ impl<T: Clone> Clone for MarkedValue<T> {
     }
 }
 
-pub enum MaybeMarkedDownstream<'o, R: Resource<'o>, M: Model<'o>> {
+pub enum MaybeMarkedDownstream<'o, R: Resource, M: Model<'o>> {
     Unmarked(&'o dyn Downstream<'o, R, M>),
-    Marked(&'o dyn Downstream<'o, Marked<'o, R>, M>),
+    Marked(&'o dyn Downstream<'o, Marked<R>, M>),
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> MaybeMarkedDownstream<'o, R, M> {
+impl<'o, R: Resource, M: Model<'o>> MaybeMarkedDownstream<'o, R, M> {
     pub fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
         match self {
             MaybeMarkedDownstream::Unmarked(n) => n.clear_upstream(time_of_change),
@@ -222,7 +223,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> MaybeMarkedDownstream<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> From<&'o dyn Downstream<'o, R, M>>
+impl<'o, R: Resource, M: Model<'o>> From<&'o dyn Downstream<'o, R, M>>
     for MaybeMarkedDownstream<'o, R, M>
 {
     fn from(value: &'o dyn Downstream<'o, R, M>) -> Self {
@@ -230,10 +231,10 @@ impl<'o, R: Resource<'o>, M: Model<'o>> From<&'o dyn Downstream<'o, R, M>>
     }
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> From<&'o dyn Downstream<'o, Marked<'o, R>, M>>
+impl<'o, R: Resource, M: Model<'o>> From<&'o dyn Downstream<'o, Marked<R>, M>>
     for MaybeMarkedDownstream<'o, R, M>
 {
-    fn from(value: &'o dyn Downstream<'o, Marked<'o, R>, M>) -> Self {
+    fn from(value: &'o dyn Downstream<'o, Marked<R>, M>) -> Self {
         MaybeMarkedDownstream::Marked(value)
     }
 }

@@ -1,11 +1,11 @@
 #![doc(hidden)]
 
-use crate::resource::Resource;
+use crate::Time;
 use crate::resource::ResourceHistoryPlugin;
+use crate::resource::{Data, Resource};
 use ahash::AHasher;
 use dashmap::DashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use stable_deref_trait::StableDeref;
 use std::hash::{BuildHasher, Hasher};
 use std::mem::swap;
 use type_map::concurrent::{Entry, TypeMap};
@@ -21,19 +21,29 @@ impl History {
     pub fn new() -> Self {
         History(TypeMap::new())
     }
-    pub fn init<'h, R: Resource<'h>>(&mut self) {
-        match self.0.entry::<R::History>() {
+    pub fn init<R: Resource>(&mut self) {
+        match self.0.entry::<InnerHistory<R::Data>>() {
             Entry::Occupied(_) => {}
             Entry::Vacant(v) => {
-                v.insert(R::History::default());
+                v.insert(InnerHistory::default());
             }
         }
     }
-    pub fn insert<'h, R: Resource<'h>>(&'h self, hash: u64, value: R::Write) -> R::Read {
-        self.0.get::<R::History>().unwrap().insert(hash, value)
+    pub fn insert<R: Resource>(
+        &self,
+        hash: u64,
+        value: R::Data,
+        written: Time,
+    ) -> <R::Data as Data>::Read {
+        self.0
+            .get::<InnerHistory<R::Data>>()
+            .unwrap()
+            .insert(hash, value, written)
     }
-    pub fn get<'h, R: Resource<'h>>(&'h self, hash: u64) -> Option<R::Read> {
-        self.0.get::<R::History>().and_then(|h| h.get(hash))
+    pub fn get<R: Resource>(&self, hash: u64, written: Time) -> Option<<R::Data as Data>::Read> {
+        self.0
+            .get::<InnerHistory<R::Data>>()
+            .and_then(|h| h.get(hash, written))
     }
     pub fn take_inner(&mut self) -> TypeMap {
         let mut replacement = TypeMap::new();
@@ -51,75 +61,32 @@ impl From<TypeMap> for History {
     }
 }
 
-pub trait HistoryAdapter<W, R>: Default {
-    fn insert(&self, hash: u64, value: W) -> R;
-    fn get(&self, hash: u64) -> Option<R>;
-}
-
 const DASHMAP_STARTING_CAPACITY: usize = 1000;
 
 /// See [Resource].
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CopyHistory<T: Copy + Clone>(DashMap<u64, T, PassThroughHashBuilder>);
+pub struct InnerHistory<T>(DashMap<u64, T, PassThroughHashBuilder>);
 
-impl<T: Copy + Clone> Default for CopyHistory<T> {
+impl<T: for<'h> Data<'h>> Default for InnerHistory<T> {
     fn default() -> Self {
-        CopyHistory(DashMap::with_capacity_and_hasher(
+        InnerHistory(DashMap::with_capacity_and_hasher(
             DASHMAP_STARTING_CAPACITY,
             PassThroughHashBuilder,
         ))
     }
 }
 
-impl<T: Copy + Clone> HistoryAdapter<T, T> for CopyHistory<T> {
-    fn insert(&self, hash: u64, value: T) -> T {
-        self.0.insert(hash, value);
-        value
-    }
-
-    fn get(&self, hash: u64) -> Option<T> {
-        self.0.get(&hash).map(|r| *r)
-    }
-}
-
-/// See [Resource].
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct DerefHistory<T: StableDeref + Clone>(DashMap<u64, T, PassThroughHashBuilder>);
-
-impl<T: StableDeref + Clone> Default for DerefHistory<T> {
-    fn default() -> Self {
-        DerefHistory(DashMap::with_capacity_and_hasher(
-            DASHMAP_STARTING_CAPACITY,
-            PassThroughHashBuilder,
-        ))
-    }
-}
-
-impl<'h, T: StableDeref + Clone + From<&'h T::Target>> HistoryAdapter<T, &'h T::Target>
-    for DerefHistory<T>
+impl<'h, T: Data<'h>> InnerHistory<T>
 where
     Self: 'h,
 {
-    fn insert(&self, hash: u64, value: T) -> &'h T::Target {
-        let inserted: *const T = &*self.0.entry(hash).or_insert(value);
-        unsafe { &*inserted }
+    fn insert(&self, hash: u64, value: T, written: Time) -> T::Read {
+        let inserted = self.0.entry(hash).or_insert(value);
+        inserted.to_read(written)
     }
 
-    fn get(&self, hash: u64) -> Option<&'h T::Target> {
-        self.0.get(&hash).map(|r| unsafe {
-            let value: *const T = &*r;
-            &**value
-        })
-    }
-}
-
-impl<W, R> HistoryAdapter<W, R> for () {
-    fn insert(&self, _hash: u64, _value: W) -> R {
-        unreachable!()
-    }
-
-    fn get(&self, _hash: u64) -> Option<R> {
-        unreachable!()
+    fn get(&self, hash: u64, written: Time) -> Option<T::Read> {
+        self.0.get(&hash).map(move |r| r.value().to_read(written))
     }
 }
 
@@ -203,5 +170,32 @@ impl<'de> Deserialize<'de> for History {
         }
 
         Ok(result.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::macro_prelude::duration_to_epoch;
+    use hifitime::Duration;
+
+    const TIME: Time = duration_to_epoch(Duration::ZERO);
+
+    #[test]
+    fn deref_history_valid_across_realloc() {
+        let history = InnerHistory::<String>::default();
+
+        // Chosen by button mashing :)
+        let hash = 0b10110100100101001010;
+        history.insert(hash, "Hello World!".to_string(), TIME);
+        let reference = history.get(hash, TIME).unwrap();
+        assert_eq!("Hello World!", reference);
+
+        // History default capacity is 1000.
+        for _ in 0..2_000 {
+            history.insert(rand::random(), "its a string".to_string(), TIME);
+        }
+
+        assert_eq!("Hello World!", reference);
     }
 }

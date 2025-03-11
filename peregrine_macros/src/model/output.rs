@@ -35,7 +35,7 @@ impl ToTokens for Model {
                                     InitialConditionOp::new(
                                         time,
                                         initial_conditions.take::<#resources>()
-                                            .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as Resource<'o>>::LABEL))
+                                            .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as Resource>::LABEL))
                                     )
                                 );
                             }

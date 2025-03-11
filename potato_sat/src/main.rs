@@ -1,6 +1,6 @@
 use crate::activities::recharge_potato::RechargePotato;
 use peregrine::macro_prelude::hifitime::{TimeScale, TimeUnits};
-use peregrine::resource::util::Quadratic;
+use peregrine::resource::polynomial::Quadratic;
 use peregrine::*;
 use peregrine::{Session, Time, initial_conditions, model, resource};
 
@@ -11,13 +11,17 @@ model! {
 }
 
 resource!(battery: f32);
-resource!(ref mode: String);
-resource!(
-    line: Quadratic;
-    dynamic = true;
-);
+resource!(mode: String);
+resource!(line: Quadratic);
+// resource!(pieces: PiecewiseConstant<i32>);
 
 fn main() -> Result<()> {
+    // let thing = pieces!(
+    //     0;
+    //     @(5.seconds()) 1
+    //     @(10.seconds()) 0
+    // );
+
     let session = Session::new();
 
     let plan_start = Time::now()?.to_time_scale(TimeScale::TAI);

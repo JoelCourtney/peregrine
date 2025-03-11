@@ -6,7 +6,7 @@ model! {
 }
 
 resource!(a: u32);
-resource!(ref b: String);
+resource!(b: String);
 resource!(c: u32);
 
 #[derive(Hash)]

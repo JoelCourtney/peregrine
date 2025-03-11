@@ -6,9 +6,9 @@ use quote::{ToTokens, format_ident, quote};
 impl Op {
     pub fn body_function(&self) -> TokenStream {
         let Idents {
-            all_reads,
             all_writes,
             write_onlys,
+            read_onlys,
             read_writes,
             op_body_function,
             ..
@@ -17,13 +17,13 @@ impl Op {
         let body = &self.body;
 
         quote! {
-            fn #op_body_function<'h>(&self,
-                #(#all_reads: <#all_reads as peregrine::resource::Resource<'h>>::ReadWrapper,)*
-            ) -> peregrine::Result<(#(<#all_writes as peregrine::resource::Resource<'h>>::Write,)*)> {
-                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as peregrine::resource::Resource<'h>>::Write;)*
-                #(let mut #read_writes = <#read_writes as peregrine::resource::Resource<'h>>::convert_for_writing(#read_writes);)*
+            fn #op_body_function(&self,
+                #(#read_onlys: <<#read_onlys as peregrine::resource::Resource>::Data as peregrine::resource::Data>::Sample,)*
+                #(mut #read_writes: <#read_writes as peregrine::resource::Resource>::Data,)*
+            ) -> peregrine::Result<(#(<#all_writes as peregrine::resource::Resource>::Data,)*)> {
+                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as peregrine::resource::Resource>::Data;)*
                 #body
-                Ok((#(<#all_writes as peregrine::resource::Resource>::unwrap_write(#all_writes),)*))
+                Ok((#(#all_writes,)*))
             }
         }
     }
@@ -65,6 +65,7 @@ impl Op {
             op_body_function,
             activity: activity_ident.clone(),
             write_onlys: writes.clone(),
+            read_onlys: reads.clone(),
             read_writes: read_writes.clone(),
             all_reads: reads.iter().chain(read_writes.iter()).cloned().collect(),
             all_writes: writes.iter().chain(read_writes.iter()).cloned().collect(),
@@ -98,6 +99,7 @@ struct Idents {
     continuations: Ident,
     downstreams: Ident,
     activity: Ident,
+    read_onlys: Vec<Ident>,
     write_onlys: Vec<Ident>,
     read_writes: Vec<Ident>,
     all_reads: Vec<Ident>,
@@ -115,6 +117,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         activity,
         all_reads,
         all_writes,
+        read_onlys,
         write_onlys,
         read_writes,
         ..
@@ -143,7 +146,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             grounding_result: Option<InternalResult<Duration>>,
 
             #(#all_reads: Option<&'o dyn Upstream<'o, #all_reads, M>>,)*
-            #(#all_read_responses: Option<InternalResult<(u64, <#all_reads as Resource<'o>>::SendWrapper)>>,)*
+            #(#all_read_responses: Option<InternalResult<(u64, <<#all_reads as Resource>::Data as Data<'o>>::Read)>>,)*
         }
 
         struct #op<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> {
@@ -156,9 +159,9 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         }
 
         #[derive(Copy, Clone)]
-        struct #output<'h> {
+        struct #output<'o> {
             hash: u64,
-            #(#all_writes: <#all_writes as Resource<'h>>::Read,)*
+            #(#all_writes: <<#all_writes as Resource>::Data as Data<'o>>::Read,)*
         }
 
         #[allow(non_camel_case_types)]
@@ -201,7 +204,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 for c in swapped_continuations.drain(start_index..) {
                     match c {
                         #(#continuations::#all_writes(c) => {
-                            scope.spawn(move |s| c.run(output.map(|r| (r.hash, <#all_writes as Resource>::wrap(r.#all_writes, time.unwrap()))), s, timelines, env.reset()));
+                            scope.spawn(move |s| c.run(output.map(|r| (r.hash, r.#all_writes)), s, timelines, env.reset()));
                         })*
                     }
                 }
@@ -209,7 +212,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 if env.stack_counter < STACK_LIMIT {
                     match swapped_continuations.remove(0) {
                         #(#continuations::#all_writes(c) => {
-                            c.run(output.map(|r| (r.hash, <#all_writes as Resource>::wrap(r.#all_writes, time.unwrap()))), scope, timelines, env.increment());
+                            c.run(output.map(|r| (r.hash, r.#all_writes)), scope, timelines, env.increment());
                         })*
                     }
                 }
@@ -260,37 +263,44 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     (*self.internals.get()).grounding_result.unwrap().unwrap()
                 };
 
-                let (#(#all_reads,)*) = (#(#all_reads::convert_for_reading(#all_reads, time),)*);
+                let time_as_epoch = peregrine::timeline::duration_to_epoch(time);
+
+                let (#(#read_writes,)*) = (#(<#read_writes as Resource>::Data::from_read(#read_writes, time_as_epoch),)*);
+                let (#(#read_onlys,)*) = (#(<#read_onlys as Resource>::Data::sample(&#all_reads, time_as_epoch),)*);
 
                 let hash = {
                     use std::hash::{Hasher, BuildHasher, Hash};
 
                     let mut state = PeregrineDefaultHashBuilder::default();
-                    std::any::TypeId::of::<#output>().hash(&mut state);
+                    <Self as NodeId>::ID.hash(&mut state);
 
                     self.activity.hash(&mut state);
 
                     #(
-                        hash_or!(state, #all_reads::sample(&#all_reads), #all_read_response_hashes);
+                        if #all_reads.is_hashable() {
+                            #all_reads.hash_unchecked(&mut state);
+                        } else {
+                            #all_read_response_hashes.hash(&mut state);
+                        }
                     )*
 
                     state.finish()
                 };
 
-                let result = if let Some(#first_write) = env.history.get::<#first_write>(hash) {
-                    #(let #all_but_one_write = env.history.get::<#all_but_one_write>(hash).expect("expected all write outputs from past run to be written to history");)*
+                let result = if let Some(#first_write) = env.history.get::<#first_write>(hash, time_as_epoch) {
+                    #(let #all_but_one_write = env.history.get::<#all_but_one_write>(hash, time_as_epoch).expect("expected all write outputs from past run to be written to history");)*
                     Ok(#output {
                         hash,
                         #(#all_writes),*
                     })
                 } else {
-                    self.activity.#op_body_function(#(#all_reads,)*)
+                    self.activity.#op_body_function(#(#read_onlys,)* #(#read_writes,)*)
                         .with_context(|| {
-                            format!("occurred in activity {} at {}", #activity::LABEL, time)
+                            format!("occurred in activity {} at {}", #activity::LABEL, time_as_epoch)
                         })
                         .map(|(#(#all_writes,)*)| #output {
                             hash,
-                            #(#all_writes: env.history.insert::<#all_writes>(hash, #all_writes),)*
+                            #(#all_writes: env.history.insert::<#all_writes>(hash, #all_writes, time_as_epoch),)*
                         })
                 };
 
@@ -315,6 +325,10 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     _ => unreachable!()
                 }
             }
+        }
+
+        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> NodeId for #op<'o, M, G> {
+            const ID: u64 = peregrine::reexports::peregrine_macros::random_u64!();
         }
 
         impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Node<'o, M> for #op<'o, M, G> {
@@ -373,7 +387,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Downstream<'o, #all_reads, M> for #op<'o, M, G> {
                 fn respond<'s>(
                     &'o self,
-                    value: InternalResult<(u64, <#all_reads as Resource<'o>>::SendWrapper)>,
+                    value: InternalResult<(u64, <<#all_reads as Resource>::Data as Data<'o>>::Read)>,
                     scope: &rayon::Scope<'s>,
                     timelines: &'s Timelines<'o, M>,
                     env: ExecEnvironment<'s, 'o>
@@ -474,7 +488,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                                 let time = unsafe {
                                     (*self.internals.get()).grounding_result.unwrap().unwrap()
                                 };
-                                (o.hash, <#all_writes as Resource>::wrap(o.#all_writes, time))
+                                (o.hash, o.#all_writes)
                             });
                             continuation.run(send, scope, timelines, env.increment());
                         }

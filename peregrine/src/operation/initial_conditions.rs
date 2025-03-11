@@ -5,8 +5,8 @@ use crate::operation::{
     Continuation, Downstream, MaybeMarkedDownstream, Node, OperationState, OperationStatus,
     Upstream,
 };
-use crate::resource::{ErasedResource, Resource};
-use crate::timeline::Timelines;
+use crate::resource::{Data, ErasedResource, Resource};
+use crate::timeline::{Timelines, duration_to_epoch};
 use anyhow::anyhow;
 use hifitime::Duration;
 use parking_lot::Mutex;
@@ -22,7 +22,7 @@ macro_rules! initial_conditions {
     };
 }
 
-pub struct InitialConditions(HashMap<u64, Box<dyn ErasedResource<'static>>>);
+pub struct InitialConditions(HashMap<u64, Box<dyn ErasedResource>>);
 
 impl Default for InitialConditions {
     fn default() -> Self {
@@ -34,39 +34,42 @@ impl InitialConditions {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
-    pub fn insert<R: Resource<'static> + 'static>(mut self, value: R::Write) -> Self {
-        let value: WriteValue<'static, R> = WriteValue(value);
+    pub fn insert<R: Resource>(mut self, value: R::Data) -> Self {
+        let value: WriteValue<R> = WriteValue(value);
         self.0.insert(value.id(), Box::new(value));
         self
     }
-    pub fn take<R: Resource<'static> + 'static>(&mut self) -> Option<R::Write> {
+    pub fn take<R: Resource>(&mut self) -> Option<R::Data> {
         unsafe {
             self.0
                 .remove(&R::ID)
-                .map(|v| v.downcast_owned::<WriteValue<'static, R>>().0)
+                .map(|v| v.downcast_owned::<WriteValue<R>>().0)
         }
     }
 }
 
-struct WriteValue<'h, R: Resource<'h>>(R::Write);
+struct WriteValue<R: Resource>(R::Data);
 
-impl<'h, R: Resource<'h>> ErasedResource<'h> for WriteValue<'h, R> {
+impl<R: Resource> ErasedResource for WriteValue<R> {
     fn id(&self) -> u64 {
         R::ID
     }
 }
 
-type InitialConditionState<'o, R, M> =
-    OperationState<(u64, <R as Resource<'o>>::Read), (), MaybeMarkedDownstream<'o, R, M>>;
+type InitialConditionState<'o, R, M> = OperationState<
+    (u64, <<R as Resource>::Data as Data<'o>>::Read),
+    (),
+    MaybeMarkedDownstream<'o, R, M>,
+>;
 
-pub struct InitialConditionOp<'o, R: Resource<'o>, M: Model<'o>> {
-    value: R::Write,
+pub struct InitialConditionOp<'o, R: Resource, M: Model<'o>> {
+    value: R::Data,
     state: Mutex<InitialConditionState<'o, R, M>>,
     time: Duration,
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> InitialConditionOp<'o, R, M> {
-    pub fn new(time: Duration, value: R::Write) -> Self {
+impl<'o, R: Resource, M: Model<'o>> InitialConditionOp<'o, R, M> {
+    pub fn new(time: Duration, value: R::Data) -> Self {
         Self {
             value,
             state: Default::default(),
@@ -75,7 +78,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> InitialConditionOp<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for InitialConditionOp<'o, R, M> {
+impl<'o, R: Resource, M: Model<'o>> Node<'o, M> for InitialConditionOp<'o, R, M> {
     fn insert_self(&'o self, _timelines: &mut Timelines<'o, M>) -> anyhow::Result<()> {
         unreachable!()
     }
@@ -85,7 +88,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for InitialConditionOp<'o, R
     }
 }
 
-impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialConditionOp<'o, R, M> {
+impl<'o, R: Resource + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialConditionOp<'o, R, M> {
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,
@@ -104,11 +107,7 @@ impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialCondi
                 let mut hasher = PeregrineDefaultHashBuilder::default();
                 hasher.write(&bytes);
                 let hash = hasher.finish();
-                let output = if let Some(r) = env.history.get::<R>(hash) {
-                    (hash, r)
-                } else {
-                    (hash, env.history.insert::<R>(hash, self.value.clone()))
-                };
+                let output = (hash, self.value.to_read(duration_to_epoch(self.time)));
                 state.status = OperationStatus::Done(Ok(output));
                 output
             }
@@ -124,12 +123,7 @@ impl<'o, R: Resource<'o> + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialCondi
 
         drop(state);
 
-        continuation.run(
-            Ok((result.0, R::wrap(result.1, self.time))),
-            scope,
-            timelines,
-            env.increment(),
-        );
+        continuation.run(Ok(result), scope, timelines, env.increment());
     }
 
     fn notify_downstreams(&self, time_of_change: Duration) {

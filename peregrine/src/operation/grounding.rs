@@ -1,7 +1,7 @@
 use crate as peregrine;
 use crate::exec::ExecEnvironment;
 use crate::operation::{
-    Continuation, Downstream, InternalResult, Marked, MarkedValue, MaybeMarkedDownstream, Node,
+    Continuation, Downstream, InternalResult, Marked, MaybeMarkedDownstream, Node,
     ObservedErrorOutput, Upstream, UpstreamVec,
 };
 use crate::resource::Resource;
@@ -13,7 +13,7 @@ use rayon::Scope;
 use smallvec::SmallVec;
 use std::fmt::Debug;
 
-pub trait UngroundedUpstream<'o, R: Resource<'o>, M: Model<'o> + 'o>:
+pub trait UngroundedUpstream<'o, R: Resource, M: Model<'o> + 'o>:
     AsRef<dyn Upstream<'o, R, M> + 'o> + Upstream<'o, R, M> + Upstream<'o, peregrine_grounding, M>
 {
 }
@@ -21,12 +21,12 @@ pub trait UngroundedUpstream<'o, R: Resource<'o>, M: Model<'o> + 'o>:
 resource!(pub peregrine_grounding: Duration);
 
 pub trait Grounder<'o, M: Model<'o> + 'o>: Upstream<'o, peregrine_grounding, M> {
-    fn insert_me<R: Resource<'o>>(
+    fn insert_me<R: Resource>(
         &self,
         me: &'o dyn Upstream<'o, R, M>,
         timelines: &mut Timelines<'o, M>,
     ) -> UpstreamVec<'o, R, M>;
-    fn remove_me<R: Resource<'o>>(&self, timelines: &mut Timelines<'o, M>) -> bool;
+    fn remove_me<R: Resource>(&self, timelines: &mut Timelines<'o, M>) -> bool;
 
     fn min(&self) -> Duration;
     fn get_static(&self) -> Option<Duration>;
@@ -59,7 +59,7 @@ impl<'o, M: Model<'o> + 'o> Upstream<'o, peregrine_grounding, M> for Duration {
 }
 
 impl<'o, M: Model<'o> + 'o> Grounder<'o, M> for Duration {
-    fn insert_me<R: Resource<'o>>(
+    fn insert_me<R: Resource>(
         &self,
         me: &'o dyn Upstream<'o, R, M>,
         timelines: &mut Timelines<'o, M>,
@@ -67,7 +67,7 @@ impl<'o, M: Model<'o> + 'o> Grounder<'o, M> for Duration {
         timelines.insert_grounded::<R>(*self, me)
     }
 
-    fn remove_me<R: Resource<'o>>(&self, timelines: &mut Timelines<'o, M>) -> bool {
+    fn remove_me<R: Resource>(&self, timelines: &mut Timelines<'o, M>) -> bool {
         timelines.remove_grounded::<R>(*self)
     }
 
@@ -80,11 +80,11 @@ impl<'o, M: Model<'o> + 'o> Grounder<'o, M> for Duration {
     }
 }
 
-pub struct UngroundedUpstreamResolver<'o, R: Resource<'o>, M: Model<'o>> {
+pub struct UngroundedUpstreamResolver<'o, R: Resource, M: Model<'o>> {
     time: Duration,
     grounded_upstream: Option<(Duration, &'o dyn Upstream<'o, R, M>)>,
     ungrounded_upstreams: SmallVec<&'o dyn UngroundedUpstream<'o, R, M>, 1>,
-    grounding_responses: Mutex<SmallVec<InternalResult<MarkedValue<Duration>>, 1>>,
+    grounding_responses: Mutex<SmallVec<InternalResult<(usize, Duration)>, 1>>,
     continuation: Mutex<Option<Continuation<'o, R, M>>>,
     downstream: Mutex<Option<MaybeMarkedDownstream<'o, R, M>>>,
 
@@ -92,7 +92,7 @@ pub struct UngroundedUpstreamResolver<'o, R: Resource<'o>, M: Model<'o>> {
     cached_decision: Mutex<Option<InternalResult<(Duration, &'o dyn Upstream<'o, R, M>)>>>,
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> UngroundedUpstreamResolver<'o, R, M> {
+impl<'o, R: Resource, M: Model<'o>> UngroundedUpstreamResolver<'o, R, M> {
     pub(crate) fn new(
         time: Duration,
         grounded: Option<(Duration, &'o dyn Upstream<'o, R, M>)>,
@@ -110,7 +110,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> UngroundedUpstreamResolver<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for UngroundedUpstreamResolver<'o, R, M> {
+impl<'o, R: Resource, M: Model<'o>> Node<'o, M> for UngroundedUpstreamResolver<'o, R, M> {
     fn insert_self(&'o self, _timelines: &mut Timelines<'o, M>) -> anyhow::Result<()> {
         unreachable!()
     }
@@ -120,9 +120,7 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Node<'o, M> for UngroundedUpstreamResolv
     }
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
-    for UngroundedUpstreamResolver<'o, R, M>
-{
+impl<'o, R: Resource, M: Model<'o>> Upstream<'o, R, M> for UngroundedUpstreamResolver<'o, R, M> {
     fn request<'s>(
         &'o self,
         continuation: Continuation<'o, R, M>,
@@ -191,12 +189,12 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Upstream<'o, R, M>
     }
 }
 
-impl<'o, R: Resource<'o>, M: Model<'o>> Downstream<'o, Marked<'o, peregrine_grounding>, M>
+impl<'o, R: Resource, M: Model<'o>> Downstream<'o, Marked<peregrine_grounding>, M>
     for UngroundedUpstreamResolver<'o, R, M>
 {
     fn respond<'s>(
-        &'o self,
-        value: InternalResult<(u64, MarkedValue<Duration>)>,
+        &self,
+        value: InternalResult<(u64, (usize, Duration))>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o, M>,
         env: ExecEnvironment<'s, 'o>,
@@ -220,25 +218,20 @@ impl<'o, R: Resource<'o>, M: Model<'o>> Downstream<'o, Marked<'o, peregrine_grou
                 Ok(vec) => {
                     let earliest_ungrounded = vec
                         .iter()
-                        .filter(|gr| gr.value < self.time)
-                        .max_by_key(|gr| gr.value);
+                        .filter(|gr| gr.1 < self.time)
+                        .max_by_key(|gr| gr.1);
 
                     match (earliest_ungrounded, self.grounded_upstream) {
                         (Some(ug), Some(gr)) => {
-                            if gr.0 > ug.value {
+                            if gr.0 > ug.1 {
                                 *decision = Some(Ok(gr));
                             } else {
-                                *decision = Some(Ok((
-                                    ug.value,
-                                    self.ungrounded_upstreams[ug.marker].as_ref(),
-                                )));
+                                *decision =
+                                    Some(Ok((ug.1, self.ungrounded_upstreams[ug.0].as_ref())));
                             }
                         }
                         (Some(ug), None) => {
-                            *decision = Some(Ok((
-                                ug.value,
-                                self.ungrounded_upstreams[ug.marker].as_ref(),
-                            )))
+                            *decision = Some(Ok((ug.1, self.ungrounded_upstreams[ug.0].as_ref())))
                         }
                         (None, Some(gr)) => *decision = Some(Ok(gr)),
                         _ => unreachable!(),
