@@ -8,7 +8,12 @@ use peregrine::{Session, Time, initial_conditions, model, resource};
 mod activities;
 
 model! {
-    pub PotatoSat(battery, mode, line, int_pieces)
+    pub PotatoSat {
+        battery,
+        mode,
+        line,
+        int_pieces
+    }
 }
 
 resource!(battery: f32);

@@ -7,9 +7,20 @@ impl ToTokens for Model {
         let Model {
             visibility,
             name,
-            resources,
+            imported_resources,
+            new_resources,
             sub_models,
         } = self;
+
+        let new_resource_visibilities = new_resources.iter().map(|r| r.0.clone());
+        let new_resource_names = new_resources.iter().map(|r| r.1.clone());
+        let new_resource_types = new_resources.iter().map(|r| r.2.clone());
+
+        let resources = imported_resources
+            .clone()
+            .into_iter()
+            .chain(new_resource_names.clone().map(|id| id.into()))
+            .collect::<Vec<_>>();
 
         let mod_name = format_ident!("peregrine_model_mod_{name}");
 
@@ -44,6 +55,10 @@ impl ToTokens for Model {
                         #(#sub_models::init_timelines::<M>(time, initial_conditions, timelines);)*
                     }
                 }
+            }
+
+            peregrine::resource! {
+                #(#new_resource_visibilities #new_resource_names: #new_resource_types,)*
             }
         };
 

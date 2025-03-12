@@ -5,9 +5,6 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
-resource!(pub a: u32);
-resource!(pub b: u32);
-
 #[derive(Hash)]
 pub struct IncrementA;
 impl_activity! { for IncrementA
@@ -77,11 +74,15 @@ impl EvalCounter {
 }
 
 model! {
-    pub B(b)
+    pub B {
+        pub b: u32
+    }
 }
 model! {
     use B;
-    pub AB(a)
+    pub AB {
+        pub a: u32
+    }
 }
 
 pub fn init_plan(session: &Session) -> Plan<AB> {

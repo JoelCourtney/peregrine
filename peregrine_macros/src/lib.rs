@@ -2,7 +2,6 @@ use syn::parse_macro_input;
 
 use crate::activity::{Activity, process_activity};
 use crate::model::Model;
-use crate::resource::Resource;
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use rand::Rng;
@@ -10,7 +9,6 @@ use rand::Rng;
 mod activity;
 mod model;
 mod operation;
-mod resource;
 
 #[proc_macro]
 pub fn model(input: TokenStream) -> TokenStream {
@@ -22,12 +20,6 @@ pub fn model(input: TokenStream) -> TokenStream {
 pub fn impl_activity(input: TokenStream) -> TokenStream {
     let activity = parse_macro_input!(input as Activity);
     process_activity(activity).into()
-}
-
-#[proc_macro]
-pub fn resource(input: TokenStream) -> TokenStream {
-    let resource = parse_macro_input!(input as Resource);
-    resource.into_token_stream().into()
 }
 
 #[proc_macro]

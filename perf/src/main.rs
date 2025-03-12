@@ -1,13 +1,13 @@
 use peregrine::reexports::hifitime::{TimeScale, TimeUnits};
-use peregrine::{Duration, Session, Time, impl_activity, initial_conditions, model, resource};
+use peregrine::{Duration, Session, Time, impl_activity, initial_conditions, model};
 
 model! {
-    pub Perf(a, b, c)
+    pub Perf {
+        a: u32,
+        b: String,
+        c: u32
+    }
 }
-
-resource!(a: u32);
-resource!(b: String);
-resource!(c: u32);
 
 #[derive(Hash)]
 struct IncrementA;

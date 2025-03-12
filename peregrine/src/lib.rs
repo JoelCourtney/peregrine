@@ -132,7 +132,7 @@
 //! # resource!(sol_counter: u32);
 //! # resource!(downlink_buffer: Vec<String>);
 //! model! {
-//!     DemoModel(sol_counter, downlink_buffer)
+//!     DemoModel { sol_counter, downlink_buffer }
 //! }
 //! ```
 //!
@@ -227,7 +227,6 @@ use operation::Continuation;
 use parking_lot::RwLock;
 use resource::Resource;
 
-pub use peregrine_macros::resource;
 use std::collections::HashMap;
 use std::ops::RangeBounds;
 
@@ -241,10 +240,10 @@ use std::ops::RangeBounds;
 /// # resource!(res_a: u32);
 /// # resource!(res_b: u32);
 /// model! {
-///     MyModel (
+///     MyModel {
 ///         res_a,
 ///         res_b
-///     )
+///     }
 /// }
 /// ```
 ///
