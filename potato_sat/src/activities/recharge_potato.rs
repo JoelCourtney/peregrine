@@ -2,6 +2,7 @@ use crate::int_pieces;
 use peregrine::impl_activity;
 use peregrine::pieces;
 use peregrine::reexports::hifitime::TimeUnits;
+use peregrine::resource::builtins::{elapsed_time, now};
 use peregrine::resource::polynomial::Linear;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,8 @@ pub struct RechargePotato {
 impl_activity! { for RechargePotato
     let duration = 100.seconds();
     @(start) {
+        println!("The current time is: {}", ref:now);
+        println!("The elapsed time is: {}", ref:elapsed_time);
         mut: int_pieces = pieces!(
             Linear::constant(0.0),
             @(5.seconds()) Linear::new(1.seconds(), 0.0, 1.0),

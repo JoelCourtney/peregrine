@@ -1,3 +1,4 @@
+pub mod builtins;
 pub mod impls;
 pub mod piecewise;
 pub mod polynomial;

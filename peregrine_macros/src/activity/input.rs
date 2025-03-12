@@ -58,7 +58,6 @@ impl Parse for Invocation {
 
         let start_body;
         parenthesized!(start_body in input);
-
         let start_expr = start_body.parse()?;
         assert!(start_body.is_empty());
 

@@ -268,11 +268,11 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     (#((*internals).#all_read_responses.unwrap()?,)*)
                 };
 
-                let time = unsafe {
-                    (*self.internals.get()).grounding_result.unwrap().unwrap()
-                };
-
-                let time_as_epoch = peregrine::timeline::duration_to_epoch(time);
+                let time_as_epoch = peregrine::timeline::duration_to_epoch(
+                    unsafe {
+                        (*self.internals.get()).grounding_result.unwrap().unwrap()
+                    }
+                );
 
                 let (#(#read_writes,)*) = (#(<#read_writes as Resource>::Data::from_read(#read_writes, time_as_epoch),)*);
                 let (#(#read_onlys,)*) = (#(<#read_onlys as Resource>::Data::sample(&#all_reads, time_as_epoch),)*);

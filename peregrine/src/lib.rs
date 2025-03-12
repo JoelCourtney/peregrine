@@ -255,6 +255,7 @@ use std::ops::RangeBounds;
 pub use peregrine_macros::model;
 
 use crate::macro_prelude::Data;
+use crate::resource::builtins::init_builtins_timelines;
 /// Implements the [Activity] trait for a type.
 ///
 /// Expects a block of statements preceded by `for MyActivity`. The inside of the block is a function
@@ -353,12 +354,10 @@ pub struct Plan<'o, M: Model<'o>> {
 impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
     /// Create a new empty plan from initial conditions and a session.
     fn new(session: &'o Session, time: Time, mut initial_conditions: InitialConditions) -> Self {
+        let time = epoch_to_duration(time);
         let mut timelines = Timelines::new(&session.herd);
-        M::init_timelines::<M>(
-            epoch_to_duration(time),
-            &mut initial_conditions,
-            &mut timelines,
-        );
+        init_builtins_timelines(time, &mut timelines);
+        M::init_timelines::<M>(time, &mut initial_conditions, &mut timelines);
         Plan {
             activities: HashMap::new(),
             timelines,
