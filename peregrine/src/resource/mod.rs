@@ -2,6 +2,7 @@ pub mod builtins;
 pub mod impls;
 pub mod piecewise;
 pub mod polynomial;
+pub mod timer;
 
 use crate::Time;
 use serde::Serialize;
@@ -54,7 +55,7 @@ macro_rules! resource {
             }
 
             impl $crate::resource::Resource for $name {
-                const LABEL: &'static str = $crate::reexports::peregrine_macros::code_to_str!(#name);
+                const LABEL: &'static str = $crate::reexports::peregrine_macros::code_to_str!($name);
                 const ID: u64 = $crate::reexports::peregrine_macros::random_u64!();
                 type Data = $ty;
             }

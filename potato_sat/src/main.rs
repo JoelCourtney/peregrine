@@ -1,5 +1,6 @@
 use crate::activities::recharge_potato::RechargePotato;
 use peregrine::macro_prelude::hifitime::{TimeScale, TimeUnits};
+use peregrine::macro_prelude::timer::Stopwatch;
 use peregrine::resource::piecewise::Piecewise;
 use peregrine::resource::polynomial::{Linear, Quadratic};
 use peregrine::*;
@@ -13,6 +14,8 @@ model! {
         mode,
         line,
         int_pieces
+
+        pub timer: Stopwatch
     }
 }
 
@@ -35,7 +38,8 @@ fn main() -> Result<()> {
                 higher_coefficients: [0.0; 2],
                 basis: 1.seconds(),
             },
-            int_pieces: pieces!(Linear::constant(-1.0))
+            int_pieces: pieces!(Linear::constant(-1.0)),
+            timer: Stopwatch::new()
         },
     );
 

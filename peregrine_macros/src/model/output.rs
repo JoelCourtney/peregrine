@@ -1,6 +1,6 @@
 use crate::model::Model;
 use proc_macro2::TokenStream;
-use quote::{ToTokens, TokenStreamExt, format_ident, quote};
+use quote::{ToTokens, TokenStreamExt, quote};
 
 impl ToTokens for Model {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -22,38 +22,32 @@ impl ToTokens for Model {
             .chain(new_resource_names.clone().map(|id| id.into()))
             .collect::<Vec<_>>();
 
-        let mod_name = format_ident!("peregrine_model_mod_{name}");
-
         let result = quote! {
             #visibility enum #name {}
 
-            #visibility mod #mod_name {
-                use super::*;
-                use peregrine::macro_prelude::*;
-                impl<'o> Model<'o> for #name {
-                    fn init_history(history: &mut History) {
-                        #(history.init::<#resources>();)*
-                    }
-                    fn init_timelines<M: Model<'o>>(
-                        time: Duration,
-                        initial_conditions: &mut InitialConditions,
-                        timelines: &mut Timelines<'o, M>
-                    ) {
-                        #(
-                            if !timelines.contains_resource::<#resources>() {
-                                timelines.init_for_resource::<#resources>(
+            impl<'o> peregrine::Model<'o> for #name {
+                fn init_history(history: &mut peregrine::macro_prelude::History) {
+                    #(history.init::<#resources>();)*
+                }
+                fn init_timelines<M: peregrine::macro_prelude::Model<'o>>(
+                    time: peregrine::macro_prelude::Duration,
+                    initial_conditions: &mut peregrine::macro_prelude::InitialConditions,
+                    timelines: &mut peregrine::macro_prelude::Timelines<'o, M>
+                ) {
+                    #(
+                        if !timelines.contains_resource::<#resources>() {
+                            timelines.init_for_resource::<#resources>(
+                                time,
+                                peregrine::macro_prelude::InitialConditionOp::new(
                                     time,
-                                    InitialConditionOp::new(
-                                        time,
-                                        initial_conditions.take::<#resources>()
-                                            .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as Resource>::LABEL))
-                                    )
-                                );
-                            }
-                        )*
+                                    initial_conditions.take::<#resources>()
+                                        .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as peregrine::macro_prelude::Resource>::LABEL))
+                                )
+                            );
+                        }
+                    )*
 
-                        #(#sub_models::init_timelines::<M>(time, initial_conditions, timelines);)*
-                    }
+                    #(#sub_models::init_timelines::<M>(time, initial_conditions, timelines);)*
                 }
             }
 

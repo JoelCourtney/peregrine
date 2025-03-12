@@ -76,7 +76,7 @@ impl Data<'_> for PeregrineElapsedTimeTracker {
     }
 
     fn from_read(_read: Self::Read, _now: Time) -> Self {
-        PeregrineElapsedTimeTracker
+        panic!("You cannot write to the `elapsed_time` builtin. Use a Stopwatch.")
     }
 
     fn sample(written: &Self::Read, now: Time) -> Self::Sample {

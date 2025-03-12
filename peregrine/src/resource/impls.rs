@@ -232,3 +232,18 @@ impl_partial_hash_for_hash![
     &'_ str,
     String
 ];
+
+impl<T: MaybeHash> MaybeHash for Option<T> {
+    fn is_hashable(&self) -> bool {
+        self.as_ref().map(|t| t.is_hashable()).unwrap_or(true)
+    }
+
+    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
+        if let Some(t) = self {
+            true.hash(state);
+            t.hash_unchecked(state);
+        } else {
+            false.hash(state);
+        }
+    }
+}

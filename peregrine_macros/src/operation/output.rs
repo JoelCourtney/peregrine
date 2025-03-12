@@ -81,7 +81,7 @@ impl ToTokens for Op {
 
         let result = quote! {
             {
-                use peregrine::macro_prelude::*;
+                use peregrine::macro_prelude;
                 #definition
                 #instantiation
             }
@@ -146,50 +146,53 @@ fn generate_operation(idents: &Idents) -> TokenStream {
     let (internals_generics_decl, internals_generics_usage) = if all_reads.is_empty() {
         (quote! {}, quote! {})
     } else {
-        (quote! { <'o, M: Model<'o>> }, quote! { <'o, M> })
+        (
+            quote! { <'o, M: macro_prelude::Model<'o>> },
+            quote! { <'o, M> },
+        )
     };
 
     quote! {
         struct #op_internals #internals_generics_decl {
-            grounding_result: Option<InternalResult<Duration>>,
+            grounding_result: Option<macro_prelude::InternalResult<macro_prelude::Duration>>,
 
-            #(#all_reads: Option<&'o dyn Upstream<'o, #all_reads, M>>,)*
-            #(#all_read_responses: Option<InternalResult<(u64, <<#all_reads as Resource>::Data as Data<'o>>::Read)>>,)*
+            #(#all_reads: Option<&'o dyn macro_prelude::Upstream<'o, #all_reads, M>>,)*
+            #(#all_read_responses: Option<macro_prelude::InternalResult<(u64, <<#all_reads as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read)>>,)*
         }
 
-        struct #op<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> {
+        struct #op<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> {
             grounder: G,
 
-            state: parking_lot::Mutex<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>,
+            state: macro_prelude::parking_lot::Mutex<macro_prelude::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>,
 
             activity: &'o #activity,
-            internals: UnsafeSyncCell<#op_internals #internals_generics_usage>
+            internals: macro_prelude::UnsafeSyncCell<#op_internals #internals_generics_usage>
         }
 
         #[derive(Copy, Clone)]
         struct #output<'o> {
             hash: u64,
-            #(#all_writes: <<#all_writes as Resource>::Data as Data<'o>>::Read,)*
+            #(#all_writes: <<#all_writes as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read,)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #continuations<'o, M: Model<'o>> {
-            #(#all_writes(Continuation<'o, #all_writes, M>),)*
+        enum #continuations<'o, M: macro_prelude::Model<'o>> {
+            #(#all_writes(macro_prelude::Continuation<'o, #all_writes, M>),)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #downstreams<'o, M: Model<'o>> {
-            #(#all_writes(MaybeMarkedDownstream<'o, #all_writes, M>),)*
+        enum #downstreams<'o, M: macro_prelude::Model<'o>> {
+            #(#all_writes(macro_prelude::MaybeMarkedDownstream<'o, #all_writes, M>),)*
         }
 
         #[allow(clippy::unused_unit)]
-        impl<'s, 'o: 's, M: Model<'o> + 'o, G: Grounder<'o, M>> #op<'o, M, G> {
+        impl<'s, 'o: 's, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> #op<'o, M, G> {
             fn new(grounder: G, activity: &'o #activity) -> Self {
                 #op {
                     state: Default::default(),
 
                     activity,
-                    internals: UnsafeSyncCell::new(#op_internals {
+                    internals: macro_prelude::UnsafeSyncCell::new(#op_internals {
                         grounding_result: grounder.get_static().map(Ok),
 
                         #(#all_reads: None,)*
@@ -198,13 +201,13 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     grounder,
                 }
             }
-            fn run_continuations(&self, mut state: parking_lot::MutexGuard<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o, M>, env: ExecEnvironment<'s, 'o>) {
-                let mut swapped_continuations = smallvec::SmallVec::new();
+            fn run_continuations(&self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o, M>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
+                let mut swapped_continuations = macro_prelude::smallvec::SmallVec::new();
                 std::mem::swap(&mut state.continuations, &mut swapped_continuations);
                 let output = state.status.unwrap_done();
                 drop(state);
 
-                let start_index = if env.stack_counter < STACK_LIMIT { 1 } else { 0 };
+                let start_index = if env.stack_counter < macro_prelude::STACK_LIMIT { 1 } else { 0 };
 
                 let time = unsafe {
                     (*self.internals.get()).grounding_result.unwrap()
@@ -218,7 +221,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     }
                 }
 
-                if env.stack_counter < STACK_LIMIT {
+                if env.stack_counter < macro_prelude::STACK_LIMIT {
                     match swapped_continuations.remove(0) {
                         #(#continuations::#all_writes(c) => {
                             c.run(output.map(|r| (r.hash, r.#all_writes)), scope, timelines, env.increment());
@@ -227,7 +230,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 }
             }
 
-            fn send_requests(&'o self, mut state: parking_lot::MutexGuard<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, time: Duration, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o, M>, env: ExecEnvironment<'s, 'o>) {
+            fn send_requests(&'o self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>, time: macro_prelude::Duration, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o, M>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
                 let internals = self.internals.get();
                 let (#(#all_read_responses,)*) = unsafe {
                     (#((*internals).#all_read_responses,)*)
@@ -251,8 +254,8 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                         let #all_reads = unsafe {
                             (*internals).#all_reads
                         };
-                        let continuation = Continuation::Node(self);
-                        if num_requests == 0 && env.stack_counter < STACK_LIMIT {
+                        let continuation = macro_prelude::Continuation::Node(self);
+                        if num_requests == 0 && env.stack_counter < macro_prelude::STACK_LIMIT {
                             #all_reads.unwrap().request(continuation, already_registered, scope, timelines, env.increment());
                         } else {
                             scope.spawn(move |s| #all_reads.unwrap().request(continuation, already_registered, s, timelines, env.reset()));
@@ -261,7 +264,9 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 )*
             }
 
-            fn run(&'o self, env: ExecEnvironment<'s, 'o>) -> InternalResult<#output<'o>> {
+            fn run(&'o self, env: macro_prelude::ExecEnvironment<'s, 'o>) -> macro_prelude::InternalResult<#output<'o>> {
+                use macro_prelude::{Data, Context, StaticActivity, MaybeHash};
+
                 let internals = self.internals.get();
 
                 let (#((#all_read_response_hashes, #all_reads),)*) = unsafe {
@@ -274,14 +279,14 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     }
                 );
 
-                let (#(#read_writes,)*) = (#(<#read_writes as Resource>::Data::from_read(#read_writes, time_as_epoch),)*);
-                let (#(#read_onlys,)*) = (#(<#read_onlys as Resource>::Data::sample(&#all_reads, time_as_epoch),)*);
+                let (#(#read_writes,)*) = (#(<#read_writes as macro_prelude::Resource>::Data::from_read(#read_writes, time_as_epoch),)*);
+                let (#(#read_onlys,)*) = (#(<#read_onlys as macro_prelude::Resource>::Data::sample(&#all_reads, time_as_epoch),)*);
 
                 let hash = {
                     use std::hash::{Hasher, BuildHasher, Hash};
 
-                    let mut state = PeregrineDefaultHashBuilder::default();
-                    <Self as NodeId>::ID.hash(&mut state);
+                    let mut state = macro_prelude::PeregrineDefaultHashBuilder::default();
+                    <Self as macro_prelude::NodeId>::ID.hash(&mut state);
 
                     self.activity.hash(&mut state);
 
@@ -315,16 +320,16 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
                 result.map_err(|e| {
                     env.errors.push(e);
-                    ObservedErrorOutput
+                    macro_prelude::ObservedErrorOutput
                 })
             }
 
             fn clear_cached_downstreams(&self) {
                 let mut state = self.state.lock();
                 match state.status {
-                    OperationStatus::Dormant => {},
-                    OperationStatus::Done(_) => {
-                        state.status = OperationStatus::Dormant;
+                    macro_prelude::OperationStatus::Dormant => {},
+                    macro_prelude::OperationStatus::Done(_) => {
+                        state.status = macro_prelude::OperationStatus::Dormant;
                         for downstream in &state.downstreams {
                             match downstream {
                                 #(#downstreams::#all_writes(d) => d.clear_cache(),)*
@@ -336,12 +341,12 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             }
         }
 
-        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> NodeId for #op<'o, M, G> {
+        impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> macro_prelude::NodeId for #op<'o, M, G> {
             const ID: u64 = peregrine::reexports::peregrine_macros::random_u64!();
         }
 
-        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Node<'o, M> for #op<'o, M, G> {
-            fn insert_self(&'o self, timelines: &mut Timelines<'o, M>) -> Result<()> {
+        impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> macro_prelude::Node<'o, M> for #op<'o, M, G> {
+            fn insert_self(&'o self, timelines: &mut macro_prelude::Timelines<'o, M>) -> macro_prelude::Result<()> {
                 let notify_time = self.grounder.min();
                 #(
                     let previous = self.grounder.insert_me::<#write_onlys>(self, timelines);
@@ -370,11 +375,11 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 )*
                 Ok(())
             }
-            fn remove_self(&self, timelines: &mut Timelines<'o, M>) -> Result<()> {
+            fn remove_self(&self, timelines: &mut macro_prelude::Timelines<'o, M>) -> macro_prelude::Result<()> {
                 #(
                     let removed = self.grounder.remove_me::<#all_writes>(timelines);
                     if !removed {
-                        bail!("Removal failed; could not find self at the expected time.")
+                        macro_prelude::bail!("Removal failed; could not find self at the expected time.")
                     }
                 )*
 
@@ -393,13 +398,13 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         }
 
         #(
-            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Downstream<'o, #all_reads, M> for #op<'o, M, G> {
+            impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> macro_prelude::Downstream<'o, #all_reads, M> for #op<'o, M, G> {
                 fn respond<'s>(
                     &'o self,
-                    value: InternalResult<(u64, <<#all_reads as Resource>::Data as Data<'o>>::Read)>,
-                    scope: &rayon::Scope<'s>,
-                    timelines: &'s Timelines<'o, M>,
-                    env: ExecEnvironment<'s, 'o>
+                    value: macro_prelude::InternalResult<(u64, <<#all_reads as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read)>,
+                    scope: &macro_prelude::rayon::Scope<'s>,
+                    timelines: &'s macro_prelude::Timelines<'o, M>,
+                    env: macro_prelude::ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
                     unsafe {
                         (*self.internals.get()).#all_read_responses = Some(value);
@@ -415,7 +420,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                         let result = self.run(env);
 
                         let mut state = self.state.lock();
-                        state.status = OperationStatus::Done(result);
+                        state.status = macro_prelude::OperationStatus::Done(result);
 
                         self.run_continuations(state, scope, timelines, env);
                     }
@@ -428,7 +433,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     self.clear_cached_downstreams();
                 }
 
-                fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
+                fn clear_upstream(&self, time_of_change: Option<macro_prelude::Duration>) -> bool {
                     let internals = self.internals.get();
                     let (clear, retain) = if let Some(time_of_change) = time_of_change {
                         unsafe {
@@ -447,7 +452,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                             (*internals).#all_reads = None;
                             (*internals).#all_read_responses = None;
                         }
-                        <Self as Downstream::<'o, #all_reads, M>>::clear_cache(self);
+                        <Self as macro_prelude::Downstream::<'o, #all_reads, M>>::clear_cache(self);
                     }
 
                     retain
@@ -456,14 +461,14 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         )*
 
         #(
-            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Upstream<'o, #all_writes, M> for #op<'o, M, G> {
+            impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> macro_prelude::Upstream<'o, #all_writes, M> for #op<'o, M, G> {
                 fn request<'s>(
                     &'o self,
-                    continuation: Continuation<'o, #all_writes, M>,
+                    continuation: macro_prelude::Continuation<'o, #all_writes, M>,
                     already_registered: bool,
-                    scope: &rayon::Scope<'s>,
-                    timelines: &'s Timelines<'o, M>,
-                    env: ExecEnvironment<'s, 'o>
+                    scope: &macro_prelude::rayon::Scope<'s>,
+                    timelines: &'s macro_prelude::Timelines<'o, M>,
+                    env: macro_prelude::ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
                     let mut state = self.state.lock();
                     if !already_registered {
@@ -473,9 +478,9 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     }
 
                     match state.status {
-                        OperationStatus::Dormant => {
+                        macro_prelude::OperationStatus::Dormant => {
                             state.continuations.push(#continuations::#all_writes(continuation));
-                            state.status = OperationStatus::Working;
+                            state.status = macro_prelude::OperationStatus::Working;
                             match self.grounder.get_static() {
                                 Some(t) => {
                                     if #num_reads == 0 {
@@ -483,7 +488,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                                         let result = self.run(env);
 
                                         let mut state = self.state.lock();
-                                        state.status = OperationStatus::Done(result);
+                                        state.status = macro_prelude::OperationStatus::Done(result);
 
                                         self.run_continuations(state, scope, timelines, env);
                                     } else {
@@ -495,15 +500,15 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                                         Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
                                         Some(Err(_)) => {
                                             let mut state = self.state.lock();
-                                            state.status = OperationStatus::Done(Err(ObservedErrorOutput));
+                                            state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
                                             self.run_continuations(state, scope, timelines, env);
                                         }
-                                        None => self.grounder.request(Continuation::Node(self), false, scope, timelines, env.increment())
+                                        None => self.grounder.request(macro_prelude::Continuation::Node(self), false, scope, timelines, env.increment())
                                     }
                                 }
                             }
                         }
-                        OperationStatus::Done(r) => {
+                        macro_prelude::OperationStatus::Done(r) => {
                             drop(state);
                             let send = r.map(|o| {
                                 let time = unsafe {
@@ -513,13 +518,13 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                             });
                             continuation.run(send, scope, timelines, env.increment());
                         }
-                        OperationStatus::Working => {
+                        macro_prelude::OperationStatus::Working => {
                             state.continuations.push(#continuations::#all_writes(continuation));
                         }
                     }
                 }
 
-                fn notify_downstreams(&self, time_of_change: Duration) {
+                fn notify_downstreams(&self, time_of_change: macro_prelude::Duration) {
                     let mut state = self.state.lock();
 
                     state.downstreams.retain(|downstream| {
@@ -530,40 +535,40 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     });
                 }
 
-                fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, #all_writes, M>) {
+                fn register_downstream_early(&self, downstream: &'o dyn macro_prelude::Downstream<'o, #all_writes, M>) {
                     self.state.lock().downstreams.push(#downstreams::#all_writes(downstream.into()));
                 }
             }
         )*
 
-        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Upstream<'o, peregrine_grounding, M> for #op<'o, M, G> {
+        impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> macro_prelude::Upstream<'o, macro_prelude::peregrine_grounding, M> for #op<'o, M, G> {
             fn request<'s>(
                 &'o self,
-                continuation: Continuation<'o, peregrine_grounding, M>,
+                continuation: macro_prelude::Continuation<'o, macro_prelude::peregrine_grounding, M>,
                 already_registered: bool,
-                scope: &rayon::Scope<'s>,
-                timelines: &'s Timelines<'o, M>,
-                env: ExecEnvironment<'s, 'o>
+                scope: &macro_prelude::rayon::Scope<'s>,
+                timelines: &'s macro_prelude::Timelines<'o, M>,
+                env: macro_prelude::ExecEnvironment<'s, 'o>
             ) where 'o: 's {
                 self.grounder.request(continuation, already_registered, scope, timelines, env);
             }
 
-            fn notify_downstreams(&self, _time_of_change: Duration) {
+            fn notify_downstreams(&self, _time_of_change: macro_prelude::Duration) {
                 unreachable!()
             }
 
-            fn register_downstream_early(&self, _downstream: &'o dyn Downstream<'o, peregrine_grounding, M>) {
+            fn register_downstream_early(&self, _downstream: &'o dyn macro_prelude::Downstream<'o, macro_prelude::peregrine_grounding, M>) {
                 unreachable!()
             }
         }
 
-        impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M>> Downstream<'o, peregrine_grounding, M> for #op<'o, M, G> {
+        impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> macro_prelude::Downstream<'o, macro_prelude::peregrine_grounding, M> for #op<'o, M, G> {
             fn respond<'s>(
                 &'o self,
-                value: InternalResult<(u64, Duration)>,
-                scope: &rayon::Scope<'s>,
-                timelines: &'s Timelines<'o, M>,
-                env: ExecEnvironment<'s, 'o>
+                value: macro_prelude::InternalResult<(u64, macro_prelude::Duration)>,
+                scope: &macro_prelude::rayon::Scope<'s>,
+                timelines: &'s macro_prelude::Timelines<'o, M>,
+                env: macro_prelude::ExecEnvironment<'s, 'o>
             ) where 'o: 's {
                 unsafe {
                     (*self.internals.get()).grounding_result = Some(value.map(|r| r.1));
@@ -572,26 +577,26 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 let mut state = self.state.lock();
 
                 match state.status {
-                    OperationStatus::Dormant => {},
-                    OperationStatus::Working => {
+                    macro_prelude::OperationStatus::Dormant => {},
+                    macro_prelude::OperationStatus::Working => {
                         if let Ok((_, t)) = value {
                             if #num_reads == 0 {
                                 drop(state);
                                 let result = self.run(env);
 
                                 let mut state = self.state.lock();
-                                state.status = OperationStatus::Done(result);
+                                state.status = macro_prelude::OperationStatus::Done(result);
 
                                 self.run_continuations(state, scope, timelines, env);
                             } else {
                                 self.send_requests(state, t, scope, timelines, env);
                             }
                         } else {
-                            state.status = OperationStatus::Done(Err(ObservedErrorOutput));
+                            state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
                             self.run_continuations(state, scope, timelines, env);
                         }
                     }
-                    OperationStatus::Done(_) => unreachable!()
+                    macro_prelude::OperationStatus::Done(_) => unreachable!()
                 }
             }
 
@@ -606,19 +611,19 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
                 self.clear_cached_downstreams();
             }
-            fn clear_upstream(&self, _time_of_change: Option<Duration>) -> bool {
+            fn clear_upstream(&self, _time_of_change: Option<macro_prelude::Duration>) -> bool {
                 unreachable!()
             }
         }
 
         #(
-            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M> + 'o> AsRef<dyn Upstream<'o, #all_writes, M> + 'o> for #op<'o, M, G> {
-                fn as_ref(&self) -> &(dyn Upstream<'o, #all_writes, M> + 'o) {
+            impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M> + 'o> AsRef<dyn macro_prelude::Upstream<'o, #all_writes, M> + 'o> for #op<'o, M, G> {
+                fn as_ref(&self) -> &(dyn macro_prelude::Upstream<'o, #all_writes, M> + 'o) {
                     self
                 }
             }
 
-            impl<'o, M: Model<'o> + 'o, G: Grounder<'o, M> + 'o> UngroundedUpstream<'o, #all_writes, M> for #op<'o, M, G> {}
+            impl<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M> + 'o> macro_prelude::UngroundedUpstream<'o, #all_writes, M> for #op<'o, M, G> {}
         )*
     }
 }
@@ -627,6 +632,6 @@ fn result(idents: &Idents) -> TokenStream {
     let Idents { op, .. } = idents;
 
     quote! {
-        |grounder, context, bump: &bumpalo_herd::Member<'o>| bump.alloc(#op::<'o, M, _>::new(grounder, context))
+        |grounder, context, bump: &macro_prelude::bumpalo_herd::Member<'o>| bump.alloc(#op::<'o, M, _>::new(grounder, context))
     }
 }
