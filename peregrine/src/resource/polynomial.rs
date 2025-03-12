@@ -9,6 +9,9 @@ use std::ops::{Add, Mul};
 
 pub type Linear<Y = f64> = Polynomial<1, Y>;
 pub type Quadratic<Y = f64> = Polynomial<2, Y>;
+pub type Cubic<Y = f64> = Polynomial<3, Y>;
+pub type Quartic<Y = f64> = Polynomial<4, Y>;
+pub type Quintic<Y = f64> = Polynomial<5, Y>;
 
 #[derive(Copy, Clone, Serialize, Deserialize, Debug)]
 pub struct Polynomial<const DEGREE: usize, Y> {
