@@ -1,4 +1,5 @@
-mod impls;
+pub mod impls;
+pub mod piecewise;
 pub mod polynomial;
 
 use crate::Time;

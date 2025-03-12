@@ -1,27 +1,22 @@
 use crate::activities::recharge_potato::RechargePotato;
 use peregrine::macro_prelude::hifitime::{TimeScale, TimeUnits};
-use peregrine::resource::polynomial::Quadratic;
+use peregrine::resource::piecewise::Piecewise;
+use peregrine::resource::polynomial::{Linear, Quadratic};
 use peregrine::*;
 use peregrine::{Session, Time, initial_conditions, model, resource};
 
 mod activities;
 
 model! {
-    pub PotatoSat(battery, mode, line)
+    pub PotatoSat(battery, mode, line, int_pieces)
 }
 
 resource!(battery: f32);
 resource!(mode: String);
 resource!(line: Quadratic);
-// resource!(pieces: PiecewiseConstant<i32>);
+resource!(int_pieces: Piecewise<Linear>);
 
 fn main() -> Result<()> {
-    // let thing = pieces!(
-    //     0;
-    //     @(5.seconds()) 1
-    //     @(10.seconds()) 0
-    // );
-
     let session = Session::new();
 
     let plan_start = Time::now()?.to_time_scale(TimeScale::TAI);
@@ -35,12 +30,13 @@ fn main() -> Result<()> {
                 higher_coefficients: [0.0; 2],
                 basis: 1.seconds(),
             },
+            int_pieces: pieces!(Linear::constant(-1.0))
         },
     );
 
     plan.insert(plan_start + 5.seconds(), RechargePotato { amount: 1 })?;
     for i in 1..110 {
-        let result = plan.sample::<line>(plan_start + i.seconds())?;
+        let result = plan.sample::<int_pieces>(plan_start + i.seconds())?;
         println!("{i} seconds: {result:?}")
     }
 

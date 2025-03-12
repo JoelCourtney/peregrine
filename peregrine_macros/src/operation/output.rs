@@ -141,8 +141,16 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         .map(|i| format_ident!("{i}_response"))
         .collect::<Vec<_>>();
 
+    let num_reads = all_reads.len();
+
+    let (internals_generics_decl, internals_generics_usage) = if all_reads.is_empty() {
+        (quote! {}, quote! {})
+    } else {
+        (quote! { <'o, M: Model<'o>> }, quote! { <'o, M> })
+    };
+
     quote! {
-        struct #op_internals<'o, M: Model<'o>> {
+        struct #op_internals #internals_generics_decl {
             grounding_result: Option<InternalResult<Duration>>,
 
             #(#all_reads: Option<&'o dyn Upstream<'o, #all_reads, M>>,)*
@@ -155,7 +163,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             state: parking_lot::Mutex<OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>,
 
             activity: &'o #activity,
-            internals: UnsafeSyncCell<#op_internals<'o, M>>
+            internals: UnsafeSyncCell<#op_internals #internals_generics_usage>
         }
 
         #[derive(Copy, Clone)]
@@ -174,6 +182,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             #(#all_writes(MaybeMarkedDownstream<'o, #all_writes, M>),)*
         }
 
+        #[allow(clippy::unused_unit)]
         impl<'s, 'o: 's, M: Model<'o> + 'o, G: Grounder<'o, M>> #op<'o, M, G> {
             fn new(grounder: G, activity: &'o #activity) -> Self {
                 #op {
@@ -223,8 +232,8 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 let (#(#all_read_responses,)*) = unsafe {
                     (#((*internals).#all_read_responses,)*)
                 };
-                let mut num_requests =
-                    #(#all_read_responses.is_none() as u8)+*;
+                let mut num_requests = 0
+                    #(+ #all_read_responses.is_none() as u8)*;
                 state.response_counter = num_requests;
                 drop(state);
                 #(
@@ -468,7 +477,19 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                             state.continuations.push(#continuations::#all_writes(continuation));
                             state.status = OperationStatus::Working;
                             match self.grounder.get_static() {
-                                Some(t) => self.send_requests(state, t, scope, timelines, env),
+                                Some(t) => {
+                                    if #num_reads == 0 {
+                                        drop(state);
+                                        let result = self.run(env);
+
+                                        let mut state = self.state.lock();
+                                        state.status = OperationStatus::Done(result);
+
+                                        self.run_continuations(state, scope, timelines, env);
+                                    } else {
+                                        self.send_requests(state, t, scope, timelines, env);
+                                    }
+                                }
                                 None => unsafe {
                                     match (*self.internals.get()).grounding_result {
                                         Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
@@ -550,11 +571,27 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
                 let mut state = self.state.lock();
 
-                if let Ok((_, t)) = value {
-                    self.send_requests(state, t, scope, timelines, env);
-                } else {
-                    state.status = OperationStatus::Done(Err(ObservedErrorOutput));
-                    self.run_continuations(state, scope, timelines, env);
+                match state.status {
+                    OperationStatus::Dormant => {},
+                    OperationStatus::Working => {
+                        if let Ok((_, t)) = value {
+                            if #num_reads == 0 {
+                                drop(state);
+                                let result = self.run(env);
+
+                                let mut state = self.state.lock();
+                                state.status = OperationStatus::Done(result);
+
+                                self.run_continuations(state, scope, timelines, env);
+                            } else {
+                                self.send_requests(state, t, scope, timelines, env);
+                            }
+                        } else {
+                            state.status = OperationStatus::Done(Err(ObservedErrorOutput));
+                            self.run_continuations(state, scope, timelines, env);
+                        }
+                    }
+                    OperationStatus::Done(_) => unreachable!()
                 }
             }
 

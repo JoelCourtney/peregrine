@@ -82,6 +82,41 @@ impl<const DEGREE: usize, Y: Default + Copy> Default for Polynomial<DEGREE, Y> {
     }
 }
 
+macro_rules! impl_constructors {
+    ($($n:literal => $($etc:ident)*;)*) => {
+        $(
+            impl<Y: Copy> Polynomial<$n, Y> {
+                pub fn new(basis: Duration, a: Y, $($etc: Y,)*) -> Self {
+                    Self {
+                        value: a,
+                        higher_coefficients: [$($etc,)*],
+                        basis
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_constructors![
+    0 => ;
+    1 => b;
+    2 => b c;
+    3 => b c d;
+    4 => b c d e;
+    5 => b c d e f;
+];
+
+impl<const DEGREE: usize, Y: Copy + Zero> Polynomial<DEGREE, Y> {
+    pub fn constant(a: Y) -> Self {
+        Self {
+            value: a,
+            higher_coefficients: [Y::zero(); DEGREE],
+            basis: 1.seconds(),
+        }
+    }
+}
+
 impl<const DEGREE: usize, Y: Copy> Polynomial<DEGREE, Y> {
     pub fn slope(&self) -> Y {
         self.higher_coefficients[0]
@@ -107,73 +142,3 @@ impl<const DEGREE: usize, Y: Copy> Polynomial<DEGREE, Y> {
         &mut self.higher_coefficients[2]
     }
 }
-
-// #[derive(Clone, Serialize, Deserialize, Debug)]
-// pub struct PiecewiseConstant<T> {
-//     default: Box<T>,
-//     pieces: SmallVec<(Duration, T), 2>
-// }
-//
-// pub struct PiecewiseConstantBorrow<'h, T> {
-//     default: &'h T,
-//     pieces: &'h [(Duration, T)],
-// }
-//
-// impl<'h, T: 'h + Clone> From<PiecewiseConstantBorrow<'h, T>> for PiecewiseConstant<T> {
-//     fn from(value: PiecewiseConstantBorrow<'h, T>) -> Self {
-//         Self {
-//             default: value.default.clone(),
-//             pieces: SmallVec::from(value.pieces),
-//         }
-//     }
-// }
-//
-// impl<T: 'static + Clone> CustomStorage for PiecewiseConstant<T> {
-//     type Read<'h> = PiecewiseConstantBorrow<'h, T> where Self: 'h;
-//
-//     unsafe fn to_read(&self) -> Self::Read<'_> {
-//         PiecewiseConstantBorrow {
-//             default: &*self.default,
-//             pieces: &self.pieces[..],
-//         }
-//     }
-// }
-//
-// impl<'h, T: Copy> Dynamic for PiecewiseConstantBorrow<'h, T> {
-//     type Sample = &'h T;
-//
-//     unsafe fn sample(&self, written: Time, now: Time) -> Self::Sample {
-//         let elapsed = now - written;
-//         let mut index = 0;
-//         while index < self.pieces.len() && self.pieces[index].0 <= elapsed {
-//             index += 1;
-//         }
-//         if index == 0 {
-//             self.default
-//         } else {
-//             self.pieces[index - 1].1
-//         }
-//     }
-//
-//     fn evolve(&mut self, elapsed: Duration) {
-//         self.pieces.retain_mut(|(t,v)| {
-//             *t -= elapsed;
-//             if *t <= Duration::ZERO {
-//                 self.default = *v;
-//                 false
-//             } else {
-//                 true
-//             }
-//         })
-//     }
-// }
-//
-// #[macro_export]
-// macro_rules! pieces {
-//     ($default:expr; $(@($dur:expr) $value:expr)*) => {
-//         $crate::resource::util:Piecewise {
-//             default: $default,
-//             pieces: $crate::reexports::smallvec::#SmallVec::from_slice(&[$(($dur, $value)),*])
-//         }
-//     };
-// }
