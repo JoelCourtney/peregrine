@@ -2,7 +2,7 @@ use crate::{int_pieces, timer};
 use peregrine::impl_activity;
 use peregrine::pieces;
 use peregrine::reexports::hifitime::TimeUnits;
-use peregrine::resource::builtins::{elapsed_time, now};
+use peregrine::resource::builtins::{elapsed, now};
 use peregrine::resource::polynomial::Linear;
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ impl_activity! { for RechargePotato
     let duration = 100.seconds();
     @(start) {
         println!("The current time is: {}", ref:now);
-        println!("The elapsed time is: {}", ref:elapsed_time);
+        println!("The elapsed time is: {}", ref:elapsed);
         ref mut: timer.start();
         mut: int_pieces = pieces!(
             Linear::constant(0.0),
@@ -27,5 +27,5 @@ impl_activity! { for RechargePotato
         println!("Timer says {:?}", ref:timer);
         mut: int_pieces = pieces!(Linear::constant(0.0));
     }
-    duration
+    Ok(duration)
 }

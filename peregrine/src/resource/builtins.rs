@@ -17,16 +17,33 @@ pub(crate) fn init_builtins_timelines<'o, M: Model<'o>>(
     );
     timelines.init_for_resource(
         time,
-        InitialConditionOp::<'o, elapsed_time, M>::new(time, PeregrineElapsedTimeTracker),
+        InitialConditionOp::<'o, elapsed, M>::new(time, PeregrineElapsedTimeTracker),
     );
 }
 
 resource!(
+    /// A resource for the current simulation [Time].
+    ///
+    /// This is a builtin and will automatically be added to all models.
+    /// Just import it and use it. There's no point attempting to write
+    /// to this resource, because it doesn't store any data and there is
+    /// nothing to write or overwrite.
+    ///
+    /// Using this resource will prevent your operation from using cached
+    /// values if it is translated in time.
     pub now: PeregrineTimeTracker,
-    pub elapsed_time: PeregrineElapsedTimeTracker,
+
+    /// A resource for the current elapsed [Duration] of the simulation,
+    /// since the plan start / initial conditions.
+    ///
+    /// This is a builtin and will automatically be added to all models.
+    /// Unlike [now], elapsed does contain data that could be overwritten,
+    /// but this is illegal and if you try to do so it will [panic] at runtime.
+    pub elapsed: PeregrineElapsedTimeTracker,
 );
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
+#[doc(hidden)]
 pub struct PeregrineTimeTracker;
 
 impl MaybeHash for PeregrineTimeTracker {
@@ -55,6 +72,7 @@ impl Data<'_> for PeregrineTimeTracker {
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
+#[doc(hidden)]
 pub struct PeregrineElapsedTimeTracker;
 
 impl MaybeHash for PeregrineElapsedTimeTracker {
@@ -76,7 +94,7 @@ impl Data<'_> for PeregrineElapsedTimeTracker {
     }
 
     fn from_read(_read: Self::Read, _now: Time) -> Self {
-        panic!("You cannot write to the `elapsed_time` builtin. Use a Stopwatch.")
+        panic!("You cannot write to the `elapsed` builtin. Use a Stopwatch.")
     }
 
     fn sample(written: &Self::Read, now: Time) -> Self::Sample {

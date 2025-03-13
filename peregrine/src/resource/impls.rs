@@ -116,6 +116,9 @@ impl<'h, T: Data<'h>> SliceSampler<'h, T> {
     pub fn first(&self) -> Option<T::Sample> {
         self.get(0)
     }
+    pub fn last(&self) -> Option<T::Sample> {
+        self.get(self.len().saturating_sub(1))
+    }
 }
 
 #[duplicate_item(

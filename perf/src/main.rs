@@ -15,7 +15,7 @@ impl_activity! { for IncrementA
     @(start) {
         ref mut: a += 1;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -24,7 +24,7 @@ impl_activity! { for IncrementC
     @(start) {
         ref mut: c += 1;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -33,7 +33,7 @@ impl_activity! { for ConvertAToB
     @(start) {
         mut:b = ref:a.to_string();
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -42,7 +42,7 @@ impl_activity! { for ConvertBToA
     @(start) {
         mut:a = ref:b.parse()?;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -51,7 +51,7 @@ impl_activity! ( for AddCToA
     @(start) {
         ref mut: a += ref:c;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 );
 
 fn main() -> peregrine::Result<()> {

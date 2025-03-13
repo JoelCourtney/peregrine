@@ -9,7 +9,7 @@ use std::hash::Hash;
 use std::ops::Add;
 
 /// An activity, which decomposes into a statically-known set of operations. Implemented
-/// with the [impl_activity] macro.
+/// with the [impl_activity][crate::impl_activity] macro.
 pub trait Activity<'o, M: Model<'o>>: Send + Sync {
     fn decompose(
         &'o mut self,

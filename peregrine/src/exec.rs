@@ -1,9 +1,12 @@
+#![doc(hidden)]
+
 use crate::History;
 use crate::operation::ObservedErrorOutput;
 use crossbeam::queue::SegQueue;
 use derive_more::Deref;
 use std::cell::UnsafeCell;
 use std::error::Error;
+
 use std::fmt::{Display, Formatter};
 
 pub const STACK_LIMIT: usize = 2000;
