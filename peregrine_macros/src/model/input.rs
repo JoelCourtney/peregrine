@@ -7,12 +7,6 @@ impl Parse for Model {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut sub_models = vec![];
 
-        while input.peek(Token![use]) {
-            let _: Token![use] = input.parse()?;
-            sub_models.push(input.parse()?);
-            let _: Token![;] = input.parse()?;
-        }
-
         let visibility: Visibility = input.parse()?;
         let name: Ident = input.parse()?;
 
@@ -23,25 +17,32 @@ impl Parse for Model {
         let mut new_resources = vec![];
 
         while !body.is_empty() {
-            let visibility = body.parse()?;
-            let path: Path = body.parse()?;
-            if body.peek(Token![:]) {
-                let ident = path.get_ident().ok_or_else(|| {
-                    body.error("New resource declarations must be only a single ident.")
-                })?;
-                let _: Token![:] = body.parse()?;
-                let ty = body.parse()?;
-                new_resources.push((visibility, ident.clone(), ty));
-            } else {
-                if visibility != Visibility::Inherited {
-                    return Err(body.error("Cannot specify visibility on an imported resource."));
+            if !body.peek(Token![..]) {
+                let visibility = body.parse()?;
+                let path: Path = body.parse()?;
+                if body.peek(Token![:]) {
+                    let ident = path.get_ident().ok_or_else(|| {
+                        body.error("New resource declarations must be only a single ident.")
+                    })?;
+                    let _: Token![:] = body.parse()?;
+                    let ty = body.parse()?;
+                    new_resources.push((visibility, ident.clone(), ty));
+                } else {
+                    if visibility != Visibility::Inherited {
+                        return Err(
+                            body.error("Cannot specify visibility on an imported resource.")
+                        );
+                    }
+                    imported_resources.push(path);
                 }
-                imported_resources.push(path);
+            } else {
+                let _: Token![..] = body.parse()?;
+                sub_models.push(body.parse()?);
             }
             if body.peek(Token![,]) {
                 let _: Token![,] = body.parse()?;
-            } else if body.peek(syn::Ident) {
-                return Err(body.error("Expected a comma (,) before next resource."));
+            } else if body.peek(syn::Ident) || body.peek(Token![..]) {
+                return Err(body.error("Expected a comma (,) before next resource or submodel."));
             }
         }
 

@@ -28,8 +28,8 @@ impl ToTokens for Activity {
                 ) -> peregrine::Result<(peregrine::Duration, Vec<&'o dyn peregrine::operation::Node<'o, M>>)> {
                     use peregrine::macro_prelude::Node;
                     let mut operations: Vec<&'o dyn Node<'o, M>> = Vec::with_capacity(#num_operations);
-                    let duration = { #(#lines)* };
-                    Ok((duration, operations))
+                    let duration: peregrine::Result<_> = { #(#lines)* };
+                    Ok((duration?, operations))
                 }
             }
 

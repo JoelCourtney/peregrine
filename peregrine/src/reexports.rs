@@ -9,5 +9,6 @@ pub use peregrine_macros;
 pub use rayon;
 pub use serde;
 pub use smallvec;
+pub use spez;
 pub use type_map;
 pub use type_reg;

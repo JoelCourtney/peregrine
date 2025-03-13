@@ -11,7 +11,7 @@ impl_activity! { for IncrementA
     @(start) {
         ref mut: a += 1;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -20,7 +20,7 @@ impl_activity! { for IncrementB
     @(start) {
         ref mut: b += 1;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -29,7 +29,7 @@ impl_activity! { for SetBToA
     @(start) {
         mut:b = ref:a;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -38,7 +38,7 @@ impl_activity! { for SetAToB
     @(start) {
         mut:a = ref:b;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
@@ -47,7 +47,7 @@ impl_activity! { for AddBToA
     @(start) {
         ref mut: a += ref:b;
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 pub struct EvalCounter(Arc<AtomicU16>);
@@ -56,7 +56,7 @@ impl_activity! { for EvalCounter
         mut:a = ref:a;
         self.0.fetch_add(1, Ordering::SeqCst);
     }
-    Duration::ZERO
+    Ok(Duration::ZERO)
 }
 
 impl Hash for EvalCounter {
@@ -79,9 +79,9 @@ model! {
     }
 }
 model! {
-    use B;
     pub AB {
-        pub a: u32
+        pub a: u32,
+        ..B
     }
 }
 

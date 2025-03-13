@@ -16,9 +16,22 @@ use std::hash::Hasher;
 
 #[macro_export]
 macro_rules! initial_conditions {
-    ($($res:ident: $val:expr),*$(,)?) => {
+    ($($res:ident $(: $val:expr)?),*$(,)?) => {
         $crate::operation::initial_conditions::InitialConditions::new()
-            $(.insert::<$res>($val))*
+            $(.insert::<$res>(
+                $crate::reexports::spez::spez! {
+                    for x = ($res::Unit, $($val)?);
+                    match ($res, <$res as $crate::resource::Resource>::Data) -> <$res as $crate::resource::Resource>::Data {
+                        x.1
+                    }
+                    match<R: $crate::resource::Resource> (R,) where R::Data: Default -> R::Data {
+                        Default::default()
+                    }
+                    match<T> T {
+                        panic!("Initial condition must either be given a value or implement Default.")
+                    }
+                }
+            ))*
     };
 }
 
