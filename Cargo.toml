@@ -3,7 +3,8 @@ members = [
     "peregrine",
     "potato_sat",
     "peregrine_macros",
-    "perf"
+    "perf",
+    "serde_closure"
 ]
 default-members = [
     "peregrine", "perf", "potato_sat"

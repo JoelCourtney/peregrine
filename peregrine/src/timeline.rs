@@ -1,6 +1,5 @@
 #![doc(hidden)]
 
-use crate::Model;
 use crate::history::PassThroughHashBuilder;
 use crate::operation::grounding::{UngroundedUpstream, UngroundedUpstreamResolver};
 use crate::operation::initial_conditions::InitialConditionOp;
@@ -10,29 +9,23 @@ use bumpalo_herd::{Herd, Member};
 use hifitime::TimeScale::TAI;
 use hifitime::{Duration, Epoch as Time};
 use std::collections::{BTreeMap, HashMap};
-use std::marker::PhantomData;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::ops::{Bound, RangeBounds};
 
-pub struct Timelines<'o, M: Model<'o> + ?Sized>(
+pub struct Timelines<'o>(
     HashMap<u64, Box<dyn ErasedResource + 'o>, PassThroughHashBuilder>,
     &'o Herd,
-    PhantomData<&'o M>,
 );
 
-impl<'o, M: Model<'o>> Timelines<'o, M> {
+impl<'o> Timelines<'o> {
     pub fn new(herd: &'o Herd) -> Self {
-        Self(
-            HashMap::with_hasher(PassThroughHashBuilder),
-            herd,
-            PhantomData,
-        )
+        Self(HashMap::with_hasher(PassThroughHashBuilder), herd)
     }
 
     pub fn init_for_resource<R: Resource>(
         &mut self,
         time: Duration,
-        op: InitialConditionOp<'o, R, M>,
+        op: InitialConditionOp<'o, R>,
     ) {
         assert!(!self.0.contains_key(&R::ID));
         self.0.insert(
@@ -45,15 +38,15 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
         self.0.contains_key(&R::ID)
     }
 
-    pub fn find_upstream<R: Resource>(&self, time: Duration) -> Option<&'o dyn Upstream<'o, R, M>> {
+    pub fn find_upstream<R: Resource>(&self, time: Duration) -> Option<&'o dyn Upstream<'o, R>> {
         self.inner_timeline().last_before(time, self.1.get())
     }
 
     pub fn insert_grounded<R: Resource>(
         &mut self,
         time: Duration,
-        op: &'o dyn Upstream<'o, R, M>,
-    ) -> UpstreamVec<'o, R, M> {
+        op: &'o dyn Upstream<'o, R>,
+    ) -> UpstreamVec<'o, R> {
         self.inner_timeline_mut().insert_grounded(time, op)
     }
     pub fn remove_grounded<R: Resource + 'o>(&mut self, time: Duration) -> bool {
@@ -64,8 +57,8 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
         &mut self,
         min: Duration,
         max: Duration,
-        op: &'o dyn UngroundedUpstream<'o, R, M>,
-    ) -> UpstreamVec<'o, R, M> {
+        op: &'o dyn UngroundedUpstream<'o, R>,
+    ) -> UpstreamVec<'o, R> {
         self.inner_timeline_mut().insert_ungrounded(min, max, op)
     }
 
@@ -76,11 +69,11 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
     pub(crate) fn range<R: Resource>(
         &self,
         bounds: impl RangeBounds<Duration>,
-    ) -> Vec<MaybeGrounded<'o, R, M>> {
+    ) -> Vec<MaybeGrounded<'o, R>> {
         self.inner_timeline().range(bounds)
     }
 
-    fn inner_timeline<R: Resource>(&self) -> &'o Timeline<'o, R, M> {
+    fn inner_timeline<R: Resource>(&self) -> &'o Timeline<'o, R> {
         let reference = self.0.get(&R::ID).unwrap_or_else(|| {
             panic!(
                 "Could not find resource {}. Is it included in the model?",
@@ -88,12 +81,12 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
             )
         });
         let transmuted = unsafe {
-            &*(reference.as_ref() as *const dyn ErasedResource as *const Timeline<'o, R, M>)
+            &*(reference.as_ref() as *const dyn ErasedResource as *const Timeline<'o, R>)
         };
         transmuted
     }
 
-    fn inner_timeline_mut<R: Resource>(&mut self) -> &'o mut Timeline<'o, R, M> {
+    fn inner_timeline_mut<R: Resource>(&mut self) -> &'o mut Timeline<'o, R> {
         let reference = self.0.get_mut(&R::ID).unwrap_or_else(|| {
             panic!(
                 "Could not find resource {}. Is it included in the model?",
@@ -101,7 +94,7 @@ impl<'o, M: Model<'o>> Timelines<'o, M> {
             )
         });
         let transmuted = unsafe {
-            &mut *(reference.as_mut() as *mut dyn ErasedResource as *mut Timeline<'o, R, M>)
+            &mut *(reference.as_mut() as *mut dyn ErasedResource as *mut Timeline<'o, R>)
         };
         transmuted
     }
@@ -123,14 +116,14 @@ pub const fn duration_to_epoch(duration: Duration) -> Time {
     }
 }
 
-pub struct Timeline<'o, R: Resource, M: Model<'o>>(BTreeMap<Duration, TimelineEntry<'o, R, M>>);
+pub struct Timeline<'o, R: Resource>(BTreeMap<Duration, TimelineEntry<'o, R>>);
 
-pub struct TimelineEntry<'o, R: Resource, M: Model<'o>> {
-    pub grounded: Option<&'o dyn Upstream<'o, R, M>>,
-    pub ungrounded: BTreeMap<Duration, &'o dyn UngroundedUpstream<'o, R, M>>,
+pub struct TimelineEntry<'o, R: Resource> {
+    pub grounded: Option<&'o dyn Upstream<'o, R>>,
+    pub ungrounded: BTreeMap<Duration, &'o dyn UngroundedUpstream<'o, R>>,
 }
 
-impl<'o, R: Resource, M: Model<'o>> TimelineEntry<'o, R, M> {
+impl<'o, R: Resource> TimelineEntry<'o, R> {
     fn new_empty() -> Self {
         TimelineEntry {
             grounded: None,
@@ -138,21 +131,21 @@ impl<'o, R: Resource, M: Model<'o>> TimelineEntry<'o, R, M> {
         }
     }
 
-    fn new_grounded(gr: &'o dyn Upstream<'o, R, M>) -> Self {
+    fn new_grounded(gr: &'o dyn Upstream<'o, R>) -> Self {
         TimelineEntry {
             grounded: Some(gr),
             ungrounded: BTreeMap::new(),
         }
     }
 
-    fn new_ungrounded(ug: &'o dyn UngroundedUpstream<'o, R, M>, max: Duration) -> Self {
+    fn new_ungrounded(ug: &'o dyn UngroundedUpstream<'o, R>, max: Duration) -> Self {
         TimelineEntry {
             grounded: None,
             ungrounded: BTreeMap::from([(max, ug)]),
         }
     }
 
-    fn merge(&mut self, other: &TimelineEntry<'o, R, M>) {
+    fn merge(&mut self, other: &TimelineEntry<'o, R>) {
         assert_ne!(self.grounded.is_some(), other.grounded.is_some());
 
         self.grounded = self.grounded.take().or(other.grounded);
@@ -165,7 +158,7 @@ impl<'o, R: Resource, M: Model<'o>> TimelineEntry<'o, R, M> {
         entry_time: Duration,
         eval_time: Duration,
         bump: Member<'o>,
-    ) -> &'o dyn Upstream<'o, R, M> {
+    ) -> &'o dyn Upstream<'o, R> {
         if self.ungrounded.is_empty() {
             self.grounded.unwrap()
         } else {
@@ -177,8 +170,8 @@ impl<'o, R: Resource, M: Model<'o>> TimelineEntry<'o, R, M> {
         }
     }
 
-    pub fn into_upstream_vec(self) -> UpstreamVec<'o, R, M> {
-        let mut result: UpstreamVec<'o, R, M> = self
+    pub fn into_upstream_vec(self) -> UpstreamVec<'o, R> {
+        let mut result: UpstreamVec<'o, R> = self
             .ungrounded
             .into_values()
             .map(|ug| ug.as_ref())
@@ -188,11 +181,8 @@ impl<'o, R: Resource, M: Model<'o>> TimelineEntry<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
-    pub fn init(
-        time: Duration,
-        initial_condition: &'o dyn Upstream<'o, R, M>,
-    ) -> Timeline<'o, R, M> {
+impl<'o, R: Resource> Timeline<'o, R> {
+    pub fn init(time: Duration, initial_condition: &'o dyn Upstream<'o, R>) -> Timeline<'o, R> {
         Timeline(BTreeMap::from([(
             time,
             TimelineEntry::new_grounded(initial_condition),
@@ -202,7 +192,7 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
     fn search_possible_upstreams(
         &self,
         time: Duration,
-    ) -> Option<(Duration, TimelineEntry<'o, R, M>)> {
+    ) -> Option<(Duration, TimelineEntry<'o, R>)> {
         let mut result = TimelineEntry::new_empty();
         let mut iter = self.0.range(..time);
         let entry_time;
@@ -228,7 +218,7 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
         &self,
         eval_time: Duration,
         bump: Member<'o>,
-    ) -> Option<&'o dyn Upstream<'o, R, M>> {
+    ) -> Option<&'o dyn Upstream<'o, R>> {
         let (entry_time, possible) = self.search_possible_upstreams(eval_time)?;
         Some(possible.into_upstream(entry_time, eval_time, bump))
     }
@@ -237,8 +227,8 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
     pub fn insert_grounded(
         &mut self,
         time: Duration,
-        value: &'o dyn Upstream<'o, R, M>,
-    ) -> UpstreamVec<'o, R, M> {
+        value: &'o dyn Upstream<'o, R>,
+    ) -> UpstreamVec<'o, R> {
         self.0.insert(time, TimelineEntry::new_grounded(value));
         self.search_possible_upstreams(time)
             .map(|e| e.1.into_upstream_vec())
@@ -249,8 +239,8 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
     pub fn insert_grounded(
         &mut self,
         time: Duration,
-        value: &'o dyn Upstream<'o, R, M>,
-    ) -> UpstreamVec<'o, R, M> {
+        value: &'o dyn Upstream<'o, R>,
+    ) -> UpstreamVec<'o, R> {
         let mut cursor_mut = self.0.upper_bound_mut(Unbounded);
         let mut cursor_mut = if let Some((t, _)) = cursor_mut.peek_prev() {
             if *t < time {
@@ -298,8 +288,8 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
         &mut self,
         min: Duration,
         max: Duration,
-        value: &'o dyn UngroundedUpstream<'o, R, M>,
-    ) -> UpstreamVec<'o, R, M> {
+        value: &'o dyn UngroundedUpstream<'o, R>,
+    ) -> UpstreamVec<'o, R> {
         let mut entry = TimelineEntry::new_ungrounded(value, max);
         entry.ungrounded.extend(
             self.0
@@ -343,7 +333,7 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
         }
     }
 
-    pub fn range(&self, range: impl RangeBounds<Duration>) -> Vec<MaybeGrounded<'o, R, M>> {
+    pub fn range(&self, range: impl RangeBounds<Duration>) -> Vec<MaybeGrounded<'o, R>> {
         let start_time = match range.start_bound() {
             Bound::Included(start) | Bound::Excluded(start) => Some(*start),
             _ => None,
@@ -388,13 +378,13 @@ impl<'o, R: Resource, M: Model<'o>> Timeline<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource, M: Model<'o>> ErasedResource for Timeline<'o, R, M> {
+impl<R: Resource> ErasedResource for Timeline<'_, R> {
     fn id(&self) -> u64 {
         R::ID
     }
 }
 
-pub enum MaybeGrounded<'o, R: Resource, M: Model<'o>> {
-    Grounded(Duration, &'o dyn Upstream<'o, R, M>),
-    Ungrounded(&'o dyn UngroundedUpstream<'o, R, M>),
+pub enum MaybeGrounded<'o, R: Resource> {
+    Grounded(Duration, &'o dyn Upstream<'o, R>),
+    Ungrounded(&'o dyn UngroundedUpstream<'o, R>),
 }

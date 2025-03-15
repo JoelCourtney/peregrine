@@ -1,0 +1,27 @@
+[package]
+name = "serde_closure"
+version = "0.3.3"
+license = "MIT OR Apache-2.0"
+authors = ["Alec Mocatta <alec@mocatta.net>"]
+categories = ["development-tools","encoding","rust-patterns","network-programming"]
+keywords = ["closure","serialization","serde","distributed"]
+description = """
+Serializable and debuggable closures.
+
+This library provides macros that wrap closures to make them serializable and debuggable.
+"""
+repository = "https://github.com/alecmocatta/serde_closure"
+homepage = "https://github.com/alecmocatta/serde_closure"
+documentation = "https://docs.rs/serde_closure"
+readme = "README.md"
+edition = "2024"
+
+[badges]
+azure-devops = { project = "alecmocatta/serde_closure", pipeline = "tests", build = "10" }
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+serde_closure_derive = { version = "=0.3.3", path = "serde_closure_derive" }
+
+[dev-dependencies]
+peregrine = {path = "../peregrine" }

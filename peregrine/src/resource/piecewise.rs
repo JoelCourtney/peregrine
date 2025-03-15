@@ -84,7 +84,7 @@ macro_rules! pieces {
             pieces: $crate::reexports::smallvec::SmallVec::new()
         }
     };
-    ($default:expr, $(@($dur:expr) $value:expr),* $(,)?) => {
+    ($default:expr, $(($dur:expr, $value:expr)),* $(,)?) => {
         $crate::resource::piecewise::Piecewise {
             default: Box::new($default),
             pieces: $crate::reexports::smallvec::SmallVec::from_slice(&[$(($dur, $value)),*])

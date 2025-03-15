@@ -1,5 +1,7 @@
+use peregrine::activity::Ops;
 use peregrine::reexports::hifitime::{TimeScale, TimeUnits};
-use peregrine::{Duration, Session, Time, impl_activity, initial_conditions, model};
+use peregrine::reexports::peregrine_macros::op;
+use peregrine::{Activity, Duration, Session, Time, initial_conditions, model};
 
 model! {
     pub Perf {
@@ -11,48 +13,49 @@ model! {
 
 #[derive(Hash)]
 struct IncrementA;
-impl_activity! { for IncrementA
-    @(start) {
-        ref mut: a += 1;
+
+impl Activity for IncrementA {
+    fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
+        ops += op! { ref mut: a += 1; };
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 struct IncrementC;
-impl_activity! { for IncrementC
-    @(start) {
-        ref mut: c += 1;
+impl Activity for IncrementC {
+    fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
+        ops += op! { ref mut: c += 1; };
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 struct ConvertAToB;
-impl_activity! { for ConvertAToB
-    @(start) {
-        mut:b = ref:a.to_string();
+impl Activity for ConvertAToB {
+    fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
+        ops += op! { mut:b = ref:a.to_string(); };
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 struct ConvertBToA;
-impl_activity! { for ConvertBToA
-    @(start) {
-        mut:a = ref:b.parse()?;
+impl Activity for ConvertBToA {
+    fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
+        ops += op! { mut:a = ref:b.parse()?; };
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 struct AddCToA;
-impl_activity! ( for AddCToA
-    @(start) {
-        ref mut: a += ref:c;
+impl Activity for AddCToA {
+    fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
+        ops += op! { ref mut: a += ref:c; };
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
-);
+}
 
 fn main() -> peregrine::Result<()> {
     let session = Session::new();

@@ -1,65 +1,95 @@
 #![allow(clippy::self_assignment)]
 
+use peregrine::activity::Ops;
 use peregrine::*;
+use peregrine_macros::op;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 #[derive(Hash)]
 pub struct IncrementA;
-impl_activity! { for IncrementA
-    @(start) {
-        ref mut: a += 1;
+
+impl Activity for IncrementA {
+    fn run(&self, mut ops: Ops) -> Result<Duration> {
+        ops += op! {
+            ref mut: a += 1;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct IncrementB;
-impl_activity! { for IncrementB
-    @(start) {
-        ref mut: b += 1;
+
+impl Activity for IncrementB {
+    fn run(&self, mut ops: Ops) -> Result<Duration> {
+        ops += op! {
+            ref mut: b += 1;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct SetBToA;
-impl_activity! { for SetBToA
-    @(start) {
-        mut:b = ref:a;
+
+impl Activity for SetBToA {
+    fn run(&self, mut ops: Ops) -> Result<Duration> {
+        ops += op! {
+            mut:b = ref:a;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct SetAToB;
-impl_activity! { for SetAToB
-    @(start) {
-        mut:a = ref:b;
+
+impl Activity for SetAToB {
+    fn run(&self, mut ops: Ops) -> Result<Duration> {
+        ops += op! {
+            mut:a = ref:b;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct AddBToA;
-impl_activity! { for AddBToA
-    @(start) {
-        ref mut: a += ref:b;
+
+impl Activity for AddBToA {
+    fn run(&self, mut ops: Ops) -> Result<Duration> {
+        ops += op! {
+            ref mut: a += ref:b;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
-pub struct EvalCounter(Arc<AtomicU16>);
-impl_activity! { for EvalCounter
-    @(start) {
-        mut:a = ref:a;
-        self.0.fetch_add(1, Ordering::SeqCst);
+pub struct EvalCounter(HashableAtomicU16);
+
+#[derive(Clone)]
+pub struct HashableAtomicU16(Arc<AtomicU16>);
+
+impl Activity for EvalCounter {
+    fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
+        let counter = &self.0;
+        ops += op! {
+            mut:a = ref:a;
+            counter.0.fetch_add(1, Ordering::SeqCst);
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
-impl Hash for EvalCounter {
+impl Hash for HashableAtomicU16 {
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
@@ -69,7 +99,7 @@ impl EvalCounter {
     #[allow(unused)]
     pub fn new() -> (Self, Arc<AtomicU16>) {
         let counter = Arc::new(AtomicU16::new(0));
-        (Self(counter.clone()), counter)
+        (Self(HashableAtomicU16(counter.clone())), counter)
     }
 }
 

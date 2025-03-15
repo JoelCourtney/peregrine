@@ -2,22 +2,19 @@ use crate as peregrine;
 use crate::macro_prelude::{InitialConditionOp, MaybeHash};
 use crate::resource::Data;
 use crate::timeline::Timelines;
-use crate::{Model, Time, resource};
+use crate::{Time, resource};
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use std::hash::Hasher;
 
-pub(crate) fn init_builtins_timelines<'o, M: Model<'o>>(
-    time: Duration,
-    timelines: &mut Timelines<'o, M>,
-) {
+pub(crate) fn init_builtins_timelines<'o>(time: Duration, timelines: &mut Timelines<'o>) {
     timelines.init_for_resource(
         time,
-        InitialConditionOp::<'o, now, M>::new(time, PeregrineTimeTracker),
+        InitialConditionOp::<'o, now>::new(time, PeregrineTimeTracker),
     );
     timelines.init_for_resource(
         time,
-        InitialConditionOp::<'o, elapsed, M>::new(time, PeregrineElapsedTimeTracker),
+        InitialConditionOp::<'o, elapsed>::new(time, PeregrineElapsedTimeTracker),
     );
 }
 

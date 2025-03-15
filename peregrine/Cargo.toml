@@ -23,9 +23,9 @@ peregrine_macros = { path = "../peregrine_macros" }
 ## SERIALIZATION
 # For serializing/deserializing plans, sim history, etc.
 # Also used to hash initial condition nodes.
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 # A non-self-describing efficient serde backend.
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "2.0.1", features = ["serde"] }
 serde_arrays = "0.1.0"
 
 ## HISTORY
@@ -37,6 +37,7 @@ stable_deref_trait = "1.2.0"
 type-map = "0.5.0"
 type_reg = { version = "0.8.0", features = ["untagged"] }
 inventory = "0.3.19"
+serde_closure = { path = "../serde_closure"}
 
 ## MEMORY
 # An arena allocator used for Futures during simulation, and operations trait objects.

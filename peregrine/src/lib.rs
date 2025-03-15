@@ -120,27 +120,25 @@
 //! ```
 //! # fn main() {}
 //! # use serde::{Serialize, Deserialize};
-//! # use peregrine::{resource, impl_activity, Duration};
 //! # resource!(sol_counter: u32);
 //! # resource!(downlink_buffer: Vec<String>);
+//! use peregrine::*;
+//!
 //! #[derive(Hash, Serialize, Deserialize)]
 //! struct IncrementSol;
 //!
-//! // This implements the activity trait for `IncrementSol`.
-//! impl_activity! { for IncrementSol
-//!     // This is syntactic sugar to declare an operation.
-//!     // It occurs at time `start`, which is a timestamp provided automatically
-//!     // by the macro according to when the activity happens.
-//!     @(start) {
-//!         // This is syntactic sugar for a read-write operation on the sol_counter
-//!         // resource. Resources can be accessed as read-only with `ref:`, and write-only
-//!         // with `mut:`.
-//!         ref mut: sol_counter += 1;
+//! impl Activity for IncrementSol {
+//!     fn run(&self, mut ops: Ops) -> Result<Duration> {
+//!         ops += op! {
+//!             // This is syntactic sugar for a read-write operation on the sol_counter
+//!             // resource. Resources can be accessed as read-only with `ref:`, and write-only
+//!             // with `mut:`.
+//!             ref mut: sol_counter += 1;
+//!         };
+//!         // Return statement indicates the activity had zero duration and no errors
+//!         Ok(Duration::ZERO)
 //!     }
-//!     // Return statement indicates the activity had zero duration and no errors
-//!     Ok(Duration::ZERO)
 //! }
-//!
 //!
 //! #[derive(Hash, Serialize, Deserialize)]
 //! struct LogCurrentSol {
@@ -148,16 +146,19 @@
 //!     verbose: bool,
 //! }
 //!
-//! impl_activity! { for LogCurrentSol
-//!     @(start) {
-//!         // You can access activity arguments both inside and outside operations.
-//!         if self.verbose {
-//!             ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
-//!         } else {
-//!             ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
-//!         }
+//! impl Activity for LogCurrentSol {
+//!     fn run(&self, mut ops: Ops) -> Result<Duration> {
+//!         let verbose = self.verbose;
+//!         ops += op! {
+//!             // You can access activity arguments both inside and outside operations.
+//!             if verbose {
+//!                 ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
+//!             } else {
+//!                 ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
+//!             }
+//!         };
+//!         Ok(Duration::ZERO)
 //!     }
-//!     Ok(Duration::ZERO)
 //! }
 //! ```
 //!
@@ -194,7 +195,7 @@
 //! ```
 //! # use std::str::FromStr;
 //! # use hifitime::TimeScale;
-//! # use peregrine::{Duration, impl_activity, initial_conditions, model};
+//! # use peregrine::*;
 //! # use serde::{Serialize, Deserialize};
 //! # model! {
 //! #     ExampleModel {
@@ -204,25 +205,36 @@
 //! # }
 //! # #[derive(Hash, Serialize, Deserialize)]
 //! # struct IncrementSol;
-//! # impl_activity! { for IncrementSol
-//! #     @(start) {
-//! #         ref mut: sol_counter += 1;
+//! # impl Activity for IncrementSol {
+//! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
+//! #         ops += op! {
+//! #             // This is syntactic sugar for a read-write operation on the sol_counter
+//! #             // resource. Resources can be accessed as read-only with `ref:`, and write-only
+//! #             // with `mut:`.
+//! #             ref mut: sol_counter += 1;
+//! #         };
+//! #         // Return statement indicates the activity had zero duration and no errors
+//! #         Ok(Duration::ZERO)
 //! #     }
-//! #     Ok(Duration::ZERO)
 //! # }
 //! # #[derive(Hash, Serialize, Deserialize)]
 //! # struct LogCurrentSol {
+//! #     // Verbosity is taken in as an activity argument.
 //! #     verbose: bool,
 //! # }
-//! # impl_activity! { for LogCurrentSol
-//! #     @(start) {
-//! #         if self.verbose {
-//! #             ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
-//! #         } else {
-//! #             ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
-//! #         }
+//! # impl Activity for LogCurrentSol {
+//! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
+//! #         let verbose = self.verbose;
+//! #         ops += op! {
+//! #             // You can access activity arguments both inside and outside operations.
+//! #             if verbose {
+//! #                 ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
+//! #             } else {
+//! #                 ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
+//! #             }
+//! #         };
+//! #         Ok(Duration::ZERO)
 //! #     }
-//! #     Ok(Duration::ZERO)
 //! # }
 //! # use peregrine::{Session, Time};
 //! # fn main() -> peregrine::Result<()> {
@@ -467,52 +479,7 @@ pub mod timeline;
 /// ```
 pub use peregrine_macros::model;
 
-/// Implements the [Activity] trait for a type.
-///
-/// Expects a block of statements preceded by `for MyActivity`. The inside of the block is a function
-/// that generates the activity's operations, and returns the duration of the activity. The start time
-/// is accessible through the `start` variable, and the activity arguments are accessible through `args`.
-///
-/// The body of your activity function will contain operations that use a special syntactic sugar.
-/// Let's break down this example:
-///
-/// ```
-/// # fn main() {}
-/// # use peregrine::{resource, impl_activity, Duration};
-/// use serde::{Serialize, Deserialize};
-///
-/// resource!(sol_counter: u32);
-///
-/// #[derive(Hash, Serialize, Deserialize)]
-/// struct IncrementSol;
-///
-/// impl_activity! { for IncrementSol
-///     @(start) {
-///         ref mut: sol_counter += 1;
-///     }
-///     Ok(Duration::ZERO) // Return statement indicates the activity had zero duration
-/// }
-/// ```
-///
-/// 1. First declare an empty struct `IncrementSol` to be our activity type. It has to
-///    implement [Serialize][serde::ser::Serialize], and [DeserializeOwned][serde::de::DeserializeOwned], and this is done through derive macros
-///    provided by serde.
-/// 2. Call [impl_activity] with the preamble `for IncrementSol`. Everything else inside the
-///    macro is your function body. In this context, `start` is the start time of the activity,
-///    and `args` are the arguments (in this case there are none).
-/// 3. Declare operation by starting a statement with `@`.
-///    - `(start)` indicates the time the operation happens at. It can be any valid rust expression
-///      that evaluates to a [Duration].
-///    - TODO explain ref mut
-///    - The body of the operation can do whatever you want, as long as it is deterministic.
-///      The body is also an async context; you could make a non-blocking web request if you want,
-///      as long as it can be assumed to always return the same output for the same input.
-/// 4. Finally, we end the activity body by returning `Duration::ZERO`, which means the activity took
-///    zero duration.
-///
-/// It is *technically* valid to generate operations before the start time or after the declared end time.
-/// It would just be very un-hygienic and potentially hard to debug.
-pub use peregrine_macros::impl_activity;
+pub use peregrine_macros::op;
 
 pub use crate::activity::{Activity, ActivityId};
 use crate::activity::{DecomposedActivity, Placement};
@@ -524,6 +491,7 @@ use crate::operation::grounding::peregrine_grounding;
 use crate::operation::initial_conditions::InitialConditions;
 use crate::resource::builtins::init_builtins_timelines;
 use crate::timeline::{MaybeGrounded, Timelines, duration_to_epoch, epoch_to_duration};
+pub use activity::Ops;
 pub use anyhow::{Context, Error, Result, anyhow, bail};
 use bumpalo_herd::Herd;
 pub use hifitime::{Duration, Epoch as Time};
@@ -532,6 +500,7 @@ use operation::Continuation;
 use parking_lot::RwLock;
 use resource::Resource;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::ops::RangeBounds;
 
 #[derive(Default)]
@@ -549,7 +518,7 @@ impl Session {
         self.history.into_inner()
     }
 
-    pub fn new_plan<'o, M: Model<'o>>(
+    pub fn new_plan<'o, M: Model<'o> + 'o>(
         &'o self,
         time: Time,
         initial_conditions: InitialConditions,
@@ -575,11 +544,13 @@ impl From<History> for Session {
 
 /// A plan instance for iterative editing and simulating.
 pub struct Plan<'o, M: Model<'o>> {
-    activities: HashMap<ActivityId, DecomposedActivity<'o, M>>,
+    activities: HashMap<ActivityId, DecomposedActivity<'o>>,
     id_counter: u32,
-    timelines: Timelines<'o, M>,
+    timelines: Timelines<'o>,
 
     session: &'o Session,
+
+    model: PhantomData<M>,
 }
 
 impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
@@ -588,13 +559,15 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let time = epoch_to_duration(time);
         let mut timelines = Timelines::new(&session.herd);
         init_builtins_timelines(time, &mut timelines);
-        M::init_timelines::<M>(time, &mut initial_conditions, &mut timelines);
+        M::init_timelines(time, &mut initial_conditions, &mut timelines);
         Plan {
             activities: HashMap::new(),
             timelines,
             id_counter: 0,
 
             session,
+
+            model: PhantomData,
         }
     }
 
@@ -606,18 +579,22 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
     }
 
     /// Inserts a new activity into the plan, and returns its unique ID.
-    pub fn insert(
-        &mut self,
-        time: Time,
-        activity: impl Activity<'o, M> + 'static,
-    ) -> Result<ActivityId> {
+    pub fn insert(&mut self, time: Time, activity: impl Activity + 'static) -> Result<ActivityId> {
         let id = ActivityId::new(self.id_counter);
         self.id_counter += 1;
         let bump = self.session.herd.get();
         let activity = bump.alloc(activity);
-        let activity_pointer = activity as *mut dyn Activity<'o, M>;
-        let (_duration, operations) =
-            activity.decompose(Placement::Static(epoch_to_duration(time)), bump)?;
+        let activity_pointer = activity as *mut dyn Activity;
+
+        let mut operations = vec![];
+        let placement = Placement::Static(epoch_to_duration(time));
+        let ops_consumer = Ops {
+            placement,
+            bump: &bump,
+            operations: &mut operations,
+        };
+
+        let _duration = activity.run(ops_consumer)?;
 
         for op in &operations {
             op.insert_self(&mut self.timelines)?;
@@ -662,7 +639,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         &self,
         bounds: impl RangeBounds<Time>,
     ) -> Result<Vec<(Time, <R::Data as Data<'o>>::Read)>> {
-        let mut nodes: Vec<MaybeGrounded<'o, R, M>> = self.timelines.range((
+        let mut nodes: Vec<MaybeGrounded<'o, R>> = self.timelines.range((
             bounds.start_bound().map(|t| epoch_to_duration(*t)),
             bounds.end_bound().map(|t| epoch_to_duration(*t)),
         ));
@@ -710,14 +687,14 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
                         ));
                         scope.spawn(move |s| {
                             n.request(
-                                Continuation::<peregrine_grounding, M>::Root(grounding_sender),
+                                Continuation::<peregrine_grounding>::Root(grounding_sender),
                                 true,
                                 s,
                                 timelines,
                                 env.reset(),
                             );
                             n.request(
-                                Continuation::<R, M>::Root(sender),
+                                Continuation::<R>::Root(sender),
                                 true,
                                 s,
                                 timelines,
@@ -773,9 +750,9 @@ impl<'o, M: Model<'o>> Drop for Plan<'o, M> {
 /// Autogenerated by the [model] macro. There is no point implementing this manually.
 pub trait Model<'o>: Sync {
     fn init_history(history: &mut History);
-    fn init_timelines<M: Model<'o>>(
+    fn init_timelines(
         time: Duration,
         initial_conditions: &mut InitialConditions,
-        timelines: &mut Timelines<'o, M>,
+        timelines: &mut Timelines<'o>,
     );
 }

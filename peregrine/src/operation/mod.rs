@@ -4,11 +4,11 @@ pub mod grounding;
 pub mod initial_conditions;
 
 use crate as peregrine;
+use crate::Time;
 use crate::exec::ExecEnvironment;
 use crate::macro_prelude::{Data, MaybeHash};
 use crate::resource::Resource;
 use crate::timeline::Timelines;
-use crate::{Model, Time};
 use anyhow::Result;
 use derive_more::with_trait::Error as DeriveError;
 use hifitime::Duration;
@@ -21,21 +21,21 @@ use std::marker::PhantomData;
 
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
-pub trait Node<'o, M: Model<'o> + 'o>: Sync {
-    fn insert_self(&'o self, timelines: &mut Timelines<'o, M>) -> Result<()>;
-    fn remove_self(&self, timelines: &mut Timelines<'o, M>) -> Result<()>;
+pub trait Node<'o>: Sync {
+    fn insert_self(&'o self, timelines: &mut Timelines<'o>) -> Result<()>;
+    fn remove_self(&self, timelines: &mut Timelines<'o>) -> Result<()>;
 }
 
 pub trait NodeId {
     const ID: u64;
 }
 
-pub trait Downstream<'o, R: Resource, M: Model<'o> + 'o>: Sync {
+pub trait Downstream<'o, R: Resource>: Sync {
     fn respond<'s>(
         &'o self,
         value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
         scope: &Scope<'s>,
-        timelines: &'s Timelines<'o, M>,
+        timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
     ) where
         'o: 's;
@@ -44,33 +44,33 @@ pub trait Downstream<'o, R: Resource, M: Model<'o> + 'o>: Sync {
     fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool;
 }
 
-pub trait Upstream<'o, R: Resource, M: Model<'o> + 'o>: Sync {
+pub trait Upstream<'o, R: Resource>: Sync {
     fn request<'s>(
         &'o self,
-        continuation: Continuation<'o, R, M>,
+        continuation: Continuation<'o, R>,
         already_registered: bool,
         scope: &Scope<'s>,
-        timelines: &'s Timelines<'o, M>,
+        timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
     ) where
         'o: 's;
 
     fn notify_downstreams(&self, time_of_change: Duration);
-    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R, M>);
+    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>);
 }
 
-pub enum Continuation<'o, R: Resource, M: Model<'o> + 'o> {
-    Node(&'o dyn Downstream<'o, R, M>),
-    MarkedNode(usize, &'o dyn Downstream<'o, Marked<R>, M>),
+pub enum Continuation<'o, R: Resource> {
+    Node(&'o dyn Downstream<'o, R>),
+    MarkedNode(usize, &'o dyn Downstream<'o, Marked<R>>),
     Root(oneshot::Sender<InternalResult<<R::Data as Data<'o>>::Read>>),
 }
 
-impl<'o, R: Resource, M: Model<'o> + 'o> Continuation<'o, R, M> {
+impl<'o, R: Resource> Continuation<'o, R> {
     pub fn run<'s>(
         self,
         value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
         scope: &Scope<'s>,
-        timelines: &'s Timelines<'o, M>,
+        timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
     ) where
         'o: 's,
@@ -95,7 +95,7 @@ impl<'o, R: Resource, M: Model<'o> + 'o> Continuation<'o, R, M> {
         }
     }
 
-    pub fn to_downstream(&self) -> Option<MaybeMarkedDownstream<'o, R, M>> {
+    pub fn to_downstream(&self) -> Option<MaybeMarkedDownstream<'o, R>> {
         match self {
             Continuation::Node(n) => Some((*n).into()),
             Continuation::MarkedNode(_, n) => Some((*n).into()),
@@ -202,12 +202,12 @@ where
     }
 }
 
-pub enum MaybeMarkedDownstream<'o, R: Resource, M: Model<'o>> {
-    Unmarked(&'o dyn Downstream<'o, R, M>),
-    Marked(&'o dyn Downstream<'o, Marked<R>, M>),
+pub enum MaybeMarkedDownstream<'o, R: Resource> {
+    Unmarked(&'o dyn Downstream<'o, R>),
+    Marked(&'o dyn Downstream<'o, Marked<R>>),
 }
 
-impl<'o, R: Resource, M: Model<'o>> MaybeMarkedDownstream<'o, R, M> {
+impl<R: Resource> MaybeMarkedDownstream<'_, R> {
     pub fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
         match self {
             MaybeMarkedDownstream::Unmarked(n) => n.clear_upstream(time_of_change),
@@ -223,18 +223,14 @@ impl<'o, R: Resource, M: Model<'o>> MaybeMarkedDownstream<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource, M: Model<'o>> From<&'o dyn Downstream<'o, R, M>>
-    for MaybeMarkedDownstream<'o, R, M>
-{
-    fn from(value: &'o dyn Downstream<'o, R, M>) -> Self {
+impl<'o, R: Resource> From<&'o dyn Downstream<'o, R>> for MaybeMarkedDownstream<'o, R> {
+    fn from(value: &'o dyn Downstream<'o, R>) -> Self {
         MaybeMarkedDownstream::Unmarked(value)
     }
 }
 
-impl<'o, R: Resource, M: Model<'o>> From<&'o dyn Downstream<'o, Marked<R>, M>>
-    for MaybeMarkedDownstream<'o, R, M>
-{
-    fn from(value: &'o dyn Downstream<'o, Marked<R>, M>) -> Self {
+impl<'o, R: Resource> From<&'o dyn Downstream<'o, Marked<R>>> for MaybeMarkedDownstream<'o, R> {
+    fn from(value: &'o dyn Downstream<'o, Marked<R>>) -> Self {
         MaybeMarkedDownstream::Marked(value)
     }
 }
@@ -256,4 +252,4 @@ impl Display for ObservedErrorOutput {
     }
 }
 
-pub type UpstreamVec<'o, R, M> = SmallVec<&'o dyn Upstream<'o, R, M>, 2>;
+pub type UpstreamVec<'o, R> = SmallVec<&'o dyn Upstream<'o, R>, 2>;

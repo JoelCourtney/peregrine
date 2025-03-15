@@ -29,10 +29,10 @@ impl ToTokens for Model {
                 fn init_history(history: &mut peregrine::macro_prelude::History) {
                     #(history.init::<#resources>();)*
                 }
-                fn init_timelines<M: peregrine::macro_prelude::Model<'o>>(
+                fn init_timelines(
                     time: peregrine::macro_prelude::Duration,
                     initial_conditions: &mut peregrine::macro_prelude::InitialConditions,
-                    timelines: &mut peregrine::macro_prelude::Timelines<'o, M>
+                    timelines: &mut peregrine::macro_prelude::Timelines<'o>
                 ) {
                     #(
                         if !timelines.contains_resource::<#resources>() {
@@ -47,7 +47,7 @@ impl ToTokens for Model {
                         }
                     )*
 
-                    #(#sub_models::init_timelines::<M>(time, initial_conditions, timelines);)*
+                    #(#sub_models::init_timelines(time, initial_conditions, timelines);)*
                 }
             }
 

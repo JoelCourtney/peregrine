@@ -8,6 +8,7 @@ pub use parking_lot;
 pub use peregrine_macros;
 pub use rayon;
 pub use serde;
+pub use serde_closure;
 pub use smallvec;
 pub use spez;
 pub use type_map;

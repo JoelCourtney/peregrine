@@ -1,4 +1,3 @@
-use crate::Model;
 use crate::exec::ExecEnvironment;
 use crate::history::PeregrineDefaultHashBuilder;
 use crate::operation::{
@@ -69,19 +68,19 @@ impl<R: Resource> ErasedResource for WriteValue<R> {
     }
 }
 
-type InitialConditionState<'o, R, M> = OperationState<
+type InitialConditionState<'o, R> = OperationState<
     (u64, <<R as Resource>::Data as Data<'o>>::Read),
     (),
-    MaybeMarkedDownstream<'o, R, M>,
+    MaybeMarkedDownstream<'o, R>,
 >;
 
-pub struct InitialConditionOp<'o, R: Resource, M: Model<'o>> {
+pub struct InitialConditionOp<'o, R: Resource> {
     value: R::Data,
-    state: Mutex<InitialConditionState<'o, R, M>>,
+    state: Mutex<InitialConditionState<'o, R>>,
     time: Duration,
 }
 
-impl<'o, R: Resource, M: Model<'o>> InitialConditionOp<'o, R, M> {
+impl<R: Resource> InitialConditionOp<'_, R> {
     pub fn new(time: Duration, value: R::Data) -> Self {
         Self {
             value,
@@ -91,23 +90,23 @@ impl<'o, R: Resource, M: Model<'o>> InitialConditionOp<'o, R, M> {
     }
 }
 
-impl<'o, R: Resource, M: Model<'o>> Node<'o, M> for InitialConditionOp<'o, R, M> {
-    fn insert_self(&'o self, _timelines: &mut Timelines<'o, M>) -> anyhow::Result<()> {
+impl<'o, R: Resource> Node<'o> for InitialConditionOp<'o, R> {
+    fn insert_self(&'o self, _timelines: &mut Timelines<'o>) -> anyhow::Result<()> {
         unreachable!()
     }
 
-    fn remove_self(&self, _timelines: &mut Timelines<'o, M>) -> anyhow::Result<()> {
+    fn remove_self(&self, _timelines: &mut Timelines<'o>) -> anyhow::Result<()> {
         Err(anyhow!("Cannot remove initial conditions."))
     }
 }
 
-impl<'o, R: Resource + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialConditionOp<'o, R, M> {
+impl<'o, R: Resource + 'o> Upstream<'o, R> for InitialConditionOp<'o, R> {
     fn request<'s>(
         &'o self,
-        continuation: Continuation<'o, R, M>,
+        continuation: Continuation<'o, R>,
         already_registered: bool,
         scope: &Scope<'s>,
-        timelines: &'s Timelines<'o, M>,
+        timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
     ) where
         'o: 's,
@@ -147,7 +146,7 @@ impl<'o, R: Resource + 'o, M: Model<'o>> Upstream<'o, R, M> for InitialCondition
             .retain(|d| d.clear_upstream(Some(time_of_change)));
     }
 
-    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R, M>) {
+    fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
         self.state.lock().downstreams.push(downstream.into());
     }
 }

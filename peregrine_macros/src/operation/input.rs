@@ -1,5 +1,5 @@
+use crate::operation::Op;
 use crate::operation::input::InteractionType::*;
-use crate::operation::{Context, Op};
 use derive_more::{Deref, DerefMut};
 use proc_macro2::Ident;
 use quote::format_ident;
@@ -81,7 +81,6 @@ impl Parse for Op {
         asdf.step(|_| Ok(((), Cursor::empty())))?;
 
         Ok(Op {
-            context: Context::None,
             reads,
             writes,
             read_writes,
