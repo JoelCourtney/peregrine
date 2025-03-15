@@ -1,21 +1,59 @@
-use crate::Model;
+use crate::macro_prelude::Grounder;
 use crate::operation::grounding::peregrine_grounding;
 use crate::operation::{Node, Upstream};
+use crate::timeline::{Timelines, epoch_to_duration};
+use crate::{Model, Time};
 use anyhow::Result;
 use bumpalo_herd::Member;
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
-use std::ops::Add;
+use std::ops::{Add, AddAssign};
+
+pub struct Ops<'v, 'o, M: Model<'o>> {
+    pub(crate) placement: Placement<'o, M>,
+    pub(crate) bump: &'v Member<'o>,
+    pub(crate) operations: &'v mut Vec<&'o dyn Node<'o, M>>,
+}
+
+impl<'o, M: Model<'o>> Ops<'_, 'o, M> {
+    #[inline]
+    pub fn run<OC: OpConstructor<'o, M>>(&mut self, op: OC) {
+        let op = self.bump.alloc(OC::new(self.placement));
+        self.operations.push(op);
+    }
+
+    pub fn wait(&mut self, delay: impl Delay<'o, M>) {
+        self.placement = delay.add_to(self.placement, &self.bump);
+    }
+
+    pub fn wait_until(&mut self, time: Time) {
+        todo!()
+    }
+
+    pub fn goto(&mut self, time: Time) {
+        self.placement = Placement::Static(epoch_to_duration(time));
+    }
+}
+
+impl<'o, M: Model<'o>, OC: OpConstructor<'o, M>> AddAssign<OC> for Ops<'_, 'o, M> {
+    fn add_assign(&mut self, rhs: OC) {
+        self.run(rhs);
+    }
+}
+
+pub trait Delay<'o, M: Model<'o>> {
+    fn add_to(self, placement: Placement<'o, M>, bump: &Member<'o>) -> Placement<'o, M>;
+}
+
+pub trait OpConstructor<'o, M: Model<'o>> {
+    fn new(grounder: impl Grounder<'o, M>) -> impl Node<'o, M> + 'o;
+}
 
 /// An activity, which decomposes into a statically-known set of operations. Implemented
 /// with the [impl_activity][crate::impl_activity] macro.
 pub trait Activity<'o, M: Model<'o>>: Send + Sync {
-    fn decompose(
-        &'o mut self,
-        start: Placement<'o, M>,
-        bump: Member<'o>,
-    ) -> Result<(Duration, Vec<&'o dyn Node<'o, M>>)>;
+    fn run(&'o self, ops: Ops<'_, 'o, M>) -> Result<Duration>;
 }
 
 pub trait StaticActivity: Hash {

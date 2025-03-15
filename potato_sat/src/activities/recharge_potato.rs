@@ -13,7 +13,7 @@ pub struct RechargePotato {
 
 impl_activity! { for RechargePotato
     let duration = 100.seconds();
-    @(start) {
+    start => {
         println!("The current time is: {}", ref:now);
         println!("The elapsed time is: {}", ref:elapsed);
         ref mut: timer.start();
@@ -23,7 +23,7 @@ impl_activity! { for RechargePotato
             @(10.seconds()) Linear::constant(5.0)
         );
     }
-    @(start + 6.seconds()) {
+    start + 6.seconds() => {
         println!("Timer says {:?}", ref:timer);
         mut: int_pieces = pieces!(Linear::constant(0.0));
     }

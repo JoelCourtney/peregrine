@@ -1,6 +1,7 @@
 use crate::activities::recharge_potato::RechargePotato;
 use peregrine::macro_prelude::hifitime::{TimeScale, TimeUnits};
 use peregrine::macro_prelude::timer::Stopwatch;
+use peregrine::reexports::peregrine_macros::delete;
 use peregrine::resource::piecewise::Piecewise;
 use peregrine::resource::polynomial::{Linear, Quadratic};
 use peregrine::*;

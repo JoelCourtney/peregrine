@@ -1,62 +1,88 @@
 #![allow(clippy::self_assignment)]
 
+use peregrine::activity::Ops;
 use peregrine::*;
+use peregrine_macros::op;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 #[derive(Hash)]
 pub struct IncrementA;
-impl_activity! { for IncrementA
-    @(start) {
-        ref mut: a += 1;
+
+impl<'o, M: Model<'o>> Activity<'o, M> for IncrementA {
+    fn run(&'o self, mut ops: Ops<'_, 'o, M>) -> Result<Duration> {
+        ops += op! {
+            ref mut: a += 1;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct IncrementB;
-impl_activity! { for IncrementB
-    @(start) {
-        ref mut: b += 1;
+
+impl<'o, M: Model<'o>> Activity<'o, M> for IncrementB {
+    fn run(&'o self, mut ops: Ops<'_, 'o, M>) -> Result<Duration> {
+        ops += op! {
+            ref mut: b += 1;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct SetBToA;
-impl_activity! { for SetBToA
-    @(start) {
-        mut:b = ref:a;
+
+impl<'o, M: Model<'o>> Activity<'o, M> for SetBToA {
+    fn run(&'o self, mut ops: Ops<'_, 'o, M>) -> Result<Duration> {
+        ops += op! {
+            mut:b = ref:a;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct SetAToB;
-impl_activity! { for SetAToB
-    @(start) {
-        mut:a = ref:b;
+
+impl<'o, M: Model<'o>> Activity<'o, M> for SetAToB {
+    fn run(&'o self, mut ops: Ops<'_, 'o, M>) -> Result<Duration> {
+        ops += op! {
+            mut:a = ref:b;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 #[derive(Hash)]
 pub struct AddBToA;
-impl_activity! { for AddBToA
-    @(start) {
-        ref mut: a += ref:b;
+
+impl<'o, M: Model<'o>> Activity<'o, M> for AddBToA {
+    fn run(&'o self, mut ops: Ops<'_, 'o, M>) -> Result<Duration> {
+        ops += op! {
+            ref mut: a += ref:b;
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 pub struct EvalCounter(Arc<AtomicU16>);
-impl_activity! { for EvalCounter
-    @(start) {
-        mut:a = ref:a;
-        self.0.fetch_add(1, Ordering::SeqCst);
+
+impl<'o, M: Model<'o>> Activity<'o, M> for EvalCounter {
+    fn run(&'o self, mut ops: Ops<'_, 'o, M>) -> Result<Duration> {
+        ops += op! {
+            mut:a = ref:a;
+            self.0.fetch_add(1, Ordering::SeqCst);
+        };
+
+        Ok(Duration::ZERO)
     }
-    Ok(Duration::ZERO)
 }
 
 impl Hash for EvalCounter {

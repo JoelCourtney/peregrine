@@ -131,7 +131,7 @@
 //!     // This is syntactic sugar to declare an operation.
 //!     // It occurs at time `start`, which is a timestamp provided automatically
 //!     // by the macro according to when the activity happens.
-//!     @(start) {
+//!     start => {
 //!         // This is syntactic sugar for a read-write operation on the sol_counter
 //!         // resource. Resources can be accessed as read-only with `ref:`, and write-only
 //!         // with `mut:`.
@@ -149,7 +149,7 @@
 //! }
 //!
 //! impl_activity! { for LogCurrentSol
-//!     @(start) {
+//!     start => {
 //!         // You can access activity arguments both inside and outside operations.
 //!         if self.verbose {
 //!             ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
@@ -205,7 +205,7 @@
 //! # #[derive(Hash, Serialize, Deserialize)]
 //! # struct IncrementSol;
 //! # impl_activity! { for IncrementSol
-//! #     @(start) {
+//! #     start => {
 //! #         ref mut: sol_counter += 1;
 //! #     }
 //! #     Ok(Duration::ZERO)
@@ -215,7 +215,7 @@
 //! #     verbose: bool,
 //! # }
 //! # impl_activity! { for LogCurrentSol
-//! #     @(start) {
+//! #     start => {
 //! #         if self.verbose {
 //! #             ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
 //! #         } else {
@@ -467,55 +467,8 @@ pub mod timeline;
 /// ```
 pub use peregrine_macros::model;
 
-/// Implements the [Activity] trait for a type.
-///
-/// Expects a block of statements preceded by `for MyActivity`. The inside of the block is a function
-/// that generates the activity's operations, and returns the duration of the activity. The start time
-/// is accessible through the `start` variable, and the activity arguments are accessible through `args`.
-///
-/// The body of your activity function will contain operations that use a special syntactic sugar.
-/// Let's break down this example:
-///
-/// ```
-/// # fn main() {}
-/// # use peregrine::{resource, impl_activity, Duration};
-/// use serde::{Serialize, Deserialize};
-///
-/// resource!(sol_counter: u32);
-///
-/// #[derive(Hash, Serialize, Deserialize)]
-/// struct IncrementSol;
-///
-/// impl_activity! { for IncrementSol
-///     @(start) {
-///         ref mut: sol_counter += 1;
-///     }
-///     Ok(Duration::ZERO) // Return statement indicates the activity had zero duration
-/// }
-/// ```
-///
-/// 1. First declare an empty struct `IncrementSol` to be our activity type. It has to
-///    implement [Serialize][serde::ser::Serialize], and [DeserializeOwned][serde::de::DeserializeOwned], and this is done through derive macros
-///    provided by serde.
-/// 2. Call [impl_activity] with the preamble `for IncrementSol`. Everything else inside the
-///    macro is your function body. In this context, `start` is the start time of the activity,
-///    and `args` are the arguments (in this case there are none).
-/// 3. Declare operation by starting a statement with `@`.
-///    - `(start)` indicates the time the operation happens at. It can be any valid rust expression
-///      that evaluates to a [Duration].
-///    - TODO explain ref mut
-///    - The body of the operation can do whatever you want, as long as it is deterministic.
-///      The body is also an async context; you could make a non-blocking web request if you want,
-///      as long as it can be assumed to always return the same output for the same input.
-/// 4. Finally, we end the activity body by returning `Duration::ZERO`, which means the activity took
-///    zero duration.
-///
-/// It is *technically* valid to generate operations before the start time or after the declared end time.
-/// It would just be very un-hygienic and potentially hard to debug.
-pub use peregrine_macros::impl_activity;
-
 pub use crate::activity::{Activity, ActivityId};
-use crate::activity::{DecomposedActivity, Placement};
+use crate::activity::{DecomposedActivity, Ops, Placement};
 use crate::exec::{ErrorAccumulator, ExecEnvironment};
 pub use crate::history::History;
 use crate::macro_prelude::Data;
@@ -616,8 +569,16 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let bump = self.session.herd.get();
         let activity = bump.alloc(activity);
         let activity_pointer = activity as *mut dyn Activity<'o, M>;
-        let (_duration, operations) =
-            activity.decompose(Placement::Static(epoch_to_duration(time)), bump)?;
+
+        let mut operations = vec![];
+        let placement = Placement::Static(epoch_to_duration(time));
+        let ops_consumer = Ops {
+            placement,
+            bump: &bump,
+            operations: &mut operations,
+        };
+
+        let _duration = activity.run(ops_consumer)?;
 
         for op in &operations {
             op.insert_self(&mut self.timelines)?;

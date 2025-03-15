@@ -12,7 +12,7 @@ model! {
 #[derive(Hash)]
 struct IncrementA;
 impl_activity! { for IncrementA
-    @(start) {
+    start => {
         ref mut: a += 1;
     }
     Ok(Duration::ZERO)
@@ -21,7 +21,7 @@ impl_activity! { for IncrementA
 #[derive(Hash)]
 struct IncrementC;
 impl_activity! { for IncrementC
-    @(start) {
+    start => {
         ref mut: c += 1;
     }
     Ok(Duration::ZERO)
@@ -30,7 +30,7 @@ impl_activity! { for IncrementC
 #[derive(Hash)]
 struct ConvertAToB;
 impl_activity! { for ConvertAToB
-    @(start) {
+    start => {
         mut:b = ref:a.to_string();
     }
     Ok(Duration::ZERO)
@@ -39,7 +39,7 @@ impl_activity! { for ConvertAToB
 #[derive(Hash)]
 struct ConvertBToA;
 impl_activity! { for ConvertBToA
-    @(start) {
+    start => {
         mut:a = ref:b.parse()?;
     }
     Ok(Duration::ZERO)
@@ -48,7 +48,7 @@ impl_activity! { for ConvertBToA
 #[derive(Hash)]
 struct AddCToA;
 impl_activity! ( for AddCToA
-    @(start) {
+    start => {
         ref mut: a += ref:c;
     }
     Ok(Duration::ZERO)

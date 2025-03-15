@@ -1,4 +1,4 @@
-use crate::operation::{Context, Op};
+use crate::operation::{Op};
 use heck::ToSnekCase;
 use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
@@ -30,7 +30,6 @@ impl Op {
 
     fn make_idents(&self) -> Idents {
         let Op {
-            context,
             reads,
             writes,
             read_writes,
@@ -38,23 +37,14 @@ impl Op {
             ..
         } = self;
 
-        let activity = if let Context::Activity(p) = context {
-            p.clone()
-        } else {
-            todo!()
-        };
-
-        let activity_ident = activity.get_ident().unwrap();
-
-        let output = format_ident!("{activity_ident}OpOutput{uuid}");
-        let op = format_ident!("{activity_ident}Op{uuid}");
-        let op_internals = format_ident!("{activity_ident}OpInternals{uuid}");
+        let output = format_ident!("OpOutput{uuid}");
+        let op = format_ident!("Op{uuid}");
+        let op_internals = format_ident!("OpInternals{uuid}");
         let op_body_function = format_ident!(
-            "{}_op_body_{uuid}",
-            activity_ident.to_string().to_snek_case()
+            "op_body_{uuid}",
         );
-        let continuations = format_ident!("{activity_ident}Continuations{uuid}");
-        let downstreams = format_ident!("{activity_ident}Downstreams{uuid}");
+        let continuations = format_ident!("Continuations{uuid}");
+        let downstreams = format_ident!("Downstreams{uuid}");
 
         Idents {
             op_internals,
@@ -63,7 +53,6 @@ impl Op {
             continuations,
             downstreams,
             op_body_function,
-            activity: activity_ident.clone(),
             write_onlys: writes.clone(),
             read_onlys: reads.clone(),
             read_writes: read_writes.clone(),
@@ -98,7 +87,6 @@ struct Idents {
     op_body_function: Ident,
     continuations: Ident,
     downstreams: Ident,
-    activity: Ident,
     read_onlys: Vec<Ident>,
     write_onlys: Vec<Ident>,
     read_writes: Vec<Ident>,
@@ -114,7 +102,6 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         op_body_function,
         continuations,
         downstreams,
-        activity,
         all_reads,
         all_writes,
         read_onlys,
@@ -143,6 +130,13 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
     let num_reads = all_reads.len();
 
+    let body_function_type = quote! {
+        Fn(
+            #(<<#read_onlys as peregrine::resource::Resource>::Data as peregrine::resource::Data>::Sample,)*
+            #(<#read_writes as peregrine::resource::Resource>::Data,)*
+        ) -> peregrine::Result<(#(<#all_writes as peregrine::resource::Resource>::Data,)*)>
+    };
+
     let (internals_generics_decl, internals_generics_usage) = if all_reads.is_empty() {
         (quote! {}, quote! {})
     } else {
@@ -160,12 +154,16 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             #(#all_read_responses: Option<macro_prelude::InternalResult<(u64, <<#all_reads as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read)>>,)*
         }
 
-        struct #op<'o, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> {
+        struct #op<'o,
+            M: macro_prelude::Model<'o> + 'o,
+            G: macro_prelude::Grounder<'o, M>,
+            B: #body_function_type
+        > {
             grounder: G,
 
             state: macro_prelude::parking_lot::Mutex<macro_prelude::OperationState<#output<'o>, #continuations<'o, M>, #downstreams<'o, M>>>,
 
-            activity: &'o #activity,
+            body: B,
             internals: macro_prelude::UnsafeSyncCell<#op_internals #internals_generics_usage>
         }
 
@@ -186,12 +184,12 @@ fn generate_operation(idents: &Idents) -> TokenStream {
         }
 
         #[allow(clippy::unused_unit)]
-        impl<'s, 'o: 's, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>> #op<'o, M, G> {
-            fn new(grounder: G, activity: &'o #activity) -> Self {
+        impl<'s, 'o: 's, M: macro_prelude::Model<'o> + 'o, G: macro_prelude::Grounder<'o, M>, B: #body_function_type> #op<'o, M, G, B> {
+            fn new(grounder: G, body: B) -> Self {
                 #op {
                     state: Default::default(),
 
-                    activity,
+                    body,
                     internals: macro_prelude::UnsafeSyncCell::new(#op_internals {
                         grounding_result: grounder.get_static().map(Ok),
 
