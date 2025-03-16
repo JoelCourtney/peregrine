@@ -1,29 +1,72 @@
-use crate as peregrine;
 use crate::exec::ExecEnvironment;
 use crate::operation::{
-    Continuation, Downstream, InternalResult, Marked, MaybeMarkedDownstream, Node,
-    ObservedErrorOutput, Upstream,
+    Continuation, Downstream, InternalResult, Node, ObservedErrorOutput, Upstream,
 };
-use crate::resource;
 use crate::resource::Resource;
 use crate::timeline::Timelines;
 use hifitime::Duration;
 use parking_lot::Mutex;
 use rayon::Scope;
 use smallvec::SmallVec;
-use std::fmt::Debug;
 
 pub trait UngroundedUpstream<'o, R: Resource>:
-    AsRef<dyn Upstream<'o, R> + 'o> + Upstream<'o, R> + Upstream<'o, peregrine_grounding>
+    AsRef<dyn Upstream<'o, R> + 'o> + Upstream<'o, R> + GroundingUpstream<'o>
 {
 }
 
-resource!(pub peregrine_grounding: Duration);
-
-impl<'o> Upstream<'o, peregrine_grounding> for Duration {
-    fn request<'s>(
+pub trait GroundingUpstream<'o>: Sync {
+    fn request_grounding<'s>(
         &'o self,
-        continuation: Continuation<'o, peregrine_grounding>,
+        continuation: GroundingContinuation<'o>,
+        already_registered: bool,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's;
+}
+
+pub trait GroundingDownstream<'o>: Sync {
+    fn respond_grounding<'s>(
+        &'o self,
+        value: InternalResult<(usize, Duration)>,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's;
+
+    fn clear_cache(&self);
+}
+
+pub enum GroundingContinuation<'o> {
+    Node(usize, &'o dyn GroundingDownstream<'o>),
+    Root(oneshot::Sender<InternalResult<Duration>>),
+}
+
+impl<'o> GroundingContinuation<'o> {
+    pub fn run<'s>(
+        self,
+        value: InternalResult<Duration>,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's,
+    {
+        match self {
+            GroundingContinuation::Node(marker, node) => {
+                node.respond_grounding(value.map(|value| (marker, value)), scope, timelines, env);
+            }
+            GroundingContinuation::Root(s) => s.send(value).unwrap(),
+        }
+    }
+}
+
+impl<'o> GroundingUpstream<'o> for Duration {
+    fn request_grounding<'s>(
+        &'o self,
+        continuation: GroundingContinuation<'o>,
         _already_registered: bool,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
@@ -31,15 +74,7 @@ impl<'o> Upstream<'o, peregrine_grounding> for Duration {
     ) where
         'o: 's,
     {
-        continuation.run(Ok((0, *self)), scope, timelines, env);
-    }
-
-    fn notify_downstreams(&self, _time_of_change: Duration) {
-        unreachable!()
-    }
-
-    fn register_downstream_early(&self, _downstream: &'o dyn Downstream<'o, peregrine_grounding>) {
-        unreachable!()
+        continuation.run(Ok(*self), scope, timelines, env);
     }
 }
 
@@ -49,7 +84,7 @@ pub struct UngroundedUpstreamResolver<'o, R: Resource> {
     ungrounded_upstreams: SmallVec<&'o dyn UngroundedUpstream<'o, R>, 1>,
     grounding_responses: Mutex<SmallVec<InternalResult<(usize, Duration)>, 1>>,
     continuation: Mutex<Option<Continuation<'o, R>>>,
-    downstream: Mutex<Option<MaybeMarkedDownstream<'o, R>>>,
+    downstream: Mutex<Option<&'o dyn Downstream<'o, R>>>,
 
     #[allow(clippy::type_complexity)]
     cached_decision: Mutex<Option<InternalResult<(Duration, &'o dyn Upstream<'o, R>)>>>,
@@ -115,8 +150,8 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
         if !self.ungrounded_upstreams.is_empty() {
             for (i, ungrounded) in self.ungrounded_upstreams[1..].iter().enumerate() {
                 scope.spawn(move |s| {
-                    ungrounded.request(
-                        Continuation::<peregrine_grounding>::MarkedNode(i, self),
+                    ungrounded.request_grounding(
+                        GroundingContinuation::Node(i, self),
                         false,
                         s,
                         timelines,
@@ -125,8 +160,8 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
                 });
             }
 
-            self.ungrounded_upstreams[0].request(
-                Continuation::<peregrine_grounding>::MarkedNode(0, self),
+            self.ungrounded_upstreams[0].request_grounding(
+                GroundingContinuation::Node(0, self),
                 false,
                 scope,
                 timelines,
@@ -148,16 +183,14 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
     }
 
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
-        *self.downstream.lock() = Some(downstream.into());
+        *self.downstream.lock() = Some(downstream);
     }
 }
 
-impl<'o, R: Resource> Downstream<'o, Marked<peregrine_grounding>>
-    for UngroundedUpstreamResolver<'o, R>
-{
-    fn respond<'s>(
+impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o, R> {
+    fn respond_grounding<'s>(
         &self,
-        value: InternalResult<(u64, (usize, Duration))>,
+        value: InternalResult<(usize, Duration)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
@@ -165,7 +198,7 @@ impl<'o, R: Resource> Downstream<'o, Marked<peregrine_grounding>>
         'o: 's,
     {
         let mut responses_lock = self.grounding_responses.lock();
-        responses_lock.push(value.map(|ok| ok.1));
+        responses_lock.push(value);
 
         if responses_lock.len() == self.ungrounded_upstreams.len() {
             let folded_result = responses_lock
@@ -217,9 +250,5 @@ impl<'o, R: Resource> Downstream<'o, Marked<peregrine_grounding>>
         if let Some(c) = self.downstream.lock().as_ref() {
             c.clear_cache();
         }
-    }
-
-    fn clear_upstream(&self, _time_of_change: Option<Duration>) -> bool {
-        unreachable!()
     }
 }

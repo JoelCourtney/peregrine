@@ -1,7 +1,14 @@
-use peregrine::activity::Ops;
+use peregrine::activity::{Ops, OpsReceiver};
+use peregrine::macro_prelude::Resource;
 use peregrine::reexports::hifitime::{TimeScale, TimeUnits};
 use peregrine::reexports::peregrine_macros::op;
 use peregrine::{Activity, Duration, Session, Time, initial_conditions, model};
+
+fn add_to_u32<'o, Res: Resource<Data = u32>>(add: u32, mut ops: impl OpsReceiver<'o>) {
+    ops.push(op! {
+        ref mut: Res += add;
+    });
+}
 
 model! {
     pub Perf {
@@ -15,8 +22,8 @@ model! {
 struct IncrementA;
 
 impl Activity for IncrementA {
-    fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
-        ops += op! { ref mut: a += 1; };
+    fn run(&self, ops: Ops) -> peregrine::Result<Duration> {
+        add_to_u32::<a>(1, ops);
         Ok(Duration::ZERO)
     }
 }

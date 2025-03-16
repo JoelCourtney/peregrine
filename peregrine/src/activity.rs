@@ -1,7 +1,6 @@
 use crate::Time;
 use crate::exec::ExecEnvironment;
-use crate::macro_prelude::{Continuation, Resource, UpstreamVec};
-use crate::operation::grounding::peregrine_grounding;
+use crate::macro_prelude::{GroundingContinuation, GroundingUpstream, Resource, UpstreamVec};
 use crate::operation::{Node, Upstream};
 use crate::timeline::{Timelines, epoch_to_duration};
 use anyhow::Result;
@@ -9,41 +8,103 @@ use bumpalo_herd::Member;
 use hifitime::Duration;
 use rayon::Scope;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::hash::Hash;
 use std::ops::AddAssign;
 
-pub struct Ops<'v, 'o: 'v> {
-    pub(crate) placement: Placement<'o>,
-    pub(crate) bump: &'v Member<'o>,
-    pub(crate) operations: &'v mut Vec<&'o dyn Node<'o>>,
+/// A cursor and operations aggregator for inserting ops into the plan.
+///
+/// Within the context of an [Activity], you can move the cursor around
+/// in time (including backward), then add operations with [OpsReceiver::push]
+/// or the add-assign (`+=`) operator.
+///
+/// ## Delegating
+///
+///
+pub trait OpsReceiver<'o> {
+    /// Add an operation at the current time.
+    fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N);
+
+    /// Move the ops cursor later in time by a relative delay.
+    ///
+    /// Can be either a [Duration] or a dynamic `delay!` (not yet implemented).
+    fn wait<D>(&mut self, delay: D)
+    where
+        Placement<'o>: AddAssign<D>;
+
+    /// Fast-forwards to the given time if it is in the future.
+    ///
+    /// Does nothing if it is in the past.
+    fn wait_until(&mut self, _time: Time);
+
+    /// Sets the cursor to the given time.
+    fn goto(&mut self, time: Time);
 }
 
-impl<'o> Ops<'_, 'o> {
+#[derive(Copy, Clone)]
+pub struct Ops<'v, 'o: 'v> {
+    /// The current placement time that operations will be inserted at.
+    pub(crate) placement: Placement<'o>,
+    /// An arena allocator to store operations in.
+    pub(crate) bump: &'v Member<'o>,
+    /// The aggregator for operation references. The underlying [Vec]
+    /// is unwrapped by the [Plan][crate::Plan] after the activity is done.
+    pub(crate) operations: &'v RefCell<Vec<&'o dyn Node<'o>>>,
+}
+
+impl<'o> OpsReceiver<'o> for Ops<'_, 'o> {
     #[inline]
-    pub fn run<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {
+    fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {
         let op = self.bump.alloc(op_ctor(self.placement));
-        self.operations.push(op);
+        self.operations.borrow_mut().push(op);
     }
 
-    pub fn wait<D>(&mut self, delay: D)
+    fn wait<D>(&mut self, delay: D)
     where
         Placement<'o>: AddAssign<D>,
     {
         self.placement += delay;
     }
 
-    pub fn wait_until(&mut self, _time: Time) {
+    fn wait_until(&mut self, _time: Time) {
         todo!()
     }
 
-    pub fn goto(&mut self, time: Time) {
+    fn goto(&mut self, time: Time) {
         self.placement = Placement::Static(epoch_to_duration(time));
+    }
+}
+
+impl<'o> OpsReceiver<'o> for &mut Ops<'_, 'o> {
+    fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {
+        (*self).push(op_ctor);
+    }
+
+    fn wait<D>(&mut self, delay: D)
+    where
+        Placement<'o>: AddAssign<D>,
+    {
+        (*self).wait(delay);
+    }
+
+    fn wait_until(&mut self, time: Time) {
+        (*self).wait_until(time);
+    }
+
+    fn goto(&mut self, time: Time) {
+        (*self).goto(time);
     }
 }
 
 impl<'o, N: Node<'o> + 'o, F: FnOnce(Placement<'o>) -> N> AddAssign<F> for Ops<'_, 'o> {
     fn add_assign(&mut self, rhs: F) {
-        self.run(rhs);
+        self.push(rhs);
+    }
+}
+
+impl<'o, N: Node<'o> + 'o, F: FnOnce(Placement<'o>) -> N> AddAssign<F> for &mut Ops<'_, 'o> {
+    fn add_assign(&mut self, rhs: F) {
+        self.push(rhs);
     }
 }
 
@@ -71,7 +132,7 @@ pub enum Placement<'o> {
     Dynamic {
         min: Duration,
         max: Duration,
-        node: &'o dyn Upstream<'o, peregrine_grounding>,
+        node: &'o dyn GroundingUpstream<'o>,
     },
 }
 
@@ -84,13 +145,6 @@ impl Clone for Placement<'_> {
 impl Copy for Placement<'_> {}
 
 impl<'o> Placement<'o> {
-    pub fn unwrap_node(&self) -> &dyn Upstream<'o, peregrine_grounding> {
-        match self {
-            Placement::Static(_) => panic!("tried to unwrap a static grounding"),
-            Placement::Dynamic { node, .. } => *node,
-        }
-    }
-
     pub fn min(&self) -> Duration {
         match self {
             Placement::Static(start) => *start,
@@ -123,9 +177,9 @@ impl<'o> Placement<'o> {
         }
     }
 
-    pub fn request<'s>(
+    pub fn request_grounding<'s>(
         &'o self,
-        continuation: Continuation<'o, peregrine_grounding>,
+        continuation: GroundingContinuation<'o>,
         already_registered: bool,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
@@ -134,7 +188,7 @@ impl<'o> Placement<'o> {
         match self {
             Placement::Static(_) => unreachable!(),
             Placement::Dynamic { node, .. } => {
-                node.request(continuation, already_registered, scope, timelines, env)
+                node.request_grounding(continuation, already_registered, scope, timelines, env)
             }
         }
     }

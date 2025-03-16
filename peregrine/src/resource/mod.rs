@@ -69,7 +69,7 @@ pub trait Data<'h>:
 ///
 /// There are almost no practical uses to implementing this trait manually.
 /// Its better to use the [resource][crate::resource!] macro.
-pub trait Resource: 'static + Sync {
+pub trait Resource: 'static + Sync + Copy {
     /// A stringified version of the resource name.
     const LABEL: &'static str;
 
@@ -78,6 +78,8 @@ pub trait Resource: 'static + Sync {
 
     /// The type that is written from operations to history.
     type Data: for<'h> Data<'h>;
+
+    const INSTANCE: Self;
 }
 
 #[macro_export]
@@ -85,7 +87,7 @@ macro_rules! resource {
     ($($(#[$attr:meta])* $vis:vis $name:ident: $ty:ty),* $(,)?) => {
         $(
             $(#[$attr])*
-            #[derive(Debug, peregrine::reexports::serde::Serialize, peregrine::reexports::serde::Deserialize)]
+            #[derive(Debug, peregrine::reexports::serde::Serialize, peregrine::reexports::serde::Deserialize, Copy, Clone)]
             #[serde(crate = "peregrine::reexports::serde")]
             #[allow(non_camel_case_types)]
             $vis enum $name {
@@ -96,6 +98,7 @@ macro_rules! resource {
                 const LABEL: &'static str = $crate::reexports::peregrine_macros::code_to_str!($name);
                 const ID: u64 = $crate::reexports::peregrine_macros::random_u64!();
                 type Data = $ty;
+                const INSTANCE: Self = Self::Unit;
             }
 
             impl $crate::resource::ResourceHistoryPlugin for $name {

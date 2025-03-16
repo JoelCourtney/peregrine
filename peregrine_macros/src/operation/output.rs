@@ -127,10 +127,20 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             #(<#read_writes as peregrine::resource::Resource>::Data,)*), Output=peregrine::Result<(#(<#all_writes as peregrine::resource::Resource>::Data,)*)>>
     };
 
+    let resources_generics_decl = quote! {
+        #(#read_onlys: peregrine::resource::Resource,)* #(#write_onlys: peregrine::resource::Resource,)* #(#read_writes: peregrine::resource::Resource,)*
+    };
+    let resources_generics_usage = quote! {
+        #(#read_onlys,)* #(#write_onlys,)* #(#read_writes,)*
+    };
+
     let (internals_generics_decl, internals_generics_usage) = if all_reads.is_empty() {
         (quote! {}, quote! {})
     } else {
-        (quote! { <'o> }, quote! { <'o> })
+        (
+            quote! { <'o,  #(#all_reads: macro_prelude::Resource,)*> },
+            quote! { <'o,  #(#all_reads,)*> },
+        )
     };
 
     quote! {
@@ -141,33 +151,33 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             #(#all_read_responses: Option<macro_prelude::InternalResult<(u64, <<#all_reads as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read)>>,)*
         }
 
-        struct #op<'o, B: #body_function_bound> {
+        struct #op<'o, B: #body_function_bound, #resources_generics_decl> {
             placement: peregrine::activity::Placement<'o>,
 
-            state: macro_prelude::parking_lot::Mutex<macro_prelude::OperationState<#output<'o>, #continuations<'o>, #downstreams<'o>>>,
+            state: macro_prelude::parking_lot::Mutex<macro_prelude::OperationState<#output<'o, #(#all_writes,)*>, #continuations<'o, #(#all_writes,)*>, #downstreams<'o, #(#all_writes,)*>>>,
 
             body: B,
             internals: macro_prelude::UnsafeSyncCell<#op_internals #internals_generics_usage>
         }
 
         #[derive(Copy, Clone)]
-        struct #output<'o> {
+        struct #output<'o, #(#all_writes: macro_prelude::Resource,)*> {
             hash: u64,
             #(#all_writes: <<#all_writes as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read,)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #continuations<'o> {
+        enum #continuations<'o, #(#all_writes: macro_prelude::Resource,)*> {
             #(#all_writes(macro_prelude::Continuation<'o, #all_writes>),)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #downstreams<'o> {
-            #(#all_writes(macro_prelude::MaybeMarkedDownstream<'o, #all_writes>),)*
+        enum #downstreams<'o, #(#all_writes: macro_prelude::Resource,)*> {
+            #(#all_writes(&'o dyn macro_prelude::Downstream<'o, #all_writes>),)*
         }
 
         #[allow(clippy::unused_unit)]
-        impl<'s, 'o: 's, B: #body_function_bound> #op<'o, B> {
+        impl<'s, 'o: 's, B: #body_function_bound, #resources_generics_decl> #op<'o, B, #resources_generics_usage> {
             fn new(placement: macro_prelude::Placement<'o>, body: B) -> Self {
                 #op {
                     state: Default::default(),
@@ -182,7 +192,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                     placement,
                 }
             }
-            fn run_continuations(&self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<#output<'o>, #continuations<'o>, #downstreams<'o>>>, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
+            fn run_continuations(&self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<#output<'o, #(#all_writes,)*>, #continuations<'o, #(#all_writes,)*>, #downstreams<'o, #(#all_writes,)*>>>, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
                 let mut swapped_continuations = macro_prelude::smallvec::SmallVec::new();
                 std::mem::swap(&mut state.continuations, &mut swapped_continuations);
                 let output = state.status.unwrap_done();
@@ -211,7 +221,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 }
             }
 
-            fn send_requests(&'o self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<#output<'o>, #continuations<'o>, #downstreams<'o>>>, time: macro_prelude::Duration, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
+            fn send_requests(&'o self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<#output<'o, #(#all_writes,)*>, #continuations<'o, #(#all_writes,)*>, #downstreams<'o, #(#all_writes,)*>>>, time: macro_prelude::Duration, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
                 let internals = self.internals.get();
                 let (#(#all_read_responses,)*) = unsafe {
                     (#((*internals).#all_read_responses,)*)
@@ -245,7 +255,7 @@ fn generate_operation(idents: &Idents) -> TokenStream {
                 )*
             }
 
-            fn run(&'o self, env: macro_prelude::ExecEnvironment<'s, 'o>) -> macro_prelude::InternalResult<#output<'o>> {
+            fn run(&'o self, env: macro_prelude::ExecEnvironment<'s, 'o>) -> macro_prelude::InternalResult<#output<'o, #(#all_writes,)*>> {
                 use macro_prelude::{Data, Context, MaybeHash};
 
                 let internals = self.internals.get();
@@ -322,11 +332,11 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             }
         }
 
-        impl<'o, B: #body_function_bound> macro_prelude::NodeId for #op<'o, B> {
+        impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::NodeId for #op<'o, B, #resources_generics_usage> {
             const ID: u64 = peregrine::reexports::peregrine_macros::random_u64!();
         }
 
-        impl<'o, B: #body_function_bound> macro_prelude::Node<'o> for #op<'o, B> {
+        impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::Node<'o> for #op<'o, B, #resources_generics_usage> {
             fn insert_self(&'o self, timelines: &mut macro_prelude::Timelines<'o>) -> macro_prelude::Result<()> {
                 let notify_time = self.placement.min();
                 #(
@@ -378,175 +388,232 @@ fn generate_operation(idents: &Idents) -> TokenStream {
             }
         }
 
-        #(
-            impl<'o, B: #body_function_bound> macro_prelude::Downstream<'o, #all_reads> for #op<'o, B> {
-                fn respond<'s>(
-                    &'o self,
-                    value: macro_prelude::InternalResult<(u64, <<#all_reads as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read)>,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
-                ) where 'o: 's {
-                    unsafe {
-                        (*self.internals.get()).#all_read_responses = Some(value);
-                    }
+        impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::Downstream<'o, R> for #op<'o, B, #resources_generics_usage> {
+            fn respond<'s>(
+                &'o self,
+                value: macro_prelude::InternalResult<(u64, <R::Data as macro_prelude::Data<'o>>::Read)>,
+                scope: &macro_prelude::rayon::Scope<'s>,
+                timelines: &'s macro_prelude::Timelines<'o>,
+                env: macro_prelude::ExecEnvironment<'s, 'o>
+            ) where 'o: 's {
+                macro_prelude::castaway::match_type!(R::INSTANCE, {
+                    #(
+                        #all_reads as _ => {
+                            assert!(
+                                std::mem::size_of::<<#all_reads::Data as macro_prelude::Data<'o>>::Read>()
+                                    == std::mem::size_of::<<R::Data as macro_prelude::Data<'o>>::Read>()
+                            );
+                            // Potentially the least safe code ever written.
+                            unsafe {
+                                let transmuted = std::mem::transmute_copy(&value);
+                                std::mem::forget(value);
+                                (*self.internals.get()).#all_read_responses = Some(transmuted);
+                            }
+                        },
+                    )*
+                    _ => unreachable!()
+                });
+
+                let mut state = self.state.lock();
+
+                state.response_counter -= 1;
+
+                if state.response_counter == 0 {
+                    drop(state);
+
+                    let result = self.run(env);
 
                     let mut state = self.state.lock();
+                    state.status = macro_prelude::OperationStatus::Done(result);
 
-                    state.response_counter -= 1;
-
-                    if state.response_counter == 0 {
-                        drop(state);
-
-                        let result = self.run(env);
-
-                        let mut state = self.state.lock();
-                        state.status = macro_prelude::OperationStatus::Done(result);
-
-                        self.run_continuations(state, scope, timelines, env);
-                    }
-                }
-
-                fn clear_cache(&self) {
-                    unsafe {
-                        (*self.internals.get()).#all_read_responses = None;
-                    }
-                    self.clear_cached_downstreams();
-                }
-
-                fn clear_upstream(&self, time_of_change: Option<macro_prelude::Duration>) -> bool {
-                    let internals = self.internals.get();
-                    let (clear, retain) = if let Some(time_of_change) = time_of_change {
-                        unsafe {
-                            match (*internals).grounding_result {
-                                Some(Ok(t)) if time_of_change < t => {
-                                    (true, false)
-                                }
-                                Some(Ok(_)) => (false, true),
-                                _ => (false, false)
-                            }
-                        }
-                    } else { (true, false) };
-
-                    if clear {
-                        unsafe {
-                            (*internals).#all_reads = None;
-                            (*internals).#all_read_responses = None;
-                        }
-                        <Self as macro_prelude::Downstream::<'o, #all_reads>>::clear_cache(self);
-                    }
-
-                    retain
+                    self.run_continuations(state, scope, timelines, env);
                 }
             }
-        )*
 
-        #(
-            impl<'o, B: #body_function_bound> macro_prelude::Upstream<'o, #all_writes> for #op<'o, B> {
-                fn request<'s>(
-                    &'o self,
-                    continuation: macro_prelude::Continuation<'o, #all_writes>,
-                    already_registered: bool,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
-                ) where 'o: 's {
-                    let mut state = self.state.lock();
-                    if !already_registered {
-                        if let Some(d) = continuation.to_downstream() {
-                            state.downstreams.push(#downstreams::#all_writes(d));
-                        }
-                    }
-
-                    match state.status {
-                        macro_prelude::OperationStatus::Dormant => {
-                            state.continuations.push(#continuations::#all_writes(continuation));
-                            state.status = macro_prelude::OperationStatus::Working;
-                            match self.placement.get_static() {
-                                Some(t) => {
-                                    if #num_reads == 0 {
-                                        drop(state);
-                                        let result = self.run(env);
-
-                                        let mut state = self.state.lock();
-                                        state.status = macro_prelude::OperationStatus::Done(result);
-
-                                        self.run_continuations(state, scope, timelines, env);
-                                    } else {
-                                        self.send_requests(state, t, scope, timelines, env);
-                                    }
-                                }
-                                None => unsafe {
-                                    match (*self.internals.get()).grounding_result {
-                                        Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
-                                        Some(Err(_)) => {
-                                            let mut state = self.state.lock();
-                                            state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
-                                            self.run_continuations(state, scope, timelines, env);
-                                        }
-                                        None => self.placement.request(macro_prelude::Continuation::Node(self), false, scope, timelines, env.increment())
-                                    }
-                                }
+            fn clear_cache(&self) {
+                macro_prelude::castaway::match_type!(R::INSTANCE, {
+                    #(
+                        #all_reads as _ => {
+                            unsafe {
+                                (*self.internals.get()).#all_read_responses = None;
                             }
-                        }
-                        macro_prelude::OperationStatus::Done(r) => {
-                            drop(state);
-                            let send = r.map(|o| {
-                                let time = unsafe {
-                                    (*self.internals.get()).grounding_result.unwrap().unwrap()
-                                };
-                                (o.hash, o.#all_writes)
-                            });
-                            continuation.run(send, scope, timelines, env.increment());
-                        }
-                        macro_prelude::OperationStatus::Working => {
-                            state.continuations.push(#continuations::#all_writes(continuation));
+                        },
+                    )*
+                    _ => unreachable!()
+                });
+                self.clear_cached_downstreams();
+            }
+
+            fn clear_upstream(&self, time_of_change: Option<macro_prelude::Duration>) -> bool {
+                let internals = self.internals.get();
+                let (clear, retain) = if let Some(time_of_change) = time_of_change {
+                    unsafe {
+                        match (*internals).grounding_result {
+                            Some(Ok(t)) if time_of_change < t => {
+                                (true, false)
+                            }
+                            Some(Ok(_)) => (false, true),
+                            _ => (false, false)
                         }
                     }
-                }
+                } else { (true, false) };
 
-                fn notify_downstreams(&self, time_of_change: macro_prelude::Duration) {
-                    let mut state = self.state.lock();
-
-                    state.downstreams.retain(|downstream| {
-                        match downstream {
-                            #downstreams::#all_writes(d) => d.clear_upstream(Some(time_of_change)),
-                            _ => true
-                        }
+                if clear {
+                    macro_prelude::castaway::match_type!(R::INSTANCE, {
+                        #(
+                            #all_reads as _ => {
+                                unsafe {
+                                    (*internals).#all_reads = None;
+                                    (*internals).#all_read_responses = None;
+                                }
+                                <Self as macro_prelude::Downstream::<'o, #all_reads>>::clear_cache(self);
+                            },
+                        )*
+                        _ => unreachable!()
                     });
                 }
 
-                fn register_downstream_early(&self, downstream: &'o dyn macro_prelude::Downstream<'o, #all_writes>) {
-                    self.state.lock().downstreams.push(#downstreams::#all_writes(downstream.into()));
-                }
+                retain
             }
-        )*
+        }
 
-        impl<'o, B: #body_function_bound> macro_prelude::Upstream<'o, macro_prelude::peregrine_grounding> for #op<'o, B> {
+        impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::Upstream<'o, R> for #op<'o, B, #resources_generics_usage> {
             fn request<'s>(
                 &'o self,
-                continuation: macro_prelude::Continuation<'o, macro_prelude::peregrine_grounding>,
+                continuation: macro_prelude::Continuation<'o, R>,
                 already_registered: bool,
                 scope: &macro_prelude::rayon::Scope<'s>,
                 timelines: &'s macro_prelude::Timelines<'o>,
                 env: macro_prelude::ExecEnvironment<'s, 'o>
             ) where 'o: 's {
-                self.placement.request(continuation, already_registered, scope, timelines, env);
+                let mut state = self.state.lock();
+                if !already_registered {
+                    if let Some(d) = continuation.to_downstream() {
+                        macro_prelude::castaway::match_type!(R::INSTANCE, {
+                            #(
+                                #all_writes as _ => state.downstreams.push(#downstreams::#all_writes(
+                                    unsafe { std::mem::transmute(d) }
+                                )),
+                            )*
+                            _ => unreachable!()
+                        });
+                    }
+                }
+
+                match state.status {
+                    macro_prelude::OperationStatus::Dormant => {
+                        macro_prelude::castaway::match_type!(R::INSTANCE, {
+                            #(
+                                #all_writes as _ => state.continuations.push(#continuations::#all_writes(
+                                    unsafe { std::mem::transmute(continuation) }
+                                )),
+                            )*
+                            _ => unreachable!()
+                        });
+                        state.status = macro_prelude::OperationStatus::Working;
+                        match self.placement.get_static() {
+                            Some(t) => {
+                                if #num_reads == 0 {
+                                    drop(state);
+                                    let result = self.run(env);
+
+                                    let mut state = self.state.lock();
+                                    state.status = macro_prelude::OperationStatus::Done(result);
+
+                                    self.run_continuations(state, scope, timelines, env);
+                                } else {
+                                    self.send_requests(state, t, scope, timelines, env);
+                                }
+                            }
+                            None => unsafe {
+                                match (*self.internals.get()).grounding_result {
+                                    Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
+                                    Some(Err(_)) => {
+                                        let mut state = self.state.lock();
+                                        state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
+                                        self.run_continuations(state, scope, timelines, env);
+                                    }
+                                    None => self.placement.request_grounding(macro_prelude::GroundingContinuation::Node(0, self), false, scope, timelines, env.increment())
+                                }
+                            }
+                        }
+                    }
+                    macro_prelude::OperationStatus::Done(r) => {
+                        drop(state);
+                        let send = r.map(|o| {
+                            let time = unsafe {
+                                (*self.internals.get()).grounding_result.unwrap().unwrap()
+                            };
+                            let value = macro_prelude::castaway::match_type!(R::INSTANCE, {
+                                #(
+                                    #all_writes as _ => {
+                                        unsafe { std::mem::transmute_copy(&o.#all_writes) }
+                                    },
+                                )*
+                                _ => unreachable!()
+                            });
+                            (o.hash, value)
+                        });
+                        continuation.run(send, scope, timelines, env.increment());
+                    }
+                    macro_prelude::OperationStatus::Working => {
+                        macro_prelude::castaway::match_type!(R::INSTANCE, {
+                            #(
+                                #all_writes as _ => state.continuations.push(#continuations::#all_writes(
+                                    unsafe {
+                                        std::mem::transmute(continuation)
+                                    }
+                                )),
+                            )*
+                            _ => unreachable!()
+                        });
+                    }
+                }
             }
 
-            fn notify_downstreams(&self, _time_of_change: macro_prelude::Duration) {
-                unreachable!()
+            fn notify_downstreams(&self, time_of_change: macro_prelude::Duration) {
+                let mut state = self.state.lock();
+
+                state.downstreams.retain(|downstream| {
+                    match downstream {
+                        #(
+                            #downstreams::#all_writes(d) if macro_prelude::castaway::cast!(R::INSTANCE, #all_writes).is_ok() => d.clear_upstream(Some(time_of_change)),
+                        )*
+                        _ => true
+                    }
+                });
             }
 
-            fn register_downstream_early(&self, _downstream: &'o dyn macro_prelude::Downstream<'o, macro_prelude::peregrine_grounding>) {
-                unreachable!()
+            fn register_downstream_early(&self, downstream: &'o dyn macro_prelude::Downstream<'o, R>) {
+                let wrapped = macro_prelude::castaway::match_type!(R::INSTANCE, {
+                    #(
+                        #all_writes as _ => unsafe {
+                            #downstreams::#all_writes(std::mem::transmute(downstream))
+                        },
+                    )*
+                    _ => unreachable!()
+                });
+                self.state.lock().downstreams.push(wrapped);
             }
         }
 
-        impl<'o, B: #body_function_bound> macro_prelude::Downstream<'o, macro_prelude::peregrine_grounding> for #op<'o, B> {
-            fn respond<'s>(
+        impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::GroundingUpstream<'o> for #op<'o, B, #resources_generics_usage> {
+            fn request_grounding<'s>(
                 &'o self,
-                value: macro_prelude::InternalResult<(u64, macro_prelude::Duration)>,
+                continuation: macro_prelude::GroundingContinuation<'o>,
+                already_registered: bool,
+                scope: &macro_prelude::rayon::Scope<'s>,
+                timelines: &'s macro_prelude::Timelines<'o>,
+                env: macro_prelude::ExecEnvironment<'s, 'o>
+            ) where 'o: 's {
+                self.placement.request_grounding(continuation, already_registered, scope, timelines, env);
+            }
+        }
+
+        impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::GroundingDownstream<'o> for #op<'o, B, #resources_generics_usage> {
+            fn respond_grounding<'s>(
+                &'o self,
+                value: macro_prelude::InternalResult<(usize, macro_prelude::Duration)>,
                 scope: &macro_prelude::rayon::Scope<'s>,
                 timelines: &'s macro_prelude::Timelines<'o>,
                 env: macro_prelude::ExecEnvironment<'s, 'o>
@@ -592,27 +659,32 @@ fn generate_operation(idents: &Idents) -> TokenStream {
 
                 self.clear_cached_downstreams();
             }
-            fn clear_upstream(&self, _time_of_change: Option<macro_prelude::Duration>) -> bool {
-                unreachable!()
+        }
+
+        impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> AsRef<dyn macro_prelude::Upstream<'o, R> + 'o> for #op<'o, B, #resources_generics_usage> {
+            fn as_ref(&self) -> &(dyn macro_prelude::Upstream<'o, R> + 'o) {
+                self
             }
         }
 
-        #(
-            impl<'o, B: #body_function_bound> AsRef<dyn macro_prelude::Upstream<'o, #all_writes> + 'o> for #op<'o, B> {
-                fn as_ref(&self) -> &(dyn macro_prelude::Upstream<'o, #all_writes> + 'o) {
-                    self
-                }
-            }
-
-            impl<'o, B: #body_function_bound> macro_prelude::UngroundedUpstream<'o, #all_writes> for #op<'o, B> {}
-        )*
+        impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::UngroundedUpstream<'o, R> for #op<'o, B, #resources_generics_usage> {}
     }
 }
 
 fn result(idents: &Idents, body_function: TokenStream) -> TokenStream {
-    let Idents { op, .. } = idents;
+    let Idents {
+        op,
+        read_onlys,
+        write_onlys,
+        read_writes,
+        ..
+    } = idents;
+
+    let resources_generics = quote! {
+        #(#read_onlys,)* #(#write_onlys,)* #(#read_writes)*
+    };
 
     quote! {
-        move |placement| #op::new(placement, #body_function)
+        move |placement| #op::<'_,_, #resources_generics>::new(placement, #body_function)
     }
 }

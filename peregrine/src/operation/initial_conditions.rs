@@ -1,9 +1,6 @@
 use crate::exec::ExecEnvironment;
 use crate::history::PeregrineDefaultHashBuilder;
-use crate::operation::{
-    Continuation, Downstream, MaybeMarkedDownstream, Node, OperationState, OperationStatus,
-    Upstream,
-};
+use crate::operation::{Continuation, Downstream, Node, OperationState, OperationStatus, Upstream};
 use crate::resource::{Data, ErasedResource, Resource};
 use crate::timeline::{Timelines, duration_to_epoch};
 use anyhow::anyhow;
@@ -68,11 +65,8 @@ impl<R: Resource> ErasedResource for WriteValue<R> {
     }
 }
 
-type InitialConditionState<'o, R> = OperationState<
-    (u64, <<R as Resource>::Data as Data<'o>>::Read),
-    (),
-    MaybeMarkedDownstream<'o, R>,
->;
+type InitialConditionState<'o, R> =
+    OperationState<(u64, <<R as Resource>::Data as Data<'o>>::Read), (), &'o dyn Downstream<'o, R>>;
 
 pub struct InitialConditionOp<'o, R: Resource> {
     value: R::Data,
@@ -147,6 +141,6 @@ impl<'o, R: Resource + 'o> Upstream<'o, R> for InitialConditionOp<'o, R> {
     }
 
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
-        self.state.lock().downstreams.push(downstream.into());
+        self.state.lock().downstreams.push(downstream);
     }
 }

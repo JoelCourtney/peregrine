@@ -478,6 +478,7 @@ pub mod timeline;
 /// }
 /// ```
 pub use peregrine_macros::model;
+use std::cell::RefCell;
 
 pub use peregrine_macros::op;
 
@@ -485,9 +486,8 @@ pub use crate::activity::{Activity, ActivityId};
 use crate::activity::{DecomposedActivity, Placement};
 use crate::exec::{ErrorAccumulator, ExecEnvironment};
 pub use crate::history::History;
-use crate::macro_prelude::Data;
+use crate::macro_prelude::{Data, GroundingContinuation};
 use crate::operation::InternalResult;
-use crate::operation::grounding::peregrine_grounding;
 use crate::operation::initial_conditions::InitialConditions;
 use crate::resource::builtins::init_builtins_timelines;
 use crate::timeline::{MaybeGrounded, Timelines, duration_to_epoch, epoch_to_duration};
@@ -586,17 +586,17 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let activity = bump.alloc(activity);
         let activity_pointer = activity as *mut dyn Activity;
 
-        let mut operations = vec![];
+        let operations = RefCell::new(vec![]);
         let placement = Placement::Static(epoch_to_duration(time));
         let ops_consumer = Ops {
             placement,
             bump: &bump,
-            operations: &mut operations,
+            operations: &operations,
         };
 
         let _duration = activity.run(ops_consumer)?;
 
-        for op in &operations {
+        for op in &*operations.borrow() {
             op.insert_self(&mut self.timelines)?;
         }
 
@@ -604,7 +604,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
             id,
             DecomposedActivity {
                 activity: activity_pointer,
-                operations,
+                operations: operations.into_inner(),
             },
         );
 
@@ -686,8 +686,8 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
                             receiver,
                         ));
                         scope.spawn(move |s| {
-                            n.request(
-                                Continuation::<peregrine_grounding>::Root(grounding_sender),
+                            n.request_grounding(
+                                GroundingContinuation::Root(grounding_sender),
                                 true,
                                 s,
                                 timelines,

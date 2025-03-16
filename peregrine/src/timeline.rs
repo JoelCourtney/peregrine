@@ -1,7 +1,8 @@
 #![doc(hidden)]
 
 use crate::history::PassThroughHashBuilder;
-use crate::operation::grounding::{UngroundedUpstream, UngroundedUpstreamResolver};
+use crate::macro_prelude::UngroundedUpstream;
+use crate::operation::grounding::UngroundedUpstreamResolver;
 use crate::operation::initial_conditions::InitialConditionOp;
 use crate::operation::{Upstream, UpstreamVec};
 use crate::resource::{ErasedResource, Resource};
