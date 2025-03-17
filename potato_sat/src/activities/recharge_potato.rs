@@ -12,6 +12,7 @@ pub struct RechargePotato {
     pub amount: u32,
 }
 
+#[typetag::serde]
 impl Activity for RechargePotato {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         let duration = 100.seconds();

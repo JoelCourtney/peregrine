@@ -7,5 +7,6 @@ edition = "2024"
 nightly = ["peregrine/nightly"]
 
 [dependencies]
-peregrine = { path = "../peregrine" }
+peregrine = { path = "../peregrine", features = ["serde"] }
 serde = { version = "1.0.218", features = ["derive"] }
+typetag = "0.2.20"

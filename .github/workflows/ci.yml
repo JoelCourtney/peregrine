@@ -22,7 +22,7 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
       - name: Run nightly tests
-        run: cargo +nightly test --features nightly --workspace
+        run: cargo +nightly test --all-features --workspace
 
   rustfmt:
     name: Rustfmt

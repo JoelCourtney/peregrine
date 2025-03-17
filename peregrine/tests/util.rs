@@ -3,13 +3,15 @@
 use peregrine::activity::Ops;
 use peregrine::*;
 use peregrine_macros::op;
+use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 pub struct IncrementA;
 
+#[typetag::serde]
 impl Activity for IncrementA {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
@@ -20,9 +22,10 @@ impl Activity for IncrementA {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 pub struct IncrementB;
 
+#[typetag::serde]
 impl Activity for IncrementB {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
@@ -33,9 +36,10 @@ impl Activity for IncrementB {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 pub struct SetBToA;
 
+#[typetag::serde]
 impl Activity for SetBToA {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
@@ -46,9 +50,10 @@ impl Activity for SetBToA {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 pub struct SetAToB;
 
+#[typetag::serde]
 impl Activity for SetAToB {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
@@ -59,9 +64,10 @@ impl Activity for SetAToB {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 pub struct AddBToA;
 
+#[typetag::serde]
 impl Activity for AddBToA {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
@@ -72,11 +78,13 @@ impl Activity for AddBToA {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct EvalCounter(HashableAtomicU16);
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct HashableAtomicU16(Arc<AtomicU16>);
 
+#[typetag::serde]
 impl Activity for EvalCounter {
     fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
         let counter = &self.0;

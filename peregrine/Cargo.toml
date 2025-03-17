@@ -13,6 +13,7 @@ categories = ["aerospace::simulation", "simulation"]
 
 [features]
 nightly = ["parking_lot/nightly"]
+serde = []
 default = []
 
 [dependencies]
@@ -23,33 +24,44 @@ peregrine_macros = { path = "../peregrine_macros" }
 ## SERIALIZATION
 # For serializing/deserializing plans, sim history, etc.
 # Also used to hash initial condition nodes.
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive", "rc"] }
 # A non-self-describing efficient serde backend.
 bincode = { version = "2.0.1", features = ["serde"] }
+# Used to serialize arrays with const generics (such as polynomials).
 serde_arrays = "0.1.0"
+typetag = "0.2.20"
 
 ## HISTORY
 # A fast stable hashing algorithm, used for history caching.
 ahash = { version = "0.8.11", features = ["compile-time-rng"] }
 # A concurrent hashmap for storing history. Used for copiable resources.
-dashmap = { version = "6.1.0", features = ["serde"] }
-stable_deref_trait = "1.2.0"
+dashmap = { version = "7.0.0-rc2", features = ["serde"] }
+# Used to store histories, one entry per data type.
 type-map = "0.5.0"
-type_reg = { version = "0.8.0", features = ["untagged"] }
-inventory = "0.3.19"
+# Used for serializing and deserializing history.
+type_reg = { version = "0.9.0", features = ["untagged"] }
+# Used to collect serializers and deserializers for resource histories.
+inventory = "0.3.20"
+# A custom version (see relative path) of the unmaintained serde closure crate.
+# Used to hash closure inputs captured in the op! macro.
 serde_closure = { path = "../serde_closure"}
 
 ## MEMORY
 # An arena allocator used for Futures during simulation, and operations trait objects.
 bumpalo-herd = "0.1.2"
+# A replacement of std Vec that can avoid heap allocations for small arrays.
+smallvec = { version = "2.0.0-alpha.10", features = ["serde"] }
 
 ## ASYNC
 # Used to block on and join futures in a sync context.
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"] }
+# Used to collect simulation results from operations in a view range.
 oneshot = "0.1.11"
 
 ## PARALLELISM
+# The execution core of peregrine. A work-stealing executor for CPU-bound synchronous code.
 rayon = "1.10.0"
+# Used for the `SegQueue` type for collecting simulation errors.
 crossbeam = "0.8.4"
 
 ## TIME
@@ -59,16 +71,18 @@ hifitime = "4.0.2"
 ## MISC
 # Used for convience, not having to manually implement simple traits.
 derive_more = { version = "2.0.1", features = ["deref", "deref_mut", "error"] }
-smallvec = { version = "2.0.0-alpha.10", features = ["serde"] }
+# Used for implementing common resource abstractions that use numerics.
 num-traits = "0.2.19"
+# Used to easily copy-paste a declaration multiple times with duck-typed inputs.
 duplicate = "2.0.0"
+# Used in the initial conditions macro to detect types that have defaults.
 spez = "0.1.2"
+# Used in the core Upstream/Downstream traits to differentiate between multiple reads and writes.
 castaway = "0.2.3"
-
 
 ## ERROR HANDLING
 # Used to allow modellers to return errors from activities and operations
-anyhow = "1.0.96"
+anyhow = "1.0.97"
 
 [dev-dependencies]
 rand = "0.9.0"

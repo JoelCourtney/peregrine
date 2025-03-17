@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-peregrine = { path = "../peregrine" }
+peregrine = { path = "../peregrine", features = ["serde"] }
 serde = { version = "1.0.217", features = ["derive"] }
+typetag = "0.2.20"

@@ -127,6 +127,7 @@
 //! #[derive(Hash, Serialize, Deserialize)]
 //! struct IncrementSol;
 //!
+//! # #[typetag::serde]
 //! impl Activity for IncrementSol {
 //!     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //!         ops += op! {
@@ -146,6 +147,7 @@
 //!     verbose: bool,
 //! }
 //!
+//! # #[typetag::serde]
 //! impl Activity for LogCurrentSol {
 //!     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //!         let verbose = self.verbose;
@@ -205,6 +207,7 @@
 //! # }
 //! # #[derive(Hash, Serialize, Deserialize)]
 //! # struct IncrementSol;
+//! # #[typetag::serde]
 //! # impl Activity for IncrementSol {
 //! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //! #         ops += op! {
@@ -222,6 +225,7 @@
 //! #     // Verbosity is taken in as an activity argument.
 //! #     verbose: bool,
 //! # }
+//! # #[typetag::serde]
 //! # impl Activity for LogCurrentSol {
 //! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //! #         let verbose = self.verbose;
@@ -499,6 +503,8 @@ use oneshot::Receiver;
 use operation::Continuation;
 use parking_lot::RwLock;
 use resource::Resource;
+use serde::ser::SerializeSeq;
+use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::RangeBounds;
@@ -603,6 +609,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         self.activities.insert(
             id,
             DecomposedActivity {
+                _time: time,
                 activity: activity_pointer,
                 operations: operations.into_inner(),
             },
@@ -742,6 +749,17 @@ impl<'o, M: Model<'o>> Drop for Plan<'o, M> {
                 decomposed.activity.drop_in_place();
             }
         }
+    }
+}
+
+impl<'o, M: Model<'o>> Serialize for Plan<'o, M> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let seq = serializer.serialize_seq(Some(self.activities.len()))?;
+        for _activity in &self.activities {}
+        seq.end()
     }
 }
 

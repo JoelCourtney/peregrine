@@ -2,7 +2,6 @@
 
 pub use bumpalo_herd;
 pub use castaway;
-pub use crossbeam;
 pub use hifitime;
 pub use inventory;
 pub use parking_lot;

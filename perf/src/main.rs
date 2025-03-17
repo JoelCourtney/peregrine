@@ -3,6 +3,7 @@ use peregrine::macro_prelude::Resource;
 use peregrine::reexports::hifitime::{TimeScale, TimeUnits};
 use peregrine::reexports::peregrine_macros::op;
 use peregrine::{Activity, Duration, Session, Time, initial_conditions, model};
+use serde::{Deserialize, Serialize};
 
 fn add_to_u32<'o, Res: Resource<Data = u32>>(add: u32, mut ops: impl OpsReceiver<'o>) {
     ops.push(op! {
@@ -18,9 +19,10 @@ model! {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 struct IncrementA;
 
+#[typetag::serde]
 impl Activity for IncrementA {
     fn run(&self, ops: Ops) -> peregrine::Result<Duration> {
         add_to_u32::<a>(1, ops);
@@ -28,8 +30,9 @@ impl Activity for IncrementA {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 struct IncrementC;
+#[typetag::serde]
 impl Activity for IncrementC {
     fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
         ops += op! { ref mut: c += 1; };
@@ -37,8 +40,9 @@ impl Activity for IncrementC {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 struct ConvertAToB;
+#[typetag::serde]
 impl Activity for ConvertAToB {
     fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
         ops += op! { mut:b = ref:a.to_string(); };
@@ -46,8 +50,9 @@ impl Activity for ConvertAToB {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 struct ConvertBToA;
+#[typetag::serde]
 impl Activity for ConvertBToA {
     fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
         ops += op! { mut:a = ref:b.parse()?; };
@@ -55,8 +60,9 @@ impl Activity for ConvertBToA {
     }
 }
 
-#[derive(Hash)]
+#[derive(Hash, Serialize, Deserialize)]
 struct AddCToA;
+#[typetag::serde]
 impl Activity for AddCToA {
     fn run(&self, mut ops: Ops) -> peregrine::Result<Duration> {
         ops += op! { ref mut: a += ref:c; };

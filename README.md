@@ -10,5 +10,5 @@ after the fastest bird.
 
 Peregrine is designed to be used with branching iterative schedulers, through incremental
 simulation, long-term simulation state history, targeted resource queries, and parallelism.
-The documentation is pretty thorough and should contain enough examples
-to get started.
+The documentation is still in progress but should contain enough examples for you to see
+what the project is about.

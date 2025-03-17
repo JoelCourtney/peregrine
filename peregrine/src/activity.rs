@@ -12,15 +12,6 @@ use std::cell::RefCell;
 use std::hash::Hash;
 use std::ops::AddAssign;
 
-/// A cursor and operations aggregator for inserting ops into the plan.
-///
-/// Within the context of an [Activity], you can move the cursor around
-/// in time (including backward), then add operations with [OpsReceiver::push]
-/// or the add-assign (`+=`) operator.
-///
-/// ## Delegating
-///
-///
 pub trait OpsReceiver<'o> {
     /// Add an operation at the current time.
     fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N);
@@ -41,6 +32,24 @@ pub trait OpsReceiver<'o> {
     fn goto(&mut self, time: Time);
 }
 
+/// A cursor and operations aggregator for inserting ops into the plan.
+///
+/// Within the context of an [Activity], you can move the cursor around
+/// in time (including backward), then add operations with [OpsReceiver::push]
+/// or the add-assign (`+=`) operator.
+///
+/// ## Delegating & Mutability
+///
+/// Since this struct contains some internal state (the location of the cursor
+/// in the plan), you might need to be cautious about delegating to helper functions
+/// that move the cursor around. If you want those cursor changes to be reflected
+/// back in the original scope, the helper function should accept `&mut Ops` as argument;
+/// if not, the helper function should take just `Ops`. This struct is [Copy], and making
+/// a copy will make a new cursor that can be moved around independently.
+///
+/// Alternatively, if you want to decide the mutability at the call site instead of the
+/// function declaration, the function can accept `impl OpsReceiver<'o>`. Both `Ops` and
+/// `&mut Ops` implement [OpsReceiver], and so the function caller can decide which to pass.
 #[derive(Copy, Clone)]
 pub struct Ops<'v, 'o: 'v> {
     /// The current placement time that operations will be inserted at.
@@ -108,8 +117,9 @@ impl<'o, N: Node<'o> + 'o, F: FnOnce(Placement<'o>) -> N> AddAssign<F> for &mut 
     }
 }
 
-/// An activity, which decomposes into a statically-known set of operations. Implemented
-/// with the [impl_activity][crate::impl_activity] macro.
+/// An activity, which produces into a statically-known set of operations.
+/// Returns the activity's final duration and may produce errors.
+#[cfg_attr(feature = "serde", typetag::serde(tag = "type"))]
 pub trait Activity: Send + Sync {
     fn run<'o>(&'o self, ops: Ops<'_, 'o>) -> Result<Duration>;
 }
@@ -127,6 +137,12 @@ impl ActivityId {
     }
 }
 
+/// The placement of an activity or operation.
+///
+/// It might be a statically known concrete time, or a time that is
+/// decided dynamically at runtime. The user isn't expected to interact
+/// with this enum directly.
+#[doc(hidden)]
 pub enum Placement<'o> {
     Static(Duration),
     Dynamic {
@@ -164,9 +180,9 @@ impl<'o> Placement<'o> {
     }
 
     pub fn remove_me<R: Resource>(&self, timelines: &mut Timelines<'o>) -> bool {
-        match self {
-            Placement::Static(d) => timelines.remove_grounded::<R>(*d),
-            Placement::Dynamic { .. } => todo!(),
+        match *self {
+            Placement::Static(d) => timelines.remove_grounded::<R>(d),
+            Placement::Dynamic { min, max, .. } => timelines.remove_ungrounded::<R>(min, max),
         }
     }
 
@@ -208,5 +224,6 @@ impl AddAssign<Duration> for Placement<'_> {
 
 pub(crate) struct DecomposedActivity<'o> {
     pub(crate) activity: *mut dyn Activity,
+    pub(crate) _time: Time,
     pub(crate) operations: Vec<&'o dyn Node<'o>>,
 }
