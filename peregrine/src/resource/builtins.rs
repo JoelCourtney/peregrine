@@ -1,4 +1,3 @@
-use crate as peregrine;
 use crate::macro_prelude::{InitialConditionOp, MaybeHash};
 use crate::resource::Data;
 use crate::timeline::Timelines;
@@ -6,6 +5,9 @@ use crate::{Time, resource};
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use std::hash::Hasher;
+
+#[allow(unused_imports)]
+use crate as peregrine;
 
 pub(crate) fn init_builtins_timelines<'o>(time: Duration, timelines: &mut Timelines<'o>) {
     timelines.init_for_resource(

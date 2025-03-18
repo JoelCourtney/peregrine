@@ -176,7 +176,6 @@ impl<'de> Deserialize<'de> for History {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate as peregrine;
     use crate::macro_prelude::duration_to_epoch;
     use crate::resource;
     use bincode::config::standard;

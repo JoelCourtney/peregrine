@@ -4,10 +4,11 @@ members = [
     "potato_sat",
     "peregrine_macros",
     "perf",
+    "perf/perf_macros",
     "serde_closure"
 ]
 default-members = [
-    "peregrine", "perf", "potato_sat"
+    "peregrine", "potato_sat"
 ]
 
 resolver = "2"

@@ -21,6 +21,7 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
+use rand::Rng;
 use std::{collections::HashSet, convert::TryInto, iter, iter::successors, mem::take, str};
 use syn::{
     parse2, parse_macro_input,
@@ -204,6 +205,8 @@ fn impl_closure(mut closure: ExprClosure, kind: Kind) -> Result<TokenStream, Err
     let ret_name = Ident::new("__serde_closure_ret", span);
     let env_types_name = Ident::new("__serde_closure_env_types", span);
     let impls_name = Ident::new("__serde_closure_impls", span);
+
+    let random_id = rand::rng().random::<u64>();
 
     let source = closure.to_token_stream().to_string();
     let capture = closure.capture.is_some();
@@ -457,6 +460,7 @@ fn impl_closure(mut closure: ExprClosure, kind: Kind) -> Result<TokenStream, Err
                     #(#type_params: Hash,)*
                 {
                     fn hash<H: hash::Hasher>(&self, state: &mut H) {
+                        #random_id.hash(state);
                         #( self.#env_variables.hash(state); )*
                     }
                 }

@@ -15,6 +15,7 @@ categories = ["aerospace::simulation", "simulation"]
 nightly = ["parking_lot/nightly"]
 serde = []
 default = []
+pregenerate_nodes = ["peregrine_macros/pregenerated"]
 
 [dependencies]
 

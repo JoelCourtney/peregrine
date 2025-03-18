@@ -2,6 +2,7 @@
 
 pub mod grounding;
 pub mod initial_conditions;
+pub mod node_impls;
 
 use crate::exec::ExecEnvironment;
 use crate::macro_prelude::Data;

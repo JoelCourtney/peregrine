@@ -85,7 +85,6 @@ impl Parse for Op {
             writes,
             read_writes,
             body,
-            uuid: uuid::Uuid::new_v4().simple().to_string(),
         })
     }
 }

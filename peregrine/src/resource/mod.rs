@@ -87,8 +87,7 @@ macro_rules! resource {
     ($($(#[$attr:meta])* $vis:vis $name:ident: $ty:ty),* $(,)?) => {
         $(
             $(#[$attr])*
-            #[derive(Debug, peregrine::reexports::serde::Serialize, peregrine::reexports::serde::Deserialize, Copy, Clone)]
-            #[serde(crate = "peregrine::reexports::serde")]
+            #[derive(Copy, Clone)]
             #[allow(non_camel_case_types)]
             $vis enum $name {
                 Unit
