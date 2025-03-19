@@ -69,7 +69,7 @@ pub fn declare_activities(input: TokenStream) -> TokenStream {
                     let mut counter = 0;
                     #(
                         mut: #writes = sum - counter;
-                        counter -= 1;
+                        counter += 1;
                     )*
                 };
                 ops.wait(1.seconds());
@@ -131,7 +131,7 @@ pub fn make_plan(input: TokenStream) -> TokenStream {
         let activity = activity(rand::random::<u64>() % num_activities as u64);
         let i = i as i64;
         let time = quote! {
-            plan_start + #i.seconds() + #i.nanoseconds()
+            plan_start + #i.seconds() + #i.nanoseconds() + offset
         };
         result = quote! {
             #result

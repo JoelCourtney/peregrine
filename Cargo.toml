@@ -3,9 +3,11 @@ members = [
     "peregrine",
     "potato_sat",
     "peregrine_macros",
-    "perf",
-    "perf/perf_macros",
     "serde_closure"
+]
+exclude = [
+    "perf",
+    "perf/perf_macros"
 ]
 default-members = [
     "peregrine", "potato_sat"
