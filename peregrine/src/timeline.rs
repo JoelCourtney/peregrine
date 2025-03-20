@@ -9,12 +9,15 @@ use crate::resource::{ErasedResource, Resource};
 use bumpalo_herd::{Herd, Member};
 use hifitime::TimeScale::TAI;
 use hifitime::{Duration, Epoch as Time};
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound::{Excluded, Unbounded};
 use std::ops::{Bound, RangeBounds};
 
 pub struct Timelines<'o>(
-    HashMap<u64, Box<dyn ErasedResource + 'o>, PassThroughHashBuilder>,
+    HashMap<u64, RwLock<Box<dyn ErasedResource + 'o>>, PassThroughHashBuilder>,
     &'o Herd,
 );
 
@@ -31,7 +34,7 @@ impl<'o> Timelines<'o> {
         assert!(!self.0.contains_key(&R::ID));
         self.0.insert(
             R::ID,
-            Box::new(Timeline::init(time, self.1.get().alloc(op))),
+            RwLock::new(Box::new(Timeline::init(time, self.1.get().alloc(op)))),
         );
     }
 
@@ -44,18 +47,18 @@ impl<'o> Timelines<'o> {
     }
 
     pub fn insert_grounded<R: Resource>(
-        &mut self,
+        &self,
         time: Duration,
         op: &'o dyn Upstream<'o, R>,
     ) -> UpstreamVec<'o, R> {
         self.inner_timeline_mut().insert_grounded(time, op)
     }
-    pub fn remove_grounded<R: Resource + 'o>(&mut self, time: Duration) -> bool {
+    pub fn remove_grounded<R: Resource + 'o>(&self, time: Duration) -> bool {
         self.inner_timeline_mut::<R>().remove_grounded(time)
     }
 
     pub fn insert_ungrounded<R: Resource>(
-        &mut self,
+        &self,
         min: Duration,
         max: Duration,
         op: &'o dyn UngroundedUpstream<'o, R>,
@@ -63,7 +66,7 @@ impl<'o> Timelines<'o> {
         self.inner_timeline_mut().insert_ungrounded(min, max, op)
     }
 
-    pub fn remove_ungrounded<R: Resource + 'o>(&mut self, min: Duration, max: Duration) -> bool {
+    pub fn remove_ungrounded<R: Resource + 'o>(&self, min: Duration, max: Duration) -> bool {
         self.inner_timeline_mut::<R>().remove_ungrounded(min, max)
     }
 
@@ -74,30 +77,40 @@ impl<'o> Timelines<'o> {
         self.inner_timeline().range(bounds)
     }
 
-    fn inner_timeline<R: Resource>(&self) -> &'o Timeline<'o, R> {
-        let reference = self.0.get(&R::ID).unwrap_or_else(|| {
-            panic!(
-                "Could not find resource {}. Is it included in the model?",
-                R::LABEL
-            )
-        });
-        let transmuted = unsafe {
-            &*(reference.as_ref() as *const dyn ErasedResource as *const Timeline<'o, R>)
-        };
-        transmuted
+    fn inner_timeline<R: Resource>(&self) -> MappedRwLockReadGuard<Timeline<'o, R>> {
+        let reference = self
+            .0
+            .get(&R::ID)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not find resource {}. Is it included in the model?",
+                    R::LABEL
+                )
+            })
+            .read();
+        RwLockReadGuard::map(reference, |r| {
+            let transmuted =
+                unsafe { &*(r.as_ref() as *const dyn ErasedResource as *const Timeline<'o, R>) };
+            transmuted
+        })
     }
 
-    fn inner_timeline_mut<R: Resource>(&mut self) -> &'o mut Timeline<'o, R> {
-        let reference = self.0.get_mut(&R::ID).unwrap_or_else(|| {
-            panic!(
-                "Could not find resource {}. Is it included in the model?",
-                R::LABEL
-            )
-        });
-        let transmuted = unsafe {
-            &mut *(reference.as_mut() as *mut dyn ErasedResource as *mut Timeline<'o, R>)
-        };
-        transmuted
+    fn inner_timeline_mut<R: Resource>(&self) -> MappedRwLockWriteGuard<Timeline<'o, R>> {
+        let reference = self
+            .0
+            .get(&R::ID)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not find resource {}. Is it included in the model?",
+                    R::LABEL
+                )
+            })
+            .write();
+        RwLockWriteGuard::map(reference, |r| {
+            let transmuted =
+                unsafe { &mut *(r.as_mut() as *mut dyn ErasedResource as *mut Timeline<'o, R>) };
+            transmuted
+        })
     }
 }
 

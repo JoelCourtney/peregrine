@@ -109,11 +109,18 @@ impl<'o, R: Resource> UngroundedUpstreamResolver<'o, R> {
 }
 
 impl<'o, R: Resource> Node<'o> for UngroundedUpstreamResolver<'o, R> {
-    fn insert_self(&'o self, _timelines: &mut Timelines<'o>) -> anyhow::Result<()> {
+    fn insert_self<'s>(
+        &'o self,
+        _timelines: &'s Timelines<'o>,
+        _scope: &Scope<'s>,
+    ) -> anyhow::Result<()>
+    where
+        'o: 's,
+    {
         unreachable!()
     }
 
-    fn remove_self(&self, _timelines: &mut Timelines<'o>) -> anyhow::Result<()> {
+    fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
         unreachable!()
     }
 }

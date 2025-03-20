@@ -171,7 +171,7 @@ impl<'o> Placement<'o> {
     pub fn insert_me<R: Resource>(
         &self,
         me: &'o dyn Upstream<'o, R>,
-        timelines: &mut Timelines<'o>,
+        timelines: &Timelines<'o>,
     ) -> UpstreamVec<'o, R> {
         match self {
             Placement::Static(d) => timelines.insert_grounded::<R>(*d, me),
@@ -179,7 +179,7 @@ impl<'o> Placement<'o> {
         }
     }
 
-    pub fn remove_me<R: Resource>(&self, timelines: &mut Timelines<'o>) -> bool {
+    pub fn remove_me<R: Resource>(&self, timelines: &Timelines<'o>) -> bool {
         match *self {
             Placement::Static(d) => timelines.remove_grounded::<R>(d),
             Placement::Dynamic { min, max, .. } => timelines.remove_ungrounded::<R>(min, max),

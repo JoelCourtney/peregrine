@@ -85,11 +85,18 @@ impl<R: Resource> InitialConditionOp<'_, R> {
 }
 
 impl<'o, R: Resource> Node<'o> for InitialConditionOp<'o, R> {
-    fn insert_self(&'o self, _timelines: &mut Timelines<'o>) -> anyhow::Result<()> {
+    fn insert_self<'s>(
+        &'o self,
+        _timelines: &'s Timelines<'o>,
+        _scope: &Scope<'s>,
+    ) -> anyhow::Result<()>
+    where
+        'o: 's,
+    {
         unreachable!()
     }
 
-    fn remove_self(&self, _timelines: &mut Timelines<'o>) -> anyhow::Result<()> {
+    fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
         Err(anyhow!("Cannot remove initial conditions."))
     }
 }

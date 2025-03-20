@@ -242,35 +242,38 @@ impl Node {
             }
 
             impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::Node<'o> for #name<'o, B, #resources_generics_usage> {
-                fn insert_self(&'o self, timelines: &mut macro_prelude::Timelines<'o>) -> macro_prelude::Result<()> {
+                fn insert_self<'s>(&'o self, timelines: &'s macro_prelude::Timelines<'o>, scope: &macro_prelude::rayon::Scope<'s>) -> macro_prelude::Result<()> where 'o: 's {
                     let notify_time = self.placement.min();
                     #(
-                        let previous = self.placement.insert_me::<#write_only_types>(self, timelines);
-                        assert!(!previous.is_empty());
-                        for p in previous {
-                            p.notify_downstreams(notify_time);
-                        }
-                    )*
-                    let reads = self.reads.get();
-                    #(
-                        let previous = self.placement.insert_me::<#read_write_types>(self, timelines);
-
-                        if previous.len() == 1 {
-                            let upstream = previous[0];
-                            upstream.register_downstream_early(self);
-                            unsafe {
-                                (*reads).#read_write_upstreams = Some(upstream);
+                        scope.spawn(move |_| {
+                            let previous = self.placement.insert_me::<#write_only_types>(self, timelines);
+                            assert!(!previous.is_empty());
+                            for p in previous {
+                                p.notify_downstreams(notify_time);
                             }
-                        }
+                        });
+                    )*
+                    #(
+                        scope.spawn(move |_| {
+                            let previous = self.placement.insert_me::<#read_write_types>(self, timelines);
 
-                        let min = self.placement.min();
-                        for upstream in previous {
-                            upstream.notify_downstreams(min);
-                        }
+                            if previous.len() == 1 {
+                                let upstream = previous[0];
+                                upstream.register_downstream_early(self);
+                                let reads = self.reads.get();
+                                unsafe {
+                                    (*reads).#read_write_upstreams = Some(upstream);
+                                }
+                            }
+
+                            for upstream in previous {
+                                upstream.notify_downstreams(notify_time);
+                            }
+                        });
                     )*
                     Ok(())
                 }
-                fn remove_self(&self, timelines: &mut macro_prelude::Timelines<'o>) -> macro_prelude::Result<()> {
+                fn remove_self(&self, timelines: &macro_prelude::Timelines<'o>) -> macro_prelude::Result<()> {
                     #(
                         let removed = self.placement.remove_me::<#write_types>(timelines);
                         if !removed {
