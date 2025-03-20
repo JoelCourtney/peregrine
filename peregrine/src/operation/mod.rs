@@ -18,9 +18,7 @@ use std::fmt::{Debug, Display, Formatter};
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
 pub trait Node<'o>: Sync {
-    fn insert_self<'s>(&'o self, timelines: &'s Timelines<'o>, scope: &Scope<'s>) -> Result<()>
-    where
-        'o: 's;
+    fn insert_self(&'o self, timelines: &Timelines<'o>) -> Result<()>;
     fn remove_self(&self, timelines: &Timelines<'o>) -> Result<()>;
 }
 

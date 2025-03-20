@@ -141,3 +141,27 @@ pub fn make_plan(input: TokenStream) -> TokenStream {
 
     result.into()
 }
+
+#[proc_macro]
+pub fn make_samples(input: TokenStream) -> TokenStream {
+    let num_resources = parse_macro_input!(input as LitInt)
+        .base10_parse::<usize>()
+        .unwrap();
+
+    let mut result = quote! {};
+    for i in 0..num_resources {
+        let ident = resource(i);
+        let string = format!("{ident}: {{sample}}");
+        result = quote! {
+            #result
+            {
+                let start = Time::now()?;
+                let sample = plan.sample::<#ident>(plan_start + 100.centuries())?;
+                let end = Time::now()?;
+                println!(#string);
+                println!("time: {} s\n", (end - start).to_seconds());
+            }
+        };
+    }
+    result.into()
+}

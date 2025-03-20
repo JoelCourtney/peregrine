@@ -353,8 +353,6 @@
 //!   all operations will produce the same output, and if a cached value exists in history then it is valid.
 //!   It also assumes that it is OK to only resimulate a portion of an activity's operations.
 
-#![cfg_attr(feature = "nightly", feature(btree_cursors))]
-
 pub mod activity;
 pub mod exec;
 pub mod history;
@@ -602,11 +600,9 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
 
         let _duration = activity.run(ops_consumer)?;
 
-        rayon::in_place_scope(|scope| {
-            for op in &*operations.borrow() {
-                op.insert_self(&self.timelines, scope).unwrap();
-            }
-        });
+        for op in &*operations.borrow() {
+            op.insert_self(&self.timelines).unwrap();
+        }
 
         self.activities.insert(
             id,

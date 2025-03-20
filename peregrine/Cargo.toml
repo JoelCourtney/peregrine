@@ -12,7 +12,6 @@ keywords = ["simulation"]
 categories = ["aerospace::simulation", "simulation"]
 
 [features]
-nightly = ["parking_lot/nightly"]
 serde = []
 default = []
 pregenerate_nodes = ["peregrine_macros/pregenerated"]
@@ -45,13 +44,17 @@ type_reg = { version = "0.9.0", features = ["untagged"] }
 inventory = "0.3.20"
 # A custom version (see relative path) of the unmaintained serde closure crate.
 # Used to hash closure inputs captured in the op! macro.
-serde_closure = { path = "../serde_closure"}
+serde_closure = { path = "../serde_closure" }
 
 ## MEMORY
 # An arena allocator used for Futures during simulation, and operations trait objects.
 bumpalo-herd = "0.1.2"
 # A replacement of std Vec that can avoid heap allocations for small arrays.
 smallvec = { version = "2.0.0-alpha.10", features = ["serde"] }
+# A binary tree map optimized for batch insertion. Used in operation timelines.
+immutable-chunkmap = "2.0.6"
+# An arena allocator used to buffer timeline insertions.
+slab = "0.4.9"
 
 ## ASYNC
 # Used to block on and join futures in a sync context.

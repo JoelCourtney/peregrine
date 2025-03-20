@@ -85,14 +85,7 @@ impl<R: Resource> InitialConditionOp<'_, R> {
 }
 
 impl<'o, R: Resource> Node<'o> for InitialConditionOp<'o, R> {
-    fn insert_self<'s>(
-        &'o self,
-        _timelines: &'s Timelines<'o>,
-        _scope: &Scope<'s>,
-    ) -> anyhow::Result<()>
-    where
-        'o: 's,
-    {
+    fn insert_self(&'o self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
         unreachable!()
     }
 
