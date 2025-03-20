@@ -2,7 +2,7 @@ use clap::Parser;
 use peregrine::macro_prelude::hifitime::TimeScale;
 use peregrine::reexports::hifitime::TimeUnits;
 use peregrine::{Result, Session, Time};
-use perf_macros::{declare_activities, declare_model, make_initial_conditions, make_plan};
+use perf_macros::{declare_activities, declare_model, make_initial_conditions, make_plan, make_samples};
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_env = "msvc"))]
@@ -38,8 +38,7 @@ fn main() -> Result<()> {
         make_plan!(100, 100);
     }
 
-    let sample = plan.sample::<res_001>(plan_start + 100.centuries())?;
-    println!("Result: {sample}");
+    make_samples!(1000);
 
     Ok(())
 }
