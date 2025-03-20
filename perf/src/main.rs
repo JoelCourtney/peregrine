@@ -5,6 +5,13 @@ use peregrine::{Result, Session, Time};
 use perf_macros::{declare_activities, declare_model, make_initial_conditions, make_plan};
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
