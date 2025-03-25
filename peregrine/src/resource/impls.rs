@@ -205,36 +205,37 @@ impl<'h, T: Data<'h>> MaybeHash for ty {
     }
 }
 
-macro_rules! impl_partial_hash_for_hash {
-    ($($t:ty),*) => {
-        $(
-            impl MaybeHash for $t where Self: std::hash::Hash {
-                fn is_hashable(&self) -> bool { true }
-                fn hash_unchecked<H: std::hash::Hasher>(&self, state: &mut H) {
-                    use std::hash::Hash;
-                    self.hash(state);
-                }
-            }
-        )*
-    };
+#[duplicate_item(
+    ty;
+    [u8];
+    [u16];
+    [u32];
+    [u64];
+    [u128];
+    [i8];
+    [i16];
+    [i32];
+    [i64];
+    [i128];
+    [bool];
+    [char];
+    [Duration];
+    [Time];
+    [&'_ str];
+    [String];
+)]
+impl MaybeHash for ty
+where
+    Self: Hash,
+{
+    fn is_hashable(&self) -> bool {
+        true
+    }
+    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
+        use std::hash::Hash;
+        self.hash(state);
+    }
 }
-
-impl_partial_hash_for_hash![
-    u8,
-    u32,
-    u64,
-    u128,
-    i8,
-    i32,
-    i64,
-    i128,
-    bool,
-    char,
-    Duration,
-    Time,
-    &'_ str,
-    String
-];
 
 impl<T: MaybeHash> MaybeHash for Option<T> {
     fn is_hashable(&self) -> bool {

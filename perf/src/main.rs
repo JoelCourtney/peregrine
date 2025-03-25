@@ -2,7 +2,9 @@ use clap::Parser;
 use peregrine::macro_prelude::hifitime::TimeScale;
 use peregrine::reexports::hifitime::TimeUnits;
 use peregrine::{Result, Session, Time};
-use perf_macros::{declare_activities, declare_model, make_initial_conditions, make_plan, make_samples};
+use perf_macros::{
+    declare_activities, declare_model, make_initial_conditions, make_plan, make_samples,
+};
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_env = "msvc"))]
