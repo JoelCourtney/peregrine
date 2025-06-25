@@ -141,8 +141,7 @@ impl Node {
                     #(
                         let already_registered = unsafe {
                             if (*reads).#read_upstreams.is_none() {
-                                (*reads).#read_upstreams = Some(timelines.find_upstream(time)
-                                    .expect("Could not find an upstream node. Did you insert before the initial conditions?"));
+                                (*reads).#read_upstreams = Some(timelines.find_upstream(time));
                                 false
                             } else {
                                 true
@@ -365,6 +364,57 @@ impl Node {
                 }
             }
 
+            impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::GroundingDownstream<'o> for #name<'o, B, #resources_generics_usage> {
+                fn respond_grounding<'s>(
+                    &'o self,
+                    value: macro_prelude::InternalResult<(usize, macro_prelude::Duration)>,
+                    scope: &macro_prelude::rayon::Scope<'s>,
+                    timelines: &'s macro_prelude::Timelines<'o>,
+                    env: macro_prelude::ExecEnvironment<'s, 'o>
+                ) where 'o: 's {
+                    unsafe {
+                        (*self.grounding_result.get()) = Some(value.map(|r| r.1));
+                    }
+
+                    let mut state = self.state.lock();
+
+                    match state.status {
+                        macro_prelude::OperationStatus::Dormant => {},
+                        macro_prelude::OperationStatus::Working => {
+                            if let Ok((_, t)) = value {
+                                if #num_reads == 0 {
+                                    drop(state);
+                                    let result = self.run(env);
+
+                                    let mut state = self.state.lock();
+                                    state.status = macro_prelude::OperationStatus::Done(result);
+
+                                    self.run_continuations(state, scope, timelines, env);
+                                } else {
+                                    self.send_requests(state, t, scope, timelines, env);
+                                }
+                            } else {
+                                state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
+                                self.run_continuations(state, scope, timelines, env);
+                            }
+                        }
+                        macro_prelude::OperationStatus::Done(_) => unreachable!()
+                    }
+                }
+
+                fn clear_grounding_cache(&self) {
+                    let reads = self.reads.get();
+                    unsafe {
+                        #(
+                            (*reads).#read_upstreams = None;
+                            (*reads).#read_responses = None;
+                        )*
+                    }
+
+                    self.clear_cached_downstreams();
+                }
+            }
+
             impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::Upstream<'o, R> for #name<'o, B, #resources_generics_usage> {
                 fn request<'s>(
                     &'o self,
@@ -483,9 +533,7 @@ impl Node {
                     });
                     self.state.lock().downstreams.push(wrapped);
                 }
-            }
-
-            impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::GroundingUpstream<'o> for #name<'o, B, #resources_generics_usage> {
+                
                 fn request_grounding<'s>(
                     &'o self,
                     continuation: macro_prelude::GroundingContinuation<'o>,
@@ -497,65 +545,6 @@ impl Node {
                     self.placement.request_grounding(continuation, already_registered, scope, timelines, env);
                 }
             }
-
-            impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::GroundingDownstream<'o> for #name<'o, B, #resources_generics_usage> {
-                fn respond_grounding<'s>(
-                    &'o self,
-                    value: macro_prelude::InternalResult<(usize, macro_prelude::Duration)>,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
-                ) where 'o: 's {
-                    unsafe {
-                        (*self.grounding_result.get()) = Some(value.map(|r| r.1));
-                    }
-
-                    let mut state = self.state.lock();
-
-                    match state.status {
-                        macro_prelude::OperationStatus::Dormant => {},
-                        macro_prelude::OperationStatus::Working => {
-                            if let Ok((_, t)) = value {
-                                if #num_reads == 0 {
-                                    drop(state);
-                                    let result = self.run(env);
-
-                                    let mut state = self.state.lock();
-                                    state.status = macro_prelude::OperationStatus::Done(result);
-
-                                    self.run_continuations(state, scope, timelines, env);
-                                } else {
-                                    self.send_requests(state, t, scope, timelines, env);
-                                }
-                            } else {
-                                state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
-                                self.run_continuations(state, scope, timelines, env);
-                            }
-                        }
-                        macro_prelude::OperationStatus::Done(_) => unreachable!()
-                    }
-                }
-
-                fn clear_cache(&self) {
-                    let reads = self.reads.get();
-                    unsafe {
-                        #(
-                            (*reads).#read_upstreams = None;
-                            (*reads).#read_responses = None;
-                        )*
-                    }
-
-                    self.clear_cached_downstreams();
-                }
-            }
-
-            impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> AsRef<dyn macro_prelude::Upstream<'o, R> + 'o> for #name<'o, B, #resources_generics_usage> {
-                fn as_ref(&self) -> &(dyn macro_prelude::Upstream<'o, R> + 'o) {
-                    self
-                }
-            }
-
-            impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::UngroundedUpstream<'o, R> for #name<'o, B, #resources_generics_usage> {}
         }
     }
 }

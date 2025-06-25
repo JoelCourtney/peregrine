@@ -1,6 +1,6 @@
 use crate::Time;
 use crate::exec::ExecEnvironment;
-use crate::macro_prelude::{GroundingContinuation, GroundingUpstream, Resource, UpstreamVec};
+use crate::macro_prelude::{GroundingContinuation, Resource, UpstreamVec};
 use crate::operation::{Node, Upstream};
 use crate::timeline::{Timelines, epoch_to_duration};
 use anyhow::Result;
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::ops::AddAssign;
+use crate::operation::grounding::peregrine_delay;
 
 pub trait OpsReceiver<'o> {
     /// Add an operation at the current time.
@@ -148,7 +149,7 @@ pub enum Placement<'o> {
     Dynamic {
         min: Duration,
         max: Duration,
-        node: &'o dyn GroundingUpstream<'o>,
+        node: &'o dyn Upstream<'o, peregrine_delay>,
     },
 }
 

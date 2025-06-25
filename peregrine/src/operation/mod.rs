@@ -14,6 +14,7 @@ use hifitime::Duration;
 use rayon::Scope;
 use smallvec::SmallVec;
 use std::fmt::{Debug, Display, Formatter};
+use grounding::GroundingContinuation;
 
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
@@ -26,7 +27,7 @@ pub trait NodeId {
     const ID: u64;
 }
 
-pub trait Downstream<'o, R: Resource>: Sync {
+pub trait Downstream<'o, R: Resource>: Sync + GroundingDownstream<'o> {
     fn respond<'s>(
         &'o self,
         value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
@@ -38,6 +39,19 @@ pub trait Downstream<'o, R: Resource>: Sync {
 
     fn clear_cache(&self);
     fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool;
+}
+
+pub trait GroundingDownstream<'o> {
+    fn respond_grounding<'s>(
+        &'o self,
+        value: InternalResult<(usize, Duration)>,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's;
+
+    fn clear_grounding_cache(&self);
 }
 
 pub trait Upstream<'o, R: Resource>: Sync {
@@ -53,6 +67,16 @@ pub trait Upstream<'o, R: Resource>: Sync {
 
     fn notify_downstreams(&self, time_of_change: Duration);
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>);
+
+    fn request_grounding<'s>(
+        &'o self,
+        continuation: GroundingContinuation<'o>,
+        already_registered: bool,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's;
 }
 
 pub enum Continuation<'o, R: Resource> {

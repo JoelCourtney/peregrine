@@ -143,4 +143,17 @@ impl<'o, R: Resource + 'o> Upstream<'o, R> for InitialConditionOp<'o, R> {
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
         self.state.lock().downstreams.push(downstream);
     }
+
+    fn request_grounding<'s>(
+        &'o self,
+        continuation: crate::operation::grounding::GroundingContinuation<'o>,
+        _already_registered: bool,
+        scope: &Scope<'s>,
+        timelines: &'s Timelines<'o>,
+        env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's,
+    {
+        continuation.run(Ok(self.time), scope, timelines, env.increment());
+    }
 }

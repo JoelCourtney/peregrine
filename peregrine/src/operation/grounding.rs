@@ -1,43 +1,16 @@
 use crate::exec::ExecEnvironment;
 use crate::operation::{
-    Continuation, Downstream, InternalResult, Node, ObservedErrorOutput, Upstream,
+    Continuation, Downstream, GroundingDownstream, InternalResult, Node, ObservedErrorOutput, Upstream, UpstreamVec
 };
-use crate::resource::Resource;
+use crate::resource::{Resource};
 use crate::timeline::Timelines;
 use hifitime::Duration;
 use parking_lot::Mutex;
 use rayon::Scope;
 use smallvec::SmallVec;
+use crate::resource;
 
-pub trait UngroundedUpstream<'o, R: Resource>:
-    AsRef<dyn Upstream<'o, R> + 'o> + Upstream<'o, R> + GroundingUpstream<'o>
-{
-}
-
-pub trait GroundingUpstream<'o>: Sync {
-    fn request_grounding<'s>(
-        &'o self,
-        continuation: GroundingContinuation<'o>,
-        already_registered: bool,
-        scope: &Scope<'s>,
-        timelines: &'s Timelines<'o>,
-        env: ExecEnvironment<'s, 'o>,
-    ) where
-        'o: 's;
-}
-
-pub trait GroundingDownstream<'o>: Sync {
-    fn respond_grounding<'s>(
-        &'o self,
-        value: InternalResult<(usize, Duration)>,
-        scope: &Scope<'s>,
-        timelines: &'s Timelines<'o>,
-        env: ExecEnvironment<'s, 'o>,
-    ) where
-        'o: 's;
-
-    fn clear_cache(&self);
-}
+resource!(pub peregrine_delay: Duration);
 
 pub enum GroundingContinuation<'o> {
     Node(usize, &'o dyn GroundingDownstream<'o>),
@@ -63,25 +36,10 @@ impl<'o> GroundingContinuation<'o> {
     }
 }
 
-impl<'o> GroundingUpstream<'o> for Duration {
-    fn request_grounding<'s>(
-        &'o self,
-        continuation: GroundingContinuation<'o>,
-        _already_registered: bool,
-        scope: &Scope<'s>,
-        timelines: &'s Timelines<'o>,
-        env: ExecEnvironment<'s, 'o>,
-    ) where
-        'o: 's,
-    {
-        continuation.run(Ok(*self), scope, timelines, env);
-    }
-}
-
 pub struct UngroundedUpstreamResolver<'o, R: Resource> {
     time: Duration,
     grounded_upstream: Option<(Duration, &'o dyn Upstream<'o, R>)>,
-    ungrounded_upstreams: SmallVec<&'o dyn UngroundedUpstream<'o, R>, 1>,
+    ungrounded_upstreams: UpstreamVec<'o, R>,
     grounding_responses: Mutex<SmallVec<InternalResult<(usize, Duration)>, 1>>,
     continuation: Mutex<Option<Continuation<'o, R>>>,
     downstream: Mutex<Option<&'o dyn Downstream<'o, R>>>,
@@ -94,7 +52,7 @@ impl<'o, R: Resource> UngroundedUpstreamResolver<'o, R> {
     pub(crate) fn new(
         time: Duration,
         grounded: Option<(Duration, &'o dyn Upstream<'o, R>)>,
-        ungrounded: SmallVec<&'o dyn UngroundedUpstream<'o, R>, 1>,
+        ungrounded: UpstreamVec<'o, R>,
     ) -> Self {
         Self {
             time,
@@ -185,6 +143,19 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
         *self.downstream.lock() = Some(downstream);
     }
+    
+    fn request_grounding<'s>(
+        &'o self,
+        _continuation: GroundingContinuation<'o>,
+        _already_registered: bool,
+        _scope: &Scope<'s>,
+        _timelines: &'s Timelines<'o>,
+        _env: ExecEnvironment<'s, 'o>,
+    ) where
+        'o: 's,
+    {
+        unreachable!()
+    }
 }
 
 impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o, R> {
@@ -223,11 +194,11 @@ impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o,
                                 *decision = Some(Ok(gr));
                             } else {
                                 *decision =
-                                    Some(Ok((ug.1, self.ungrounded_upstreams[ug.0].as_ref())));
+                                    Some(Ok((ug.1, self.ungrounded_upstreams[ug.0])));
                             }
                         }
                         (Some(ug), None) => {
-                            *decision = Some(Ok((ug.1, self.ungrounded_upstreams[ug.0].as_ref())))
+                            *decision = Some(Ok((ug.1, self.ungrounded_upstreams[ug.0])))
                         }
                         (None, Some(gr)) => *decision = Some(Ok(gr)),
                         _ => unreachable!(),
@@ -245,7 +216,7 @@ impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o,
         }
     }
 
-    fn clear_cache(&self) {
+    fn clear_grounding_cache(&self) {
         *self.cached_decision.lock() = None;
         if let Some(c) = self.downstream.lock().as_ref() {
             c.clear_cache();
