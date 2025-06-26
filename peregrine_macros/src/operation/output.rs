@@ -55,23 +55,23 @@ impl ToTokens for Op {
         let num_write_onlys = idents.write_onlys.len();
 
         let mut declarations = quote! {};
-        if num_read_onlys + num_read_writes > MAX_PREGENERATED_ORDER * 2 {
+        if (num_read_onlys + num_read_writes) as i32 > MAX_PREGENERATED_ORDER * 2 {
             let read_impls = impl_read_structs_internal(num_read_onlys + num_read_writes);
             declarations = quote! {
                 #declarations
                 #read_impls
             };
         }
-        if num_write_onlys + num_read_writes > MAX_PREGENERATED_ORDER * 2 {
+        if (num_write_onlys + num_read_writes) as i32 > MAX_PREGENERATED_ORDER * 2 {
             let write_impls = impl_write_structs_internal(num_write_onlys + num_read_writes);
             declarations = quote! {
                 #declarations
                 #write_impls
             };
         }
-        if num_read_onlys > MAX_PREGENERATED_ORDER
-            || num_read_writes > MAX_PREGENERATED_ORDER
-            || num_write_onlys > MAX_PREGENERATED_ORDER
+        if num_read_onlys as i32 > MAX_PREGENERATED_ORDER
+            || num_read_writes as i32 > MAX_PREGENERATED_ORDER
+            || num_write_onlys as i32 > MAX_PREGENERATED_ORDER
         {
             let node_impl = impl_node(num_read_onlys, num_read_writes, num_write_onlys);
             declarations = quote! {

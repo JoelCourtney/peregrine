@@ -29,7 +29,21 @@ macro_rules! impl_copy_static_data {
 }
 
 impl_copy_static_data![
-    u8, u32, u64, u128, i8, i32, i64, i128, f32, f64, bool, char, Duration, Time
+    u8,
+    u32,
+    u64,
+    u128,
+    i8,
+    i32,
+    i64,
+    i128,
+    f32,
+    f64,
+    bool,
+    char,
+    Duration,
+    Time,
+    ()
 ];
 
 macro_rules! impl_deref_static_data {
@@ -223,6 +237,7 @@ impl<'h, T: Data<'h>> MaybeHash for ty {
     [Time];
     [&'_ str];
     [String];
+    [()];
 )]
 impl MaybeHash for ty
 where

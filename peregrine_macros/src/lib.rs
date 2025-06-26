@@ -13,10 +13,10 @@ mod node;
 mod operation;
 
 #[cfg(feature = "pregenerated")]
-const MAX_PREGENERATED_ORDER: usize = 5;
+const MAX_PREGENERATED_ORDER: i32 = 5;
 
 #[cfg(not(feature = "pregenerated"))]
-const MAX_PREGENERATED_ORDER: usize = 0;
+const MAX_PREGENERATED_ORDER: i32 = -1;
 
 #[proc_macro]
 pub fn op(input: TokenStream) -> TokenStream {
@@ -200,4 +200,43 @@ fn impl_node(
     };
 
     node.generate()
+}
+
+#[proc_macro]
+pub fn delay(input: TokenStream) -> TokenStream {
+    use proc_macro2::TokenStream as TokenStream2;
+    /// Parses `{ expr => tt }` into (expr, tt)
+    use syn::{
+        Expr, Result as SynResult, Token,
+        parse::{Parse, ParseStream},
+    };
+
+    struct DelayInput {
+        expr: Expr,
+        _arrow: Token![=>],
+        tt: TokenStream2,
+    }
+
+    impl Parse for DelayInput {
+        fn parse(input: ParseStream) -> SynResult<Self> {
+            let expr: Expr = input.parse()?;
+            let _arrow: Token![=>] = input.parse()?;
+            let tt: TokenStream2 = input.parse()?;
+            Ok(DelayInput { expr, _arrow, tt })
+        }
+    }
+
+    let DelayInput { expr, tt, .. } = syn::parse_macro_input!(input as DelayInput);
+
+    let expanded = quote! {
+        {
+            use macro_prelude::{builtins::elapsed, peregrine_grounding};
+            move |placement: macro_prelude::Placement<'o>| macro_prelude::Delay {
+                min: placement.min(),
+                max: placement.max() + #expr,
+                node: (op! { mut: peregrine_grounding = ref: elapsed + std::cmp::min(#tt, #expr); })(placement)
+            }
+        }
+    };
+    expanded.into()
 }

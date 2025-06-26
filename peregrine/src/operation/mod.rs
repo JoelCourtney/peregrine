@@ -4,17 +4,17 @@ pub mod grounding;
 pub mod initial_conditions;
 pub mod node_impls;
 
-use crate::exec::ExecEnvironment;
 use crate::macro_prelude::Data;
 use crate::resource::Resource;
 use crate::timeline::Timelines;
+use crate::{exec::ExecEnvironment, macro_prelude::peregrine_grounding};
 use anyhow::Result;
 use derive_more::with_trait::Error as DeriveError;
+use grounding::GroundingContinuation;
 use hifitime::Duration;
 use rayon::Scope;
 use smallvec::SmallVec;
 use std::fmt::{Debug, Display, Formatter};
-use grounding::GroundingContinuation;
 
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
@@ -41,7 +41,7 @@ pub trait Downstream<'o, R: Resource>: Sync + GroundingDownstream<'o> {
     fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool;
 }
 
-pub trait GroundingDownstream<'o> {
+pub trait GroundingDownstream<'o>: Sync {
     fn respond_grounding<'s>(
         &'o self,
         value: InternalResult<(usize, Duration)>,
@@ -82,6 +82,7 @@ pub trait Upstream<'o, R: Resource>: Sync {
 pub enum Continuation<'o, R: Resource> {
     Node(&'o dyn Downstream<'o, R>),
     Root(oneshot::Sender<InternalResult<<R::Data as Data<'o>>::Read>>),
+    GroundingWrapper(GroundingContinuation<'o>),
 }
 
 impl<'o, R: Resource> Continuation<'o, R> {
@@ -97,6 +98,19 @@ impl<'o, R: Resource> Continuation<'o, R> {
         match self {
             Continuation::Node(n) => n.respond(value, scope, timelines, env),
             Continuation::Root(s) => s.send(value.map(|r| r.1)).unwrap(),
+            Continuation::GroundingWrapper(c) => {
+                if castaway::cast!(R::INSTANCE, peregrine_grounding).is_ok() {
+                    assert_eq!(
+                        std::mem::size_of::<InternalResult<(u64, Duration)>>(),
+                        std::mem::size_of::<InternalResult<(u64, <R::Data as Data<'o>>::Read)>>()
+                    );
+                    let v: InternalResult<(u64, Duration)> =
+                        unsafe { std::mem::transmute_copy(&value) };
+                    c.run(v.map(|(_, d)| d), scope, timelines, env);
+                } else {
+                    unreachable!()
+                }
+            }
         }
     }
 

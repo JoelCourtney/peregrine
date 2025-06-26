@@ -314,7 +314,7 @@
 //! - **Generalized Dynamic Resources;** The [Data] trait allows you to produce arbitrary functions
 //!   from a single operation. This improves quality of life and enables hypotheticals. Currently I've
 //!   implemented [polynomials][resource::polynomial::Polynomial] and [piecewise functions][resource::piecewise::Piecewise].
-//! - **Timekeeping Builtins;** the [now][resource::builtins::now] and [elapsed_time][resource::builtins::elapsed_time]
+//! - **Timekeeping Builtins;** the [now][resource::builtins::now] and [elapsed][resource::builtins::elapsed]
 //!   resources are automatically provided to all plans.
 //! - **Its also just really fast in general;** Even in peregrine's worst case (a linear DAG on a
 //!   cheap model, with no past simulations or repeating state), it still outperforms Merlin significantly.
@@ -482,13 +482,13 @@ pub mod timeline;
 pub use peregrine_macros::model;
 use std::cell::RefCell;
 
-pub use peregrine_macros::op;
+pub use peregrine_macros::{delay, op};
 
 pub use crate::activity::{Activity, ActivityId};
 use crate::activity::{DecomposedActivity, Placement};
 use crate::exec::{ErrorAccumulator, ExecEnvironment};
 pub use crate::history::History;
-use crate::macro_prelude::{Data, GroundingContinuation};
+use crate::macro_prelude::{Data, GroundingContinuation, peregrine_grounding};
 use crate::operation::InternalResult;
 use crate::operation::initial_conditions::InitialConditions;
 use crate::resource::builtins::init_builtins_timelines;
@@ -503,7 +503,7 @@ use parking_lot::RwLock;
 use resource::Resource;
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
 use std::ops::RangeBounds;
 
@@ -531,6 +531,7 @@ impl Session {
         Self: 'o,
     {
         let mut history = self.history.write();
+        history.init::<peregrine_grounding>();
         M::init_history(&mut history);
         drop(history);
         Plan::new(self, time, initial_conditions)
@@ -731,12 +732,15 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
 
     /// Samples a resource at a given time.
     pub fn sample<R: Resource>(&self, time: Time) -> Result<<R::Data as Data<'o>>::Sample> {
-        let (_, read) = self
+        let view = self
             .view::<R>(time..=time)?
-            .first()
-            .cloned()
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let latest = view
+            .range(..=time)
+            .next_back()
             .ok_or_else(|| anyhow!("No operations to sample found at or before {time}"))?;
-        Ok(R::Data::sample(&read, time))
+        Ok(R::Data::sample(latest.1, time))
     }
 }
 

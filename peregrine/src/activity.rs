@@ -1,7 +1,8 @@
 use crate::Time;
 use crate::exec::ExecEnvironment;
-use crate::macro_prelude::{GroundingContinuation, Resource, UpstreamVec};
-use crate::operation::{Node, Upstream};
+use crate::macro_prelude::{Delay, GroundingContinuation, Resource, UpstreamVec};
+use crate::operation::grounding::peregrine_grounding;
+use crate::operation::{Continuation, Node, Upstream};
 use crate::timeline::{Timelines, epoch_to_duration};
 use anyhow::Result;
 use bumpalo_herd::Member;
@@ -11,9 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::ops::AddAssign;
-use crate::operation::grounding::peregrine_delay;
 
-pub trait OpsReceiver<'o> {
+pub trait OpsReceiver<'v, 'o: 'v> {
     /// Add an operation at the current time.
     fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N);
 
@@ -22,7 +22,7 @@ pub trait OpsReceiver<'o> {
     /// Can be either a [Duration] or a dynamic `delay!` (not yet implemented).
     fn wait<D>(&mut self, delay: D)
     where
-        Placement<'o>: AddAssign<D>;
+        Placement<'o>: AddAssign<(D, &'v Member<'o>)>;
 
     /// Fast-forwards to the given time if it is in the future.
     ///
@@ -62,7 +62,7 @@ pub struct Ops<'v, 'o: 'v> {
     pub(crate) operations: &'v RefCell<Vec<&'o dyn Node<'o>>>,
 }
 
-impl<'o> OpsReceiver<'o> for Ops<'_, 'o> {
+impl<'v, 'o: 'v> OpsReceiver<'v, 'o> for Ops<'v, 'o> {
     #[inline]
     fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {
         let op = self.bump.alloc(op_ctor(self.placement));
@@ -71,9 +71,9 @@ impl<'o> OpsReceiver<'o> for Ops<'_, 'o> {
 
     fn wait<D>(&mut self, delay: D)
     where
-        Placement<'o>: AddAssign<D>,
+        Placement<'o>: AddAssign<(D, &'v Member<'o>)>,
     {
-        self.placement += delay;
+        self.placement += (delay, self.bump);
     }
 
     fn wait_until(&mut self, _time: Time) {
@@ -85,14 +85,14 @@ impl<'o> OpsReceiver<'o> for Ops<'_, 'o> {
     }
 }
 
-impl<'o> OpsReceiver<'o> for &mut Ops<'_, 'o> {
+impl<'v, 'o: 'v> OpsReceiver<'v, 'o> for &mut Ops<'v, 'o> {
     fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {
         (*self).push(op_ctor);
     }
 
     fn wait<D>(&mut self, delay: D)
     where
-        Placement<'o>: AddAssign<D>,
+        Placement<'o>: AddAssign<(D, &'v Member<'o>)>,
     {
         (*self).wait(delay);
     }
@@ -149,7 +149,7 @@ pub enum Placement<'o> {
     Dynamic {
         min: Duration,
         max: Duration,
-        node: &'o dyn Upstream<'o, peregrine_delay>,
+        node: &'o dyn Upstream<'o, peregrine_grounding>,
     },
 }
 
@@ -169,6 +169,13 @@ impl<'o> Placement<'o> {
         }
     }
 
+    pub fn max(&self) -> Duration {
+        match self {
+            Placement::Static(start) => *start,
+            Placement::Dynamic { max, .. } => *max,
+        }
+    }
+
     pub fn insert_me<R: Resource>(
         &self,
         me: &'o dyn Upstream<'o, R>,
@@ -176,7 +183,7 @@ impl<'o> Placement<'o> {
     ) -> UpstreamVec<'o, R> {
         match self {
             Placement::Static(d) => timelines.insert_grounded::<R>(*d, me),
-            Placement::Dynamic { .. } => todo!(),
+            Placement::Dynamic { min, max, .. } => timelines.insert_ungrounded::<R>(*min, *max, me),
         }
     }
 
@@ -204,20 +211,48 @@ impl<'o> Placement<'o> {
     ) {
         match self {
             Placement::Static(_) => unreachable!(),
-            Placement::Dynamic { node, .. } => {
-                node.request_grounding(continuation, already_registered, scope, timelines, env)
-            }
+            Placement::Dynamic { node, .. } => node.request(
+                Continuation::GroundingWrapper(continuation),
+                already_registered,
+                scope,
+                timelines,
+                env,
+            ),
         }
     }
 }
 
-impl AddAssign<Duration> for Placement<'_> {
-    fn add_assign(&mut self, rhs: Duration) {
+impl<'v, 'o: 'v> AddAssign<(Duration, &'v Member<'o>)> for Placement<'o> {
+    fn add_assign(&mut self, (rhs, _): (Duration, &'v Member<'o>)) {
         match self {
             Placement::Static(start) => *start += rhs,
             Placement::Dynamic { min, max, .. } => {
                 *min += rhs;
                 *max += rhs;
+            }
+        }
+    }
+}
+
+impl<'v, 'o: 'v, F: FnOnce(Placement<'o>) -> Delay<U>, U: Upstream<'o, peregrine_grounding> + 'o>
+    AddAssign<(F, &'v Member<'o>)> for Placement<'o>
+{
+    fn add_assign(&mut self, (rhs, bump): (F, &'v Member<'o>)) {
+        let delay = rhs(*self);
+        match self {
+            Placement::Static(start) => {
+                *self = Placement::Dynamic {
+                    min: *start + delay.min,
+                    max: *start + delay.max,
+                    node: bump.alloc(delay.node),
+                }
+            }
+            Placement::Dynamic { min, max, .. } => {
+                *self = Placement::Dynamic {
+                    min: *min + delay.min,
+                    max: *max + delay.max,
+                    node: bump.alloc(delay.node),
+                }
             }
         }
     }

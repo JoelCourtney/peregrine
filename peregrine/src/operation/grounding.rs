@@ -1,16 +1,23 @@
 use crate::exec::ExecEnvironment;
 use crate::operation::{
-    Continuation, Downstream, GroundingDownstream, InternalResult, Node, ObservedErrorOutput, Upstream, UpstreamVec
+    Continuation, Downstream, GroundingDownstream, InternalResult, Node, ObservedErrorOutput,
+    Upstream, UpstreamVec,
 };
-use crate::resource::{Resource};
+use crate::resource;
+use crate::resource::Resource;
 use crate::timeline::Timelines;
 use hifitime::Duration;
 use parking_lot::Mutex;
 use rayon::Scope;
 use smallvec::SmallVec;
-use crate::resource;
 
-resource!(pub peregrine_delay: Duration);
+pub struct Delay<U> {
+    pub min: Duration,
+    pub max: Duration,
+    pub node: U,
+}
+
+resource!(pub peregrine_grounding: Duration);
 
 pub enum GroundingContinuation<'o> {
     Node(usize, &'o dyn GroundingDownstream<'o>),
@@ -105,27 +112,32 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
             *downstream_lock = continuation.to_downstream();
         }
 
-        if !self.ungrounded_upstreams.is_empty() {
-            for (i, ungrounded) in self.ungrounded_upstreams[1..].iter().enumerate() {
-                scope.spawn(move |s| {
-                    ungrounded.request_grounding(
-                        GroundingContinuation::Node(i, self),
-                        false,
-                        s,
-                        timelines,
-                        env.reset(),
-                    )
-                });
-            }
+        debug_assert!(!self.ungrounded_upstreams.is_empty());
 
-            self.ungrounded_upstreams[0].request_grounding(
-                GroundingContinuation::Node(0, self),
-                false,
-                scope,
-                timelines,
-                env.increment(),
-            );
+        let mut continuation_lock = self.continuation.lock();
+        debug_assert!(continuation_lock.is_none());
+        *continuation_lock = Some(continuation);
+        drop(continuation_lock);
+
+        for (i, ungrounded) in self.ungrounded_upstreams[1..].iter().enumerate() {
+            scope.spawn(move |s| {
+                ungrounded.request_grounding(
+                    GroundingContinuation::Node(i, self),
+                    false,
+                    s,
+                    timelines,
+                    env.reset(),
+                )
+            });
         }
+
+        self.ungrounded_upstreams[0].request_grounding(
+            GroundingContinuation::Node(0, self),
+            false,
+            scope,
+            timelines,
+            env.increment(),
+        );
     }
 
     fn notify_downstreams(&self, time_of_change: Duration) {
@@ -143,7 +155,7 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
         *self.downstream.lock() = Some(downstream);
     }
-    
+
     fn request_grounding<'s>(
         &'o self,
         _continuation: GroundingContinuation<'o>,
@@ -193,8 +205,7 @@ impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o,
                             if gr.0 > ug.1 {
                                 *decision = Some(Ok(gr));
                             } else {
-                                *decision =
-                                    Some(Ok((ug.1, self.ungrounded_upstreams[ug.0])));
+                                *decision = Some(Ok((ug.1, self.ungrounded_upstreams[ug.0])));
                             }
                         }
                         (Some(ug), None) => {

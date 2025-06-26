@@ -467,11 +467,13 @@ impl Node {
                                     match *self.grounding_result.get() {
                                         Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
                                         Some(Err(_)) => {
-                                            let mut state = self.state.lock();
                                             state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
                                             self.run_continuations(state, scope, timelines, env);
                                         }
-                                        None => self.placement.request_grounding(macro_prelude::GroundingContinuation::Node(0, self), false, scope, timelines, env.increment())
+                                        None => {
+                                            drop(state);
+                                            self.placement.request_grounding(macro_prelude::GroundingContinuation::Node(0, self), false, scope, timelines, env.increment())
+                                        }
                                     }
                                 }
                             }
@@ -533,7 +535,7 @@ impl Node {
                     });
                     self.state.lock().downstreams.push(wrapped);
                 }
-                
+
                 fn request_grounding<'s>(
                     &'o self,
                     continuation: macro_prelude::GroundingContinuation<'o>,

@@ -1,6 +1,7 @@
 #![doc(hidden)]
 
 use crate::history::PassThroughHashBuilder;
+use crate::operation::grounding::UngroundedUpstreamResolver;
 use crate::operation::initial_conditions::InitialConditionOp;
 use crate::operation::{Upstream, UpstreamVec};
 use crate::resource::{ErasedResource, Resource};
@@ -12,10 +13,9 @@ use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
 use slab::Slab;
-use std::collections::{HashMap, BTreeMap};
-use std::ops::{Bound, RangeBounds};
 use smallvec::SmallVec;
-use crate::operation::grounding::UngroundedUpstreamResolver;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::{Bound, RangeBounds};
 
 pub struct Timelines<'o>(
     HashMap<u64, RwLock<Box<dyn ErasedTimeline + 'o>>, PassThroughHashBuilder>,
@@ -81,7 +81,7 @@ impl<'o> Timelines<'o> {
 
     pub(crate) fn range<R: Resource>(
         &self,
-        bounds: impl RangeBounds<Duration>,
+        bounds: impl RangeBounds<Duration> + Clone,
     ) -> Vec<MaybeGrounded<'o, R>> {
         let mut inner = self.inner_timeline::<R>();
         if inner.should_flush() {
@@ -105,10 +105,8 @@ impl<'o> Timelines<'o> {
                 )
             })
             .read();
-        RwLockReadGuard::map(reference, |r| {
-            let transmuted =
-                unsafe { &*(r.as_ref() as *const dyn ErasedTimeline as *const Timeline<'o, R>) };
-            transmuted
+        RwLockReadGuard::map(reference, |r| unsafe {
+            &*(r.as_ref() as *const dyn ErasedTimeline as *const Timeline<'o, R>)
         })
     }
 
@@ -123,10 +121,8 @@ impl<'o> Timelines<'o> {
                 )
             })
             .write();
-        RwLockWriteGuard::map(reference, |r| {
-            let transmuted =
-                unsafe { &mut *(r.as_mut() as *mut dyn ErasedTimeline as *mut Timeline<'o, R>) };
-            transmuted
+        RwLockWriteGuard::map(reference, |r| unsafe {
+            &mut *(r.as_mut() as *mut dyn ErasedTimeline as *mut Timeline<'o, R>)
         })
     }
 }
@@ -155,9 +151,15 @@ pub struct ActiveUngroundedRanges<'o, R: Resource>(
     BTreeMap<Duration, &'o dyn Upstream<'o, R>>,
 );
 
-impl<'o, R: Resource> ActiveUngroundedRanges<'o, R> {
+impl<R: Resource> ActiveUngroundedRanges<'_, R> {
     pub fn new() -> Self {
         Self(BTreeMap::new())
+    }
+}
+
+impl<R: Resource> Default for ActiveUngroundedRanges<'_, R> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -214,7 +216,7 @@ impl<'o, R: Resource> PossibleUpstreams<'o, R> {
         if let Some((_, gr)) = self.grounded {
             result.push(gr);
         }
-        result.extend(self.ungrounded.into_iter());
+        result.extend(self.ungrounded);
         // Deduplicate and sort by pointer address
         result.sort_by(|a, b| {
             let a_ptr = *a as *const _ as *const u8;
@@ -260,13 +262,16 @@ impl<'o, R: Resource> Timeline<'o, R> {
         }
     }
 
-    fn search_possible_upstreams(
-        &self,
-        time: Duration,
-    ) -> PossibleUpstreams<'o, R> {
+    fn search_possible_upstreams(&self, time: Duration) -> PossibleUpstreams<'o, R> {
         let mut ungrounded: SmallVec<&'o dyn Upstream<'o, R>, 2> = SmallVec::new();
 
-        let mut grounded = Some(self.grounded_map.range(..time).next_back().map(|t| (*t.0, *t.1)).expect("No initial condition found"));
+        let mut grounded = Some(
+            self.grounded_map
+                .range(..time)
+                .next_back()
+                .map(|t| (*t.0, *t.1))
+                .expect("No initial condition found"),
+        );
 
         // All ungrounded operations that straddle the requested time
         for (_, entry) in self.ungrounded_map.range(..time) {
@@ -277,10 +282,7 @@ impl<'o, R: Resource> Timeline<'o, R> {
         }
 
         // The last ungrounded operation that ends before the requested time and all others that overlap with it
-        let (start, end, overlapping) = find_overlapping_upstreams(
-            &self.ungrounded_map,
-            time,
-        );
+        let (start, end, overlapping) = find_overlapping_upstreams(&self.ungrounded_map, time);
         if !overlapping.is_empty() && start > grounded.as_ref().unwrap().0 {
             grounded = None;
         }
@@ -296,14 +298,13 @@ impl<'o, R: Resource> Timeline<'o, R> {
         });
         ungrounded.dedup_by(|a, b| std::ptr::eq(*a, *b));
 
-        PossibleUpstreams { grounded, ungrounded }
+        PossibleUpstreams {
+            grounded,
+            ungrounded,
+        }
     }
 
-    pub fn last_before(
-        &self,
-        eval_time: Duration,
-        bump: Member<'o>,
-    ) -> &'o dyn Upstream<'o, R> {
+    pub fn last_before(&self, eval_time: Duration, bump: Member<'o>) -> &'o dyn Upstream<'o, R> {
         let possible = self.search_possible_upstreams(eval_time);
         possible.into_single_upstream(eval_time, bump)
     }
@@ -329,7 +330,7 @@ impl<'o, R: Resource> Timeline<'o, R> {
         value: &'o dyn Upstream<'o, R>,
     ) -> UpstreamVec<'o, R> {
         let mut result = UpstreamVec::new();
-        
+
         // Find the previous entry before the insertion start time to get ongoing upstreams
         let mut ongoing_upstreams = BTreeMap::new();
         if let Some((_, prev_entry)) = self.ungrounded_map.range(..min).next_back() {
@@ -340,16 +341,16 @@ impl<'o, R: Resource> Timeline<'o, R> {
                 result.push(*upstream);
             }
         }
-        
+
         // Create the new active ungrounded ranges entry
         let mut new_entry = ActiveUngroundedRanges::new();
         new_entry.0 = ongoing_upstreams;
         // Add the start upstream to the map
         new_entry.0.insert(max, value);
-        
+
         // Insert the new entry at the start time
         self.ungrounded_map.insert(min, new_entry);
-        
+
         // Update all entries within the insertion range to include the new upstream
         for (_, entry) in self.ungrounded_map.range_mut(min..max) {
             entry.0.insert(max, value);
@@ -358,22 +359,21 @@ impl<'o, R: Resource> Timeline<'o, R> {
                 result.push(*upstream);
             }
         }
-        
+
         // 2nd: Add all grounded upstreams that occurred during the insertion interval
         for (_, upstream) in self.grounded_map.range(min..max) {
             result.push(*upstream);
         }
-        
+
         // 3rd: Find the last upstream before the insertion interval
-        let Some((grounded_time, grounded_upstream)) = self.grounded_map.range(..min).next_back() else {
+        let Some((grounded_time, grounded_upstream)) = self.grounded_map.range(..min).next_back()
+        else {
             unreachable!()
         };
 
-        let (start, end, overlapping_upstreams) = find_overlapping_upstreams(
-            &self.ungrounded_map,
-            min,
-        );
-        
+        let (start, end, overlapping_upstreams) =
+            find_overlapping_upstreams(&self.ungrounded_map, min);
+
         if start < *grounded_time {
             result.push(*grounded_upstream);
         }
@@ -381,8 +381,7 @@ impl<'o, R: Resource> Timeline<'o, R> {
         if end > *grounded_time {
             result.extend(overlapping_upstreams);
         }
-        
-        
+
         // Sort by pointer address and remove duplicates
         result.sort_by(|a, b| {
             let a_ptr = *a as *const _ as *const u8;
@@ -390,33 +389,33 @@ impl<'o, R: Resource> Timeline<'o, R> {
             a_ptr.cmp(&b_ptr)
         });
         result.dedup_by(|a, b| std::ptr::eq(*a, *b));
-        
+
         result
     }
 
     pub fn remove_ungrounded(&mut self, min: Duration, max: Duration) -> bool {
         // Remove the entry at min if it exists
         let entry_removed = self.ungrounded_map.remove(&min).is_some();
-        
+
         if entry_removed {
             // For each entry in the interval, remove the ongoing upstream that ends at max
             for (_, entry) in self.ungrounded_map.range_mut(min..max) {
                 entry.0.remove(&max);
             }
         }
-        
+
         entry_removed
     }
 
-    pub fn range(&self, range: impl RangeBounds<Duration>) -> Vec<MaybeGrounded<'o, R>> {
+    pub fn range(&self, range: impl RangeBounds<Duration> + Clone) -> Vec<MaybeGrounded<'o, R>> {
         let start_time = match range.start_bound() {
             Bound::Included(start) | Bound::Excluded(start) => Some(*start),
             _ => None,
         };
         let mut result = Vec::new();
-        
+
         // Collect grounded upstreams from the grounded map
-        for (t, upstream) in self.grounded_map.range(range) {
+        for (t, upstream) in self.grounded_map.range(range.clone()) {
             result.push(MaybeGrounded::Grounded(*t, *upstream));
         }
 
@@ -432,20 +431,19 @@ impl<'o, R: Resource> Timeline<'o, R> {
 
         // Collect ungrounded upstreams from active ungrounded range entries
         let mut ungrounded_upstreams = Vec::new();
-        
+
         // Get all active ungrounded range entries that happen during the requested range
-        // For simplicity, we'll get all entries and let the caller filter if needed
-        for (_, entry) in self.ungrounded_map.range(..) {
-            ungrounded_upstreams.extend(entry.0.range(..).map(|(_, upstream)| *upstream));
+        for (_, entry) in self.ungrounded_map.range(range) {
+            ungrounded_upstreams.extend(entry.0.values().copied());
         }
-        
+
         // Get the last entry to happen before the range
         if let Some(start_time) = start_time {
             if let Some((_, last_entry)) = self.ungrounded_map.range(..start_time).next_back() {
                 ungrounded_upstreams.extend(last_entry.0.range(..).map(|(_, upstream)| *upstream));
             }
         }
-        
+
         // Deduplicate ungrounded upstreams using pointer equality
         ungrounded_upstreams.sort_by(|a, b| {
             let a_ptr = *a as *const _ as *const u8;
@@ -453,10 +451,13 @@ impl<'o, R: Resource> Timeline<'o, R> {
             a_ptr.cmp(&b_ptr)
         });
         ungrounded_upstreams.dedup_by(|a, b| std::ptr::eq(*a, *b));
-        
-        // Add deduplicated ungrounded upstreams to the result
-        result.extend(ungrounded_upstreams.into_iter().map(|upstream| MaybeGrounded::Ungrounded(upstream)));
 
+        // Add deduplicated ungrounded upstreams to the result
+        result.extend(
+            ungrounded_upstreams
+                .into_iter()
+                .map(|upstream| MaybeGrounded::Ungrounded(upstream)),
+        );
         result
     }
 }
@@ -467,11 +468,7 @@ impl<R: Resource> ErasedTimeline for Timeline<'_, R> {
     }
     fn flush(&mut self) {
         if self.should_flush() {
-            self.grounded_map = self.grounded_map.insert_many(
-                self.grounded_buffer
-                    .drain()
-                    .map(|(t, v)| (t, v)),
-            );
+            self.grounded_map = self.grounded_map.insert_many(self.grounded_buffer.drain());
         }
     }
 }
@@ -497,14 +494,14 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::resource;
-    use crate::operation::{Upstream, Downstream, Node, Continuation};
     use crate::exec::ExecEnvironment;
-    use hifitime::Duration;
+    use crate::operation::{Continuation, Downstream, Node, Upstream};
+    use crate::resource;
     use bumpalo_herd::Herd;
+    use hifitime::Duration;
+    use once_cell::sync::Lazy;
     use oneshot::channel;
     use rayon::Scope;
-    use once_cell::sync::Lazy;
 
     resource!(dummy: u32);
 
@@ -513,13 +510,17 @@ mod tests {
         id: u32,
     }
     impl DummyUpstream {
-        pub fn new<'o>(herd: &'o Herd, id: u32) -> &'o dyn Upstream<'o, dummy> {
+        pub fn new_alloc<'o>(herd: &'o Herd, id: u32) -> &'o dyn Upstream<'o, dummy> {
             herd.get().alloc(Self { id })
         }
     }
     impl<'o> Node<'o> for DummyUpstream {
-        fn insert_self(&'o self, _timelines: &Timelines<'o>) -> anyhow::Result<()> { Ok(()) }
-        fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> { Ok(()) }
+        fn insert_self(&'o self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
     impl<'o> Upstream<'o, dummy> for DummyUpstream {
         fn request<'s>(
@@ -529,7 +530,9 @@ mod tests {
             _scope: &Scope<'s>,
             _timelines: &'s Timelines<'o>,
             _env: ExecEnvironment<'s, 'o>,
-        ) where 'o: 's {
+        ) where
+            'o: 's,
+        {
             // Return the id as the value
             continuation.run(Ok((self.id as u64, self.id)), _scope, _timelines, _env);
         }
@@ -542,14 +545,17 @@ mod tests {
             _scope: &Scope<'s>,
             _timelines: &'s Timelines<'o>,
             _env: ExecEnvironment<'s, 'o>,
-        ) where 'o: 's {}
+        ) where
+            'o: 's,
+        {
+        }
     }
 
     macro_rules! dummy_timeline {
         ($herd:ident, $($id:ident $pattern:tt),* $(,)?) => {{
             let mut timeline = Timeline::<dummy>::init(
                 hifitime::Duration::from_seconds(0.0),
-                DummyUpstream::new(&$herd, 0)
+                DummyUpstream::new_alloc(&$herd, 0)
             );
             $(
                 dummy_timeline!(@parse $id $pattern, timeline, $herd);
@@ -560,20 +566,21 @@ mod tests {
         (@parse grounded($time:expr, $id:expr), $timeline:ident, $herd:ident) => {
             $timeline.insert_grounded(
                 hifitime::Duration::from_seconds($time),
-                DummyUpstream::new(&$herd, $id)
+                DummyUpstream::new_alloc(&$herd, $id)
             );
         };
         (@parse ungrounded($start:expr, $end:expr, $id:expr), $timeline:ident, $herd:ident) => {
             $timeline.insert_ungrounded(
                 hifitime::Duration::from_seconds($start),
                 hifitime::Duration::from_seconds($end),
-                DummyUpstream::new(&$herd, $id)
+                DummyUpstream::new_alloc(&$herd, $id)
             );
         };
     }
 
-    static HISTORY: Lazy<crate::history::History> = Lazy::new(|| crate::history::History::default());
-    static ERRORS: Lazy<crate::exec::ErrorAccumulator> = Lazy::new(|| crate::exec::ErrorAccumulator::default());
+    static HISTORY: Lazy<crate::history::History> = Lazy::new(crate::history::History::default);
+    static ERRORS: Lazy<crate::exec::ErrorAccumulator> =
+        Lazy::new(crate::exec::ErrorAccumulator::default);
 
     fn get_id<'o>(up: &'o dyn Upstream<'o, dummy>, herd: &'o Herd) -> u32 {
         let (tx, rx) = channel();
@@ -585,15 +592,9 @@ mod tests {
             stack_counter: 0,
         };
         rayon::scope(|scope| {
-            up.request(
-                Continuation::Root(tx),
-                false,
-                scope,
-                &timelines,
-                env,
-            );
+            up.request(Continuation::Root(tx), false, scope, &timelines, env);
         });
-       rx.recv().unwrap().unwrap()
+        rx.recv().unwrap().unwrap()
     }
 
     #[test]
@@ -604,10 +605,7 @@ mod tests {
     #[test]
     fn test_insert_and_find_grounded() {
         let herd = Herd::new();
-        let timeline = dummy_timeline!(herd,
-            grounded(10.0, 1),
-            grounded(20.0, 2)
-        );
+        let timeline = dummy_timeline!(herd, grounded(10.0, 1), grounded(20.0, 2));
         let found0 = timeline.last_before(Duration::from_seconds(0.1), herd.get());
         let found10 = timeline.last_before(Duration::from_seconds(10.1), herd.get());
         let found15 = timeline.last_before(Duration::from_seconds(15.0), herd.get());
@@ -621,14 +619,19 @@ mod tests {
     #[test]
     fn test_insert_and_find_ungrounded() {
         let herd = Herd::new();
-        let timeline = dummy_timeline!(herd,
-            ungrounded(5.0, 15.0, 1),
-            ungrounded(10.0, 20.0, 2)
-        );
+        let timeline = dummy_timeline!(herd, ungrounded(5.0, 15.0, 1), ungrounded(10.0, 20.0, 2));
         let ups7 = timeline.search_possible_upstreams(Duration::from_seconds(7.0));
         let ups17 = timeline.search_possible_upstreams(Duration::from_seconds(17.0));
-        let ids7: HashSet<u32> = ups7.into_upstream_vec().into_iter().map(|up| get_id(up, &herd)).collect();
-        let ids17: HashSet<u32> = ups17.into_upstream_vec().into_iter().map(|up| get_id(up, &herd)).collect();
+        let ids7: HashSet<u32> = ups7
+            .into_upstream_vec()
+            .into_iter()
+            .map(|up| get_id(up, &herd))
+            .collect();
+        let ids17: HashSet<u32> = ups17
+            .into_upstream_vec()
+            .into_iter()
+            .map(|up| get_id(up, &herd))
+            .collect();
         assert_eq!(ids7, HashSet::from([0, 1]));
         assert_eq!(ids17, HashSet::from([1, 2]));
     }
@@ -636,14 +639,19 @@ mod tests {
     #[test]
     fn test_grounded_and_ungrounded_overlap() {
         let herd = Herd::new();
-        let timeline = dummy_timeline!(herd,
-            grounded(5.0, 1),
-            ungrounded(5.0, 15.0, 2)
-        );
+        let timeline = dummy_timeline!(herd, grounded(5.0, 1), ungrounded(5.0, 15.0, 2));
         let ups5 = timeline.search_possible_upstreams(Duration::from_seconds(5.0));
         let ups10 = timeline.search_possible_upstreams(Duration::from_seconds(10.0));
-        let ids5: HashSet<u32> = ups5.into_upstream_vec().into_iter().map(|up| get_id(up, &herd)).collect();
-        let ids10: HashSet<u32> = ups10.into_upstream_vec().into_iter().map(|up| get_id(up, &herd)).collect();
+        let ids5: HashSet<u32> = ups5
+            .into_upstream_vec()
+            .into_iter()
+            .map(|up| get_id(up, &herd))
+            .collect();
+        let ids10: HashSet<u32> = ups10
+            .into_upstream_vec()
+            .into_iter()
+            .map(|up| get_id(up, &herd))
+            .collect();
         // The set of possible upstreams at these times can include any of the inserted ids
         assert_eq!(ids5, HashSet::from([0]));
         assert_eq!(ids10, HashSet::from([1, 2]));
@@ -652,9 +660,7 @@ mod tests {
     #[test]
     fn test_remove_grounded() {
         let herd = Herd::new();
-        let mut timeline = dummy_timeline!(herd,
-            grounded(5.0, 1)
-        );
+        let mut timeline = dummy_timeline!(herd, grounded(5.0, 1));
         assert!(timeline.remove_grounded(Duration::from_seconds(5.0)));
         let found5 = timeline.last_before(Duration::from_seconds(5.0), herd.get());
         assert_eq!(get_id(found5, &herd), 0);
@@ -663,10 +669,10 @@ mod tests {
     #[test]
     fn test_remove_ungrounded() {
         let herd = Herd::new();
-        let mut timeline = dummy_timeline!(herd,
-            ungrounded(5.0, 15.0, 1)
+        let mut timeline = dummy_timeline!(herd, ungrounded(5.0, 15.0, 1));
+        assert!(
+            timeline.remove_ungrounded(Duration::from_seconds(5.0), Duration::from_seconds(15.0))
         );
-        assert!(timeline.remove_ungrounded(Duration::from_seconds(5.0), Duration::from_seconds(15.0)));
         let found10 = timeline.last_before(Duration::from_seconds(10.0), herd.get());
         assert_eq!(get_id(found10, &herd), 0);
     }
@@ -674,14 +680,19 @@ mod tests {
     #[test]
     fn test_adjacent_ungrounded_intervals() {
         let herd = Herd::new();
-        let timeline = dummy_timeline!(herd,
-            ungrounded(5.0, 10.0, 1),
-            ungrounded(10.0, 15.0, 2)
-        );
+        let timeline = dummy_timeline!(herd, ungrounded(5.0, 10.0, 1), ungrounded(10.0, 15.0, 2));
         let ups7 = timeline.search_possible_upstreams(Duration::from_seconds(7.0));
         let ups12 = timeline.search_possible_upstreams(Duration::from_seconds(12.0));
-        let ids7: Vec<u32> = ups7.ungrounded.iter().map(|up| get_id(*up, &herd)).collect();
-        let ids12: Vec<u32> = ups12.ungrounded.iter().map(|up| get_id(*up, &herd)).collect();
+        let ids7: Vec<u32> = ups7
+            .ungrounded
+            .iter()
+            .map(|up| get_id(*up, &herd))
+            .collect();
+        let ids12: Vec<u32> = ups12
+            .ungrounded
+            .iter()
+            .map(|up| get_id(*up, &herd))
+            .collect();
         assert!(ids7.contains(&1));
         assert!(ids12.contains(&2));
     }

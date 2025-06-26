@@ -41,7 +41,7 @@ impl InteractionType {
 }
 
 impl Parse for Op {
-    fn parse(asdf: ParseStream) -> syn::Result<Self> {
+    fn parse(input_stream: ParseStream) -> syn::Result<Self> {
         let mut interactions = Interactions::new();
 
         let read_regex =
@@ -52,7 +52,7 @@ impl Parse for Op {
             Regex::new(r"ref mut[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)").unwrap();
         let tag_only_regex = Regex::new(r"(ref|mut|ref mut)[[:space:]]*:").unwrap();
 
-        let input = asdf.to_string();
+        let input = input_stream.to_string();
 
         for cap in read_regex.captures_iter(&input) {
             interactions.insert(format_ident!("{}", cap["ident"]), Read);
@@ -78,7 +78,7 @@ impl Parse for Op {
 
         let body = tag_only_regex.replace_all(&input, "").parse()?;
 
-        asdf.step(|_| Ok(((), Cursor::empty())))?;
+        input_stream.step(|_| Ok(((), Cursor::empty())))?;
 
         Ok(Op {
             reads,
