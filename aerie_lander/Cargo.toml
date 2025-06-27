@@ -1,0 +1,7 @@
+[package]
+name = "aerie_lander"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+peregrine = { path = "../peregrine",  features = ["serde"] }

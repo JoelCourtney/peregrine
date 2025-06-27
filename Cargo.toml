@@ -4,13 +4,13 @@ members = [
     "potato_sat",
     "peregrine_macros",
     "serde_closure"
-]
+, "aerie_lander"]
 exclude = [
     "perf",
     "perf/perf_macros"
 ]
 default-members = [
-    "peregrine", "potato_sat"
+    "peregrine", "potato_sat", "aerie_lander"
 ]
 
 resolver = "2"

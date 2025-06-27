@@ -141,7 +141,11 @@ pub fn impl_nodes(input: TokenStream) -> TokenStream {
             }
         }
     }
-    result.into()
+    quote! {
+        use peregrine::*;
+        use peregrine::internal::macro_prelude::*;
+        #result
+    }.into()
 }
 
 fn impl_node(

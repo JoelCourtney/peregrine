@@ -4,7 +4,6 @@ pub use impls::*;
 #[cfg(feature = "pregenerate_nodes")]
 mod impls {
     use crate as peregrine;
-    use crate::macro_prelude;
     use peregrine_macros::{impl_nodes, impl_read_structs, impl_write_structs};
 
     impl_read_structs!(0);
