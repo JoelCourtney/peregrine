@@ -1,5 +1,6 @@
 mod util;
 
+use anyhow::Result;
 use peregrine::*;
 use util::*;
 

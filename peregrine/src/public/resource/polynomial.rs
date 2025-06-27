@@ -1,5 +1,5 @@
 use crate::Time;
-use crate::resource::{Data, MaybeHash};
+use crate::public::resource::{Data, MaybeHash};
 use hifitime::{Duration, TimeUnits};
 use num_traits::Zero;
 use serde::de::DeserializeOwned;

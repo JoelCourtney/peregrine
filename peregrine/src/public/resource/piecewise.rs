@@ -1,5 +1,5 @@
 use crate::Time;
-use crate::macro_prelude::{Data, MaybeHash};
+use crate::public::resource::{Data, MaybeHash};
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -79,15 +79,15 @@ impl<'h, T: Data<'h> + Clone> Data<'h> for Piecewise<T> {
 #[macro_export]
 macro_rules! pieces {
     ($default:expr) => {
-        $crate::resource::piecewise::Piecewise {
+        $crate::public::resource::piecewise::Piecewise {
             default: Box::new($default),
-            pieces: $crate::reexports::smallvec::SmallVec::new()
+            pieces: $crate::internal::macro_prelude::smallvec::SmallVec::new()
         }
     };
     ($default:expr, $(($dur:expr, $value:expr)),* $(,)?) => {
-        $crate::resource::piecewise::Piecewise {
+        $crate::public::resource::piecewise::Piecewise {
             default: Box::new($default),
-            pieces: $crate::reexports::smallvec::SmallVec::from_slice(&[$(($dur, $value)),*])
+            pieces: $crate::internal::macro_prelude::smallvec::SmallVec::from_slice(&[$(($dur, $value)),*])
         }
     };
 }

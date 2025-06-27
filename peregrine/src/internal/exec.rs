@@ -1,7 +1,7 @@
 #![doc(hidden)]
 
-use crate::History;
-use crate::operation::ObservedErrorOutput;
+use crate::internal::history::History;
+use crate::internal::operation::ObservedErrorOutput;
 use crossbeam::queue::SegQueue;
 use derive_more::Deref;
 use std::cell::UnsafeCell;

@@ -1,35 +1,17 @@
-use crate::exec::ExecEnvironment;
-use crate::history::PeregrineDefaultHashBuilder;
-use crate::operation::{Continuation, Downstream, Node, OperationState, OperationStatus, Upstream};
-use crate::resource::{Data, ErasedResource, Resource};
-use crate::timeline::{Timelines, duration_to_epoch};
+use crate::internal::exec::ExecEnvironment;
+use crate::internal::history::PeregrineDefaultHashBuilder;
+use crate::internal::operation::{
+    Continuation, Downstream, Node, OperationState, OperationStatus, Upstream,
+};
+use crate::internal::resource::ErasedResource;
+use crate::internal::timeline::{Timelines, duration_to_epoch};
+use crate::public::resource::{Data, Resource};
 use anyhow::anyhow;
 use hifitime::Duration;
 use parking_lot::Mutex;
 use rayon::Scope;
 use std::collections::HashMap;
 use std::hash::Hasher;
-
-#[macro_export]
-macro_rules! initial_conditions {
-    ($($res:ident $(: $val:expr)?),*$(,)?) => {
-        $crate::operation::initial_conditions::InitialConditions::new()
-            $(.insert::<$res>(
-                $crate::reexports::spez::spez! {
-                    for x = ($res::Unit, $($val)?);
-                    match ($res, <$res as $crate::resource::Resource>::Data) -> <$res as $crate::resource::Resource>::Data {
-                        x.1
-                    }
-                    match<R: $crate::resource::Resource> (R,) where R::Data: Default -> R::Data {
-                        Default::default()
-                    }
-                    match<T> T {
-                        panic!("Initial condition must either be given a value or implement Default.")
-                    }
-                }
-            ))*
-    };
-}
 
 pub struct InitialConditions(HashMap<u64, Box<dyn ErasedResource>>);
 
@@ -146,7 +128,7 @@ impl<'o, R: Resource + 'o> Upstream<'o, R> for InitialConditionOp<'o, R> {
 
     fn request_grounding<'s>(
         &'o self,
-        continuation: crate::operation::grounding::GroundingContinuation<'o>,
+        continuation: crate::internal::operation::grounding::GroundingContinuation<'o>,
         _already_registered: bool,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,

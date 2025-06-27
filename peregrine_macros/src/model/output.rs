@@ -26,22 +26,22 @@ impl ToTokens for Model {
             #visibility enum #name {}
 
             impl<'o> peregrine::Model<'o> for #name {
-                fn init_history(history: &mut peregrine::macro_prelude::History) {
+                fn init_history(history: &mut peregrine::internal::macro_prelude::History) {
                     #(history.init::<#resources>();)*
                 }
                 fn init_timelines(
-                    time: peregrine::macro_prelude::Duration,
-                    initial_conditions: &mut peregrine::macro_prelude::InitialConditions,
-                    timelines: &mut peregrine::macro_prelude::Timelines<'o>
+                    time: peregrine::Duration,
+                    initial_conditions: &mut peregrine::internal::macro_prelude::InitialConditions,
+                    timelines: &mut peregrine::internal::macro_prelude::Timelines<'o>
                 ) {
                     #(
                         if !timelines.contains_resource::<#resources>() {
                             timelines.init_for_resource::<#resources>(
                                 time,
-                                peregrine::macro_prelude::InitialConditionOp::new(
+                                peregrine::internal::macro_prelude::InitialConditionOp::new(
                                     time,
                                     initial_conditions.take::<#resources>()
-                                        .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as peregrine::macro_prelude::Resource>::LABEL))
+                                        .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as peregrine::Resource>::LABEL))
                                 )
                             );
                         }

@@ -389,7 +389,7 @@ fn impl_closure(mut closure: ExprClosure, kind: Kind) -> Result<TokenStream, Err
         {
             mod #impls_name {
                 #![allow(warnings)]
-                use ::peregrine::reexports::serde_closure::{
+                use ::peregrine::internal::macro_prelude::serde_closure::{
                     internal::{self, is_phantom, to_phantom},
                     structs,
                 };
@@ -492,7 +492,7 @@ fn impl_closure(mut closure: ExprClosure, kind: Kind) -> Result<TokenStream, Err
             // This asserts that inferred env variables aren't nameable types.
             #[allow(warnings)]
             {
-                #(let #env_variables = ::peregrine::reexports::serde_closure::internal::a_variable;)*
+                #(let #env_variables = ::peregrine::internal::macro_prelude::serde_closure::internal::a_variable;)*
             }
             // This asserts that inferred env variables aren't types with >=1 type parameters.
             #[allow(warnings)]
@@ -511,13 +511,13 @@ fn impl_closure(mut closure: ExprClosure, kind: Kind) -> Result<TokenStream, Err
 
             #[allow(unused_mut)]
             let mut #ret_name = #impls_name::#name::new(#env_capture);
-            let #env_types_name = ::peregrine::reexports::serde_closure::internal::to_phantom(&#ret_name);
+            let #env_types_name = ::peregrine::internal::macro_prelude::serde_closure::internal::to_phantom(&#ret_name);
 
             let closure =
                 #(#attrs)* #asyncness move |#env_name: #env_type, (#(#input_pats,)*): (#(#input_types,)*)| #output {
                     #[allow(warnings)]
                     if false {
-                        ::peregrine::reexports::serde_closure::internal::is_phantom(& #env_deref, #env_types_name);
+                        ::peregrine::internal::macro_prelude::serde_closure::internal::is_phantom(& #env_deref, #env_types_name);
                     }
                     #env_deconstruct
                     #body
@@ -529,11 +529,11 @@ fn impl_closure(mut closure: ExprClosure, kind: Kind) -> Result<TokenStream, Err
                     let _ = closure(#ret_ref, loop {});
                 }
                 if false {
-                    let ::peregrine::reexports::serde_closure::internal::ZeroSizedAssertion = unsafe { ::peregrine::reexports::serde_closure::internal::core::mem::transmute(closure) };
+                    let ::peregrine::internal::macro_prelude::serde_closure::internal::ZeroSizedAssertion = unsafe { ::peregrine::internal::macro_prelude::serde_closure::internal::core::mem::transmute(closure) };
                 }
             }
 
-            ::peregrine::reexports::serde_closure::structs::#name::internal_new(#ret_name.with_f(closure))
+            ::peregrine::internal::macro_prelude::serde_closure::structs::#name::internal_new(#ret_name.with_f(closure))
         }
     })
 }

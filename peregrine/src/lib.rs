@@ -120,6 +120,7 @@
 //! ```
 //! # fn main() {}
 //! # use serde::{Serialize, Deserialize};
+//! # use peregrine::anyhow::Result;
 //! # resource!(sol_counter: u32);
 //! # resource!(downlink_buffer: Vec<String>);
 //! use peregrine::*;
@@ -199,6 +200,7 @@
 //! # use hifitime::TimeScale;
 //! # use peregrine::*;
 //! # use serde::{Serialize, Deserialize};
+//! # use anyhow::Result;
 //! # model! {
 //! #     ExampleModel {
 //! #         sol_counter: u32,
@@ -211,18 +213,13 @@
 //! # impl Activity for IncrementSol {
 //! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //! #         ops += op! {
-//! #             // This is syntactic sugar for a read-write operation on the sol_counter
-//! #             // resource. Resources can be accessed as read-only with `ref:`, and write-only
-//! #             // with `mut:`.
 //! #             ref mut: sol_counter += 1;
 //! #         };
-//! #         // Return statement indicates the activity had zero duration and no errors
 //! #         Ok(Duration::ZERO)
 //! #     }
 //! # }
 //! # #[derive(Hash, Serialize, Deserialize)]
 //! # struct LogCurrentSol {
-//! #     // Verbosity is taken in as an activity argument.
 //! #     verbose: bool,
 //! # }
 //! # #[typetag::serde]
@@ -230,25 +227,24 @@
 //! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //! #         let verbose = self.verbose;
 //! #         ops += op! {
-//! #             // You can access activity arguments both inside and outside operations.
 //! #             if verbose {
 //! #                 ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
 //! #             } else {
 //! #                 ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
 //! #             }
 //! #         };
-//! #         Ok(Duration::ZERO)
-//! #     }
-//! # }
+//!         Ok(Duration::ZERO)
+//!     }
+//! }
 //! # use peregrine::{Session, Time};
-//! # fn main() -> peregrine::Result<()> {
+//! # fn main() -> Result<()> {
 //! # let session = Session::new();
 //! # let start_time = Time::from_day_of_year(2025, 31.0, TimeScale::TAI);
 //! # let mut plan = session.new_plan::<ExampleModel>(
 //! #     start_time,
 //! #     initial_conditions! {
 //! #         sol_counter: 1000,
-//! #         downlink_buffer, // Falls back on the default `vec![]`
+//! #         downlink_buffer,
 //! #     },
 //! # );
 //! use hifitime::TimeUnits;
@@ -313,8 +309,8 @@
 //! - **Dynamic Delay in Operations;** TODO
 //! - **Generalized Dynamic Resources;** The [Data] trait allows you to produce arbitrary functions
 //!   from a single operation. This improves quality of life and enables hypotheticals. Currently I've
-//!   implemented [polynomials][resource::polynomial::Polynomial] and [piecewise functions][resource::piecewise::Piecewise].
-//! - **Timekeeping Builtins;** the [now][resource::builtins::now] and [elapsed][resource::builtins::elapsed]
+//!   implemented [polynomials][resource_types::polynomial::Polynomial] and [piecewise functions][resource_types::piecewise::Piecewise].
+//! - **Timekeeping Builtins;** the [now][resource_types::builtins::now] and [elapsed][resource_types::builtins::elapsed]
 //!   resources are automatically provided to all plans.
 //! - **Its also just really fast in general;** Even in peregrine's worst case (a linear DAG on a
 //!   cheap model, with no past simulations or repeating state), it still outperforms Merlin significantly.
@@ -353,426 +349,22 @@
 //!   all operations will produce the same output, and if a cached value exists in history then it is valid.
 //!   It also assumes that it is OK to only resimulate a portion of an activity's operations.
 
-pub mod activity;
-pub mod exec;
-pub mod history;
-pub mod macro_prelude;
-pub mod operation;
-pub mod reexports;
-pub mod resource;
-pub mod timeline;
+// Public API - what users should import
+pub mod public;
 
-/// Creates a model and associated structs from a selection of resources.
-///
-/// Expects a struct-like item, but without the `struct` keyword. For example:
-///
-/// ```
-/// # fn main() {}
-/// # use peregrine::{resource, model};
-/// resource!(res_a: u32);
-/// resource!(res_b: String);
-/// model! {
-///     MyModel {
-///         res_a,
-///         res_b
-///     }
-/// }
-/// ```
-///
-/// This produces a vacant type named `MyModel` that can be used to instantiate a plan with the
-/// selected resources (see [Session]).
-///
-/// ## Defining resources inline
-///
-/// You can also define the resources directly inside the model macro. This doesn't
-/// mean the model "owns" the resources in some way; its just a shorthand to do exactly the same
-/// thing as the above example.
-///
-/// ```
-/// # fn main() {}
-/// # use peregrine::model;
-/// model! {
-///     MyModel {
-///         res_a: u32,
-///         res_b: String
-///     }
-/// }
-/// ```
-///
-/// ## Visibility
-///
-/// Just like the [resource][resource!] macro, you can set the visibility of both the model and any
-/// resources defined within it.
-///
-/// ```
-/// # fn main() {}
-/// # use peregrine::model;
-/// model! {
-///     // Without `pub`, the model will be private to the module.
-///     pub MyModel {
-///         // This makes `res_a` a resource that can be shared and used by models and activities in other modules.
-///         pub res_a: u32,
-///
-///         // `res_b` is private. Models and activities in other modules cannot touch it.
-///         res_b: String
-///     }
-/// }
-/// ```
-///
-/// This is useful to encapsulate behavior in a subsystem and define the resource interface that this
-/// model provides to other submodels.
-///
-/// ## Submodels and Composition
-///
-/// You can split apart large models into smaller models that interface with each other. This helps with
-/// separation of concerns, hopefully leading to more concurrent plans. It also allows you to make
-/// plans on isolated submodels for testing or experimentation without dealing with the rest of the model.
-///
-/// ```
-/// # fn main() {}
-/// # use peregrine::{resource, model};
-/// # use peregrine::resource::{polynomial::*, piecewise::Piecewise};
-///
-/// ////// in main.rs
-///
-/// // A common resource used by many submodels.
-/// // In a real model an enum would be more appropriate than a String.
-/// resource!(operating_mode: String);
-///
-/// model! {
-///     PotatoSat {
-///         // Not commonly used by submodels.
-///         mission_phase: String,
-///
-///         // Submodel inclusions.
-///         ..PowerSubsystem,
-///         ..GrowthSubsystem
-///     }
-/// }
-///
-/// ////// in power.rs
-///
-/// model! {
-///     pub PowerSubsystem {
-///         // Primarily associated with power, but exposed
-///         // to other subsystems.
-///         pub heat_lamp_on: bool,
-///
-///         potato_charge: Piecewise<Linear>,
-///         // ... other private resources not exposed
-///
-///         // Included from main
-///         operating_mode
-///     }
-/// }
-///
-/// ////// in growth.rs
-///
-/// model! {
-///     pub GrowthSubsystem {
-///         sprouting_percent: Quadratic,
-///         decay_percent: Linear,
-///
-///         // Only `potato_charge` is imported, not all of `PowerSubsystem`.
-///         potato_charge,
-///         operating_mode
-///     }
-/// }
-/// ```
-pub use peregrine_macros::model;
-use std::cell::RefCell;
+// Internal implementation - not for users
+#[doc(hidden)]
+pub mod internal;
 
-pub use peregrine_macros::{delay, op};
-
-pub use crate::activity::{Activity, ActivityId};
-use crate::activity::{DecomposedActivity, Placement};
-use crate::exec::{ErrorAccumulator, ExecEnvironment};
-pub use crate::history::History;
-use crate::macro_prelude::{Data, GroundingContinuation, peregrine_grounding};
-use crate::operation::InternalResult;
-use crate::operation::initial_conditions::InitialConditions;
-use crate::resource::builtins::init_builtins_timelines;
-use crate::timeline::{MaybeGrounded, Timelines, duration_to_epoch, epoch_to_duration};
-pub use activity::Ops;
-pub use anyhow::{Context, Error, Result, anyhow, bail};
-use bumpalo_herd::Herd;
+// Re-export public types for convenience
+pub use anyhow;
+pub use hifitime;
 pub use hifitime::{Duration, Epoch as Time};
-use oneshot::Receiver;
-use operation::Continuation;
-use parking_lot::RwLock;
-use resource::Resource;
-use serde::ser::SerializeSeq;
-use serde::{Serialize, Serializer};
-use std::collections::{BTreeMap, HashMap};
-use std::marker::PhantomData;
-use std::ops::RangeBounds;
-
-#[derive(Default)]
-pub struct Session {
-    herd: Herd,
-    history: RwLock<History>,
-}
-
-impl Session {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn into_history(self) -> History {
-        self.history.into_inner()
-    }
-
-    pub fn new_plan<'o, M: Model<'o> + 'o>(
-        &'o self,
-        time: Time,
-        initial_conditions: InitialConditions,
-    ) -> Plan<'o, M>
-    where
-        Self: 'o,
-    {
-        let mut history = self.history.write();
-        history.init::<peregrine_grounding>();
-        M::init_history(&mut history);
-        drop(history);
-        Plan::new(self, time, initial_conditions)
-    }
-}
-
-impl From<History> for Session {
-    fn from(history: History) -> Self {
-        Self {
-            history: RwLock::new(history),
-            ..Self::default()
-        }
-    }
-}
-
-/// A plan instance for iterative editing and simulating.
-pub struct Plan<'o, M: Model<'o>> {
-    activities: HashMap<ActivityId, DecomposedActivity<'o>>,
-    id_counter: u32,
-    timelines: Timelines<'o>,
-
-    session: &'o Session,
-
-    model: PhantomData<M>,
-}
-
-impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
-    /// Create a new empty plan from initial conditions and a session.
-    fn new(session: &'o Session, time: Time, mut initial_conditions: InitialConditions) -> Self {
-        let time = epoch_to_duration(time);
-        let mut timelines = Timelines::new(&session.herd);
-        init_builtins_timelines(time, &mut timelines);
-        M::init_timelines(time, &mut initial_conditions, &mut timelines);
-        Plan {
-            activities: HashMap::new(),
-            timelines,
-            id_counter: 0,
-
-            session,
-
-            model: PhantomData,
-        }
-    }
-
-    /// Reserve memory for a large batch of additional activities.
-    ///
-    /// Provides a noticeable speedup when loading large plans.
-    pub fn reserve_activity_capacity(&mut self, additional: usize) {
-        self.activities.reserve(additional);
-    }
-
-    /// Inserts a new activity into the plan, and returns its unique ID.
-    pub fn insert(&mut self, time: Time, activity: impl Activity + 'static) -> Result<ActivityId> {
-        let id = ActivityId::new(self.id_counter);
-        self.id_counter += 1;
-        let bump = self.session.herd.get();
-        let activity = bump.alloc(activity);
-        let activity_pointer = activity as *mut dyn Activity;
-
-        let operations = RefCell::new(vec![]);
-        let placement = Placement::Static(epoch_to_duration(time));
-        let ops_consumer = Ops {
-            placement,
-            bump: &bump,
-            operations: &operations,
-        };
-
-        let _duration = activity.run(ops_consumer)?;
-
-        for op in &*operations.borrow() {
-            op.insert_self(&self.timelines).unwrap();
-        }
-
-        self.activities.insert(
-            id,
-            DecomposedActivity {
-                _time: time,
-                activity: activity_pointer,
-                operations: operations.into_inner(),
-            },
-        );
-
-        Ok(id)
-    }
-
-    /// Removes an activity from the plan, by ID.
-    pub fn remove(&mut self, id: ActivityId) -> Result<()> {
-        let decomposed = self
-            .activities
-            .remove(&id)
-            .ok_or_else(|| anyhow!("could not find activity with id {id:?}"))?;
-        for op in decomposed.operations {
-            op.remove_self(&self.timelines)?;
-        }
-        unsafe { std::ptr::drop_in_place(decomposed.activity) };
-
-        Ok(())
-    }
-
-    /// Simulates and returns a view into a section of a resource's timeline. After creating a plan, call
-    /// `plan.view::<my_resource>(start..end)?` to get a vector of times and values
-    /// within the `start - end` range.
-    ///
-    /// This is the primary way of simulating the plan. There is no exposed API to simulate without
-    /// requesting a specific view, or vice versa. Try to limit the requested range to only the times that you need.
-    ///
-    /// Dynamic resources might return results that include the time it was written twice (once in
-    /// the returned tuple `(Time, R::Data::Read)` and again inside the `Read` type itself). These times
-    /// should always be equal, and you are free to ignore one or the other.
-    pub fn view<R: Resource>(
-        &self,
-        bounds: impl RangeBounds<Time>,
-    ) -> Result<Vec<(Time, <R::Data as Data<'o>>::Read)>> {
-        let mut nodes: Vec<MaybeGrounded<'o, R>> = self.timelines.range((
-            bounds.start_bound().map(|t| epoch_to_duration(*t)),
-            bounds.end_bound().map(|t| epoch_to_duration(*t)),
-        ));
-
-        let mut receivers: Vec<MaybeGroundedResult<R>> = Vec::with_capacity(nodes.len());
-        let errors = ErrorAccumulator::default();
-
-        enum MaybeGroundedResult<'h, R: Resource> {
-            Grounded(
-                Duration,
-                Receiver<InternalResult<<R::Data as Data<'h>>::Read>>,
-            ),
-            Ungrounded(
-                Receiver<InternalResult<Duration>>,
-                Receiver<InternalResult<<R::Data as Data<'h>>::Read>>,
-            ),
-        }
-
-        let timelines = &self.timelines;
-
-        let history_lock = self.session.history.read();
-        let history = unsafe { &*(&*history_lock as *const History).cast::<History>() };
-
-        rayon::scope(|scope| {
-            let env = ExecEnvironment {
-                errors: &errors,
-                history,
-                stack_counter: 0,
-            };
-            for node in nodes.drain(..) {
-                let (sender, receiver) = oneshot::channel();
-
-                match node {
-                    MaybeGrounded::Grounded(t, n) => {
-                        receivers.push(MaybeGroundedResult::Grounded(t, receiver));
-                        scope.spawn(move |s| {
-                            n.request(Continuation::Root(sender), true, s, timelines, env.reset())
-                        });
-                    }
-                    MaybeGrounded::Ungrounded(n) => {
-                        let (grounding_sender, grounding_receiver) = oneshot::channel();
-                        receivers.push(MaybeGroundedResult::Ungrounded(
-                            grounding_receiver,
-                            receiver,
-                        ));
-                        scope.spawn(move |s| {
-                            n.request_grounding(
-                                GroundingContinuation::Root(grounding_sender),
-                                true,
-                                s,
-                                timelines,
-                                env.reset(),
-                            );
-                            n.request(
-                                Continuation::<R>::Root(sender),
-                                true,
-                                s,
-                                timelines,
-                                env.reset(),
-                            );
-                        });
-                    }
-                }
-            }
-        });
-
-        if !errors.is_empty() {
-            Err(errors.into())
-        } else {
-            receivers
-                .into_iter()
-                .map(|r| match r {
-                    MaybeGroundedResult::Grounded(t, recv) => {
-                        Ok((duration_to_epoch(t), recv.recv().unwrap()?))
-                    }
-                    MaybeGroundedResult::Ungrounded(t_recv, recv) => Ok((
-                        duration_to_epoch(t_recv.recv().unwrap()?),
-                        recv.recv().unwrap()?,
-                    )),
-                })
-                .collect()
-        }
-    }
-
-    /// Samples a resource at a given time.
-    pub fn sample<R: Resource>(&self, time: Time) -> Result<<R::Data as Data<'o>>::Sample> {
-        let view = self
-            .view::<R>(time..=time)?
-            .into_iter()
-            .collect::<BTreeMap<_, _>>();
-        let latest = view
-            .range(..=time)
-            .next_back()
-            .ok_or_else(|| anyhow!("No operations to sample found at or before {time}"))?;
-        Ok(R::Data::sample(latest.1, time))
-    }
-}
-
-impl<'o, M: Model<'o>> Drop for Plan<'o, M> {
-    fn drop(&mut self) {
-        for decomposed in self.activities.values_mut() {
-            unsafe {
-                decomposed.activity.drop_in_place();
-            }
-        }
-    }
-}
-
-impl<'o, M: Model<'o>> Serialize for Plan<'o, M> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let seq = serializer.serialize_seq(Some(self.activities.len()))?;
-        for _activity in &self.activities {}
-        seq.end()
-    }
-}
-
-/// A selection of resources, with tools for creating a plan and storing history.
-///
-/// Autogenerated by the [model] macro. There is no point implementing this manually.
-pub trait Model<'o>: Sync {
-    fn init_history(history: &mut History);
-    fn init_timelines(
-        time: Duration,
-        initial_conditions: &mut InitialConditions,
-        timelines: &mut Timelines<'o>,
-    );
-}
+pub use peregrine_macros::{delay, model, op};
+pub use public::{
+    Model,
+    activity::*,
+    plan::*,
+    resource::{builtins::*, piecewise::*, polynomial::*, timer::*, *},
+    session::*,
+};

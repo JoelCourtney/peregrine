@@ -1,5 +1,5 @@
 use crate::Time;
-use crate::macro_prelude::{Data, MaybeHash};
+use crate::public::resource::{Data, MaybeHash};
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};

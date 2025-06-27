@@ -65,13 +65,13 @@ fn impl_read_structs_internal(num_reads: usize) -> TokenStream2 {
         .collect::<Vec<_>>();
 
     quote! {
-        struct #name<'o, #(#read_types: macro_prelude::Resource,)*> {
-            #(#read_upstreams: Option<&'o dyn macro_prelude::Upstream<'o, #read_types>>,)*
-            #(#read_responses: Option<macro_prelude::InternalResult<(u64, <<#read_types as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read)>>,)*
+        struct #name<'o, #(#read_types: peregrine::Resource,)*> {
+            #(#read_upstreams: Option<&'o dyn peregrine::internal::macro_prelude::Upstream<'o, #read_types>>,)*
+            #(#read_responses: Option<peregrine::internal::macro_prelude::InternalResult<(u64, <<#read_types as peregrine::Resource>::Data as peregrine::Data<'o>>::Read)>>,)*
             lifetime: std::marker::PhantomData<&'o ()>
         }
 
-        impl<'o, #(#read_types: macro_prelude::Resource,)*> Default for #name<'o, #(#read_types,)*> {
+        impl<'o, #(#read_types: peregrine::Resource,)*> Default for #name<'o, #(#read_types,)*> {
             fn default() -> Self {
                 Self {
                     #(#read_upstreams: None,)*
@@ -106,18 +106,18 @@ fn impl_write_structs_internal(num_writes: usize) -> TokenStream2 {
 
     quote! {
         #[derive(Copy, Clone)]
-        struct #writes_name<'o, #(#write_types: macro_prelude::Resource,)*> {
-            #(#writes: <<#write_types as macro_prelude::Resource>::Data as macro_prelude::Data<'o>>::Read,)*
+        struct #writes_name<'o, #(#write_types: peregrine::Resource,)*> {
+            #(#writes: <<#write_types as peregrine::Resource>::Data as peregrine::Data<'o>>::Read,)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #continuations_name<'o, #(#write_types: macro_prelude::Resource,)*> {
-            #(#writes(macro_prelude::Continuation<'o, #write_types>),)*
+        enum #continuations_name<'o, #(#write_types: peregrine::Resource,)*> {
+            #(#writes(peregrine::internal::macro_prelude::Continuation<'o, #write_types>),)*
         }
 
         #[allow(non_camel_case_types)]
-        enum #downstreams_name<'o, #(#write_types: macro_prelude::Resource,)*> {
-            #(#writes(&'o dyn macro_prelude::Downstream<'o, #write_types>),)*
+        enum #downstreams_name<'o, #(#write_types: peregrine::Resource,)*> {
+            #(#writes(&'o dyn peregrine::internal::macro_prelude::Downstream<'o, #write_types>),)*
         }
     }
 }
@@ -230,8 +230,8 @@ pub fn delay(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         {
-            use macro_prelude::{builtins::elapsed, peregrine_grounding};
-            move |placement: macro_prelude::Placement<'o>| macro_prelude::Delay {
+            use peregrine::internal::macro_prelude::{builtins::elapsed, peregrine_grounding};
+            move |placement: peregrine::internal::macro_prelude::Placement<'o>| peregrine::internal::macro_prelude::Delay {
                 min: placement.min(),
                 max: placement.max() + #expr,
                 node: (op! { mut: peregrine_grounding = ref: elapsed + std::cmp::min(#tt, #expr); })(placement)

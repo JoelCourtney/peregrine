@@ -4,13 +4,14 @@ pub mod grounding;
 pub mod initial_conditions;
 pub mod node_impls;
 
-use crate::macro_prelude::Data;
-use crate::resource::Resource;
-use crate::timeline::Timelines;
-use crate::{exec::ExecEnvironment, macro_prelude::peregrine_grounding};
+use crate::internal::exec::ExecEnvironment;
+use crate::internal::timeline::Timelines;
+use crate::public::resource::Data;
+use crate::public::resource::Resource;
 use anyhow::Result;
 use derive_more::with_trait::Error as DeriveError;
 use grounding::GroundingContinuation;
+use grounding::peregrine_grounding;
 use hifitime::Duration;
 use rayon::Scope;
 use smallvec::SmallVec;

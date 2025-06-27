@@ -18,10 +18,10 @@ impl Op {
         let body = &self.body;
 
         quote! {
-            peregrine::reexports::serde_closure::Fn!(move |#(#read_onlys: <<#read_onlys as peregrine::resource::Resource>::Data as peregrine::resource::Data>::Sample,)*
-            #(mut #read_writes: <#read_writes as peregrine::resource::Resource>::Data,)*|
-            -> peregrine::Result<(#(<#all_writes as peregrine::resource::Resource>::Data,)*)> {
-                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as peregrine::resource::Resource>::Data;)*
+            peregrine::internal::macro_prelude::serde_closure::Fn!(move |#(#read_onlys: <<#read_onlys as peregrine::Resource>::Data as peregrine::Data>::Sample,)*
+            #(mut #read_writes: <#read_writes as peregrine::Resource>::Data,)*|
+            -> peregrine::anyhow::Result<(#(<#all_writes as peregrine::Resource>::Data,)*)> {
+                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as peregrine::Resource>::Data;)*
                 #body
                 Ok((#(#all_writes,)*))
             })
@@ -48,19 +48,20 @@ impl Op {
 impl ToTokens for Op {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let idents = self.make_idents();
-        let instantiation = result(&idents, self.body_function());
 
         let num_read_onlys = idents.read_onlys.len();
         let num_read_writes = idents.read_writes.len();
         let num_write_onlys = idents.write_onlys.len();
 
         let mut declarations = quote! {};
+        let mut empty_declaration = true;
         if (num_read_onlys + num_read_writes) as i32 > MAX_PREGENERATED_ORDER * 2 {
             let read_impls = impl_read_structs_internal(num_read_onlys + num_read_writes);
             declarations = quote! {
                 #declarations
                 #read_impls
             };
+            empty_declaration = false;
         }
         if (num_write_onlys + num_read_writes) as i32 > MAX_PREGENERATED_ORDER * 2 {
             let write_impls = impl_write_structs_internal(num_write_onlys + num_read_writes);
@@ -68,6 +69,7 @@ impl ToTokens for Op {
                 #declarations
                 #write_impls
             };
+            empty_declaration = false;
         }
         if num_read_onlys as i32 > MAX_PREGENERATED_ORDER
             || num_read_writes as i32 > MAX_PREGENERATED_ORDER
@@ -78,12 +80,24 @@ impl ToTokens for Op {
                 #declarations
                 #node_impl
             };
+            empty_declaration = false;
         }
+
+        let mod_name = if !empty_declaration {
+            quote! { local_module }
+        } else {
+            quote! {}
+        };
+
+        let instantiation = result(&idents, self.body_function(), mod_name);
 
         let result = quote! {
             {
-                use peregrine::macro_prelude;
-                #declarations
+                mod local_module {
+                    use peregrine::*;
+                    use peregrine::internal::macro_prelude::*;
+                    #declarations
+                }
                 #instantiation
             }
         };
@@ -99,7 +113,7 @@ struct Idents {
     all_writes: Vec<Ident>,
 }
 
-fn result(idents: &Idents, body_function: TokenStream) -> TokenStream {
+fn result(idents: &Idents, body_function: TokenStream, mod_name: TokenStream) -> TokenStream {
     let Idents {
         read_onlys,
         write_onlys,
@@ -118,7 +132,6 @@ fn result(idents: &Idents, body_function: TokenStream) -> TokenStream {
     };
 
     quote! {
-        use macro_prelude::node_impls::*;
-        move |placement| #op_name::<'_,_, #resources_generics>::new(placement, #body_function)
+        move |placement| #mod_name::#op_name::<'_,_, #resources_generics>::new(placement, #body_function)
     }
 }

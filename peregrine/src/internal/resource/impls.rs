@@ -1,6 +1,5 @@
 use crate::Time;
-use crate::macro_prelude::MaybeHash;
-use crate::resource::Data;
+use crate::public::resource::{Data, MaybeHash};
 use duplicate::duplicate_item;
 use hifitime::Duration;
 use std::cell::OnceCell;
@@ -10,7 +9,7 @@ use std::ops::Deref;
 macro_rules! impl_copy_static_data {
     ($($t:ty),*) => {
         $(
-            impl<'h> $crate::resource::Data<'h> for $t where Self: Copy {
+            impl<'h> $crate::public::resource::Data<'h> for $t where Self: Copy {
                 type Read = $t;
                 type Sample = $t;
 
@@ -49,7 +48,7 @@ impl_copy_static_data![
 macro_rules! impl_deref_static_data {
     ($($t:ty),*) => {
         $(
-            impl<'h> $crate::resource::Data<'h> for $t where Self: 'h {
+            impl<'h> $crate::public::resource::Data<'h> for $t where Self: 'h {
                 type Read = &'h <$t as Deref>::Target;
                 type Sample = &'h <$t as Deref>::Target;
 

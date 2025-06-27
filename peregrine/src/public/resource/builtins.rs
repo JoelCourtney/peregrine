@@ -1,13 +1,13 @@
-use crate::macro_prelude::{InitialConditionOp, MaybeHash};
-use crate::resource::Data;
-use crate::timeline::Timelines;
-use crate::{Time, resource};
+use crate::internal::operation::initial_conditions::InitialConditionOp;
+use crate::internal::timeline::Timelines;
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use std::hash::Hasher;
 
 #[allow(unused_imports)]
 use crate as peregrine;
+use crate::Time;
+use crate::public::resource::{Data, MaybeHash};
 
 pub(crate) fn init_builtins_timelines<'o>(time: Duration, timelines: &mut Timelines<'o>) {
     timelines.init_for_resource(
@@ -20,7 +20,7 @@ pub(crate) fn init_builtins_timelines<'o>(time: Duration, timelines: &mut Timeli
     );
 }
 
-resource!(
+crate::resource!(
     /// A resource for the current simulation [Time].
     ///
     /// This is a builtin and will automatically be added to all models.

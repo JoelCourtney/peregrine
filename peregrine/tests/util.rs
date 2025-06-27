@@ -1,6 +1,7 @@
 #![allow(clippy::self_assignment)]
 
-use peregrine::activity::Ops;
+use peregrine::anyhow::Result;
+use peregrine::public::activity::Ops;
 use peregrine::*;
 use peregrine_macros::op;
 use serde::{Deserialize, Serialize};

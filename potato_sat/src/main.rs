@@ -1,10 +1,10 @@
 use crate::activities::recharge_potato::RechargePotato;
-use peregrine::macro_prelude::hifitime::{TimeScale, TimeUnits};
-use peregrine::macro_prelude::timer::Stopwatch;
-use peregrine::resource::piecewise::Piecewise;
-use peregrine::resource::polynomial::{Linear, Quadratic};
-use peregrine::*;
-use peregrine::{Session, Time, initial_conditions, model, resource};
+use peregrine::anyhow::Result;
+use peregrine::hifitime::{TimeScale, TimeUnits};
+use peregrine::public::resource::piecewise::Piecewise;
+use peregrine::public::resource::polynomial::{Linear, Quadratic};
+use peregrine::public::resource::timer::Stopwatch;
+use peregrine::{Session, Time, initial_conditions, model, pieces, resource};
 
 mod activities;
 
@@ -13,7 +13,7 @@ model! {
         battery,
         mode,
         line,
-        int_pieces
+        int_pieces,
 
         pub timer: Stopwatch
     }

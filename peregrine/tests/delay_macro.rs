@@ -3,11 +3,12 @@
 
 mod util;
 
-use peregrine::{activity::OpsReceiver, *};
+use peregrine::*;
 use peregrine_macros::{delay, op};
 use util::*;
 
 use hifitime::Duration;
+use peregrine::anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Hash, Serialize, Deserialize)]

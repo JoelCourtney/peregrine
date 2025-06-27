@@ -1,11 +1,10 @@
-use crate::exec::ExecEnvironment;
-use crate::operation::{
+use crate::internal::exec::ExecEnvironment;
+use crate::internal::operation::{
     Continuation, Downstream, GroundingDownstream, InternalResult, Node, ObservedErrorOutput,
     Upstream, UpstreamVec,
 };
-use crate::resource;
-use crate::resource::Resource;
-use crate::timeline::Timelines;
+use crate::internal::timeline::Timelines;
+use crate::public::resource::Resource;
 use hifitime::Duration;
 use parking_lot::Mutex;
 use rayon::Scope;
@@ -17,7 +16,7 @@ pub struct Delay<U> {
     pub node: U,
 }
 
-resource!(pub peregrine_grounding: Duration);
+crate::resource!(pub peregrine_grounding: Duration);
 
 pub enum GroundingContinuation<'o> {
     Node(usize, &'o dyn GroundingDownstream<'o>),

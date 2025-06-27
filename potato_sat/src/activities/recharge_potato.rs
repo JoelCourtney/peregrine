@@ -1,10 +1,11 @@
-use crate::{int_pieces, timer};
-use peregrine::activity::*;
-use peregrine::macro_prelude::peregrine_macros::op;
-use peregrine::reexports::hifitime::TimeUnits;
-use peregrine::resource::builtins::{elapsed, now};
-use peregrine::resource::polynomial::Linear;
-use peregrine::{Duration, Result, pieces};
+use crate::int_pieces;
+use crate::timer;
+use peregrine::anyhow::Result;
+use peregrine::hifitime::TimeUnits;
+use peregrine::public::activity::{Activity, Ops, OpsReceiver};
+use peregrine::public::resource::builtins::{elapsed, now};
+use peregrine::public::resource::polynomial::Linear;
+use peregrine::{Duration, op, pieces};
 use serde::{Deserialize, Serialize};
 
 #[derive(Hash, Serialize, Deserialize)]

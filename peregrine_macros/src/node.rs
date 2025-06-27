@@ -66,13 +66,13 @@ impl Node {
         let all_but_one_write_type = &write_types[1..];
 
         let body_function_bound = quote! {
-        'o + Send + Sync + std::hash::Hash + peregrine::reexports::serde_closure::traits::Fn<
-                (#(<<#read_only_types as peregrine::resource::Resource>::Data as peregrine::resource::Data<'o>>::Sample,)*
-                #(<#read_write_types as peregrine::resource::Resource>::Data,)*), Output=peregrine::Result<(#(<#write_types as peregrine::resource::Resource>::Data,)*)>>
+        'o + Send + Sync + std::hash::Hash + serde_closure::traits::Fn<
+                (#(<<#read_only_types as Resource>::Data as Data<'o>>::Sample,)*
+                #(<#read_write_types as Resource>::Data,)*), Output=Result<(#(<#write_types as Resource>::Data,)*)>>
         };
 
         let resources_generics_decl = quote! {
-            #(#read_only_types: peregrine::resource::Resource,)* #(#write_only_types: peregrine::resource::Resource,)* #(#read_write_types: peregrine::resource::Resource,)*
+            #(#read_only_types: Resource,)* #(#write_only_types: Resource,)* #(#read_write_types: Resource,)*
         };
         let resources_generics_usage = quote! {
             #(#read_only_types,)* #(#write_only_types,)* #(#read_write_types,)*
@@ -80,33 +80,33 @@ impl Node {
 
         quote! {
             pub struct #name<'o, B: #body_function_bound, #resources_generics_decl> {
-                placement: peregrine::activity::Placement<'o>,
+                placement: Placement<'o>,
 
-                state: macro_prelude::parking_lot::Mutex<macro_prelude::OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>,
+                state: parking_lot::Mutex<OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>,
 
                 body: B,
-                reads: macro_prelude::UnsafeSyncCell<#reads_name<'o, #(#read_types,)*>>,
-                grounding_result: macro_prelude::UnsafeSyncCell<Option<macro_prelude::InternalResult<macro_prelude::Duration>>>
+                reads: UnsafeSyncCell<#reads_name<'o, #(#read_types,)*>>,
+                grounding_result: UnsafeSyncCell<Option<InternalResult<Duration>>>
             }
 
             #[allow(clippy::unused_unit)]
             impl<'s, 'o: 's, B: #body_function_bound, #resources_generics_decl> #name<'o, B, #resources_generics_usage> {
-                pub fn new(placement: macro_prelude::Placement<'o>, body: B) -> Self {
+                pub fn new(placement: Placement<'o>, body: B) -> Self {
                     #name {
                         state: Default::default(),
                         body,
                         reads: Default::default(),
-                        grounding_result: macro_prelude::UnsafeSyncCell::new(placement.get_static().map(Ok)),
+                        grounding_result: UnsafeSyncCell::new(placement.get_static().map(Ok)),
                         placement,
                     }
                 }
-                fn run_continuations(&self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
-                    let mut swapped_continuations = macro_prelude::smallvec::SmallVec::new();
+                fn run_continuations(&self, mut state: parking_lot::MutexGuard<OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o>, env: ExecEnvironment<'s, 'o>) {
+                    let mut swapped_continuations = smallvec::SmallVec::new();
                     std::mem::swap(&mut state.continuations, &mut swapped_continuations);
                     let output = state.status.unwrap_done();
                     drop(state);
 
-                    let start_index = if env.stack_counter < macro_prelude::STACK_LIMIT { 1 } else { 0 };
+                    let start_index = if env.stack_counter < STACK_LIMIT { 1 } else { 0 };
 
                     let time = unsafe {
                         (*self.grounding_result.get()).unwrap()
@@ -120,7 +120,7 @@ impl Node {
                         }
                     }
 
-                    if env.stack_counter < macro_prelude::STACK_LIMIT {
+                    if env.stack_counter < STACK_LIMIT {
                         match swapped_continuations.remove(0) {
                             #(#continuations_name::#writes(c) => {
                                 c.run(output.map(|r| (r.0, r.1.#writes)), scope, timelines, env.increment());
@@ -129,7 +129,7 @@ impl Node {
                     }
                 }
 
-                fn send_requests(&'o self, mut state: macro_prelude::parking_lot::MutexGuard<macro_prelude::OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, time: macro_prelude::Duration, scope: &macro_prelude::rayon::Scope<'s>, timelines: &'s macro_prelude::Timelines<'o>, env: macro_prelude::ExecEnvironment<'s, 'o>) {
+                fn send_requests(&'o self, mut state: parking_lot::MutexGuard<OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, time: Duration, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o>, env: ExecEnvironment<'s, 'o>) {
                     let reads = self.reads.get();
                     let (#(#read_responses,)*) = unsafe {
                         (#((*reads).#read_responses,)*)
@@ -152,8 +152,8 @@ impl Node {
                             let #read_upstreams = unsafe {
                                 (*reads).#read_upstreams
                             };
-                            let continuation = macro_prelude::Continuation::Node(self);
-                            if num_requests == 0 && env.stack_counter < macro_prelude::STACK_LIMIT {
+                            let continuation = Continuation::Node(self);
+                            if num_requests == 0 && env.stack_counter < STACK_LIMIT {
                                 #read_upstreams.unwrap().request(continuation, already_registered, scope, timelines, env.increment());
                             } else {
                                 scope.spawn(move |s| #read_upstreams.unwrap().request(continuation, already_registered, s, timelines, env.reset()));
@@ -162,28 +162,26 @@ impl Node {
                     )*
                 }
 
-                fn run(&'o self, env: macro_prelude::ExecEnvironment<'s, 'o>) -> macro_prelude::InternalResult<(u64, #writes_name<'o, #(#write_types,)*>)> {
-                    use macro_prelude::{Data, Context, MaybeHash};
-
+                fn run(&'o self, env: ExecEnvironment<'s, 'o>) -> InternalResult<(u64, #writes_name<'o, #(#write_types,)*>)> {
                     let reads = self.reads.get();
 
                     let (#((#read_response_hashes, #read_responses),)*) = unsafe {
                         (#((*reads).#read_responses.unwrap()?,)*)
                     };
 
-                    let time_as_epoch = peregrine::timeline::duration_to_epoch(
+                    let time_as_epoch = duration_to_epoch(
                         unsafe {
                             (*self.grounding_result.get()).unwrap().unwrap()
                         }
                     );
 
-                    let (#(#read_write_responses,)*) = (#(<#read_write_types as macro_prelude::Resource>::Data::from_read(#read_write_responses, time_as_epoch),)*);
-                    let (#(#read_only_responses,)*) = (#(<#read_only_types as macro_prelude::Resource>::Data::sample(&#read_only_responses, time_as_epoch),)*);
+                    let (#(#read_write_responses,)*) = (#(<#read_write_types as Resource>::Data::from_read(#read_write_responses, time_as_epoch),)*);
+                    let (#(#read_only_responses,)*) = (#(<#read_only_types as Resource>::Data::sample(&#read_only_responses, time_as_epoch),)*);
 
                     let hash = {
                         use std::hash::{Hasher, BuildHasher, Hash};
 
-                        let mut state = macro_prelude::PeregrineDefaultHashBuilder::default();
+                        let mut state = PeregrineDefaultHashBuilder::default();
 
                         self.body.hash(&mut state);
 
@@ -215,16 +213,16 @@ impl Node {
 
                     result.map_err(|e| {
                         env.errors.push(e);
-                        macro_prelude::ObservedErrorOutput
+                        ObservedErrorOutput
                     })
                 }
 
                 fn clear_cached_downstreams(&self) {
                     let mut state = self.state.lock();
                     match state.status {
-                        macro_prelude::OperationStatus::Dormant => {},
-                        macro_prelude::OperationStatus::Done(_) => {
-                            state.status = macro_prelude::OperationStatus::Dormant;
+                        OperationStatus::Dormant => {},
+                        OperationStatus::Done(_) => {
+                            state.status = OperationStatus::Dormant;
                             for downstream in &state.downstreams {
                                 match downstream {
                                     #(#downstreams_name::#writes(d) => d.clear_cache(),)*
@@ -236,12 +234,12 @@ impl Node {
                 }
             }
 
-            impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::NodeId for #name<'o, B, #resources_generics_usage> {
-                const ID: u64 = peregrine::reexports::peregrine_macros::random_u64!();
+            impl<'o, B: #body_function_bound, #resources_generics_decl> NodeId for #name<'o, B, #resources_generics_usage> {
+                const ID: u64 = peregrine_macros::random_u64!();
             }
 
-            impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::Node<'o> for #name<'o, B, #resources_generics_usage> {
-                fn insert_self(&'o self, timelines: &macro_prelude::Timelines<'o>) -> macro_prelude::Result<()> {
+            impl<'o, B: #body_function_bound, #resources_generics_decl> Node<'o> for #name<'o, B, #resources_generics_usage> {
+                fn insert_self(&'o self, timelines: &Timelines<'o>) -> Result<()> {
                     let notify_time = self.placement.min();
                     #(
                         let previous = self.placement.insert_me::<#write_types>(self, timelines);
@@ -252,11 +250,11 @@ impl Node {
                     )*
                     Ok(())
                 }
-                fn remove_self(&self, timelines: &macro_prelude::Timelines<'o>) -> macro_prelude::Result<()> {
+                fn remove_self(&self, timelines: &Timelines<'o>) -> Result<()> {
                     #(
                         let removed = self.placement.remove_me::<#write_types>(timelines);
                         if !removed {
-                            macro_prelude::bail!("Removal failed; could not find self at the expected time.")
+                            bail!("Removal failed; could not find self at the expected time.")
                         }
                     )*
 
@@ -275,20 +273,20 @@ impl Node {
             }
 
             #[allow(unreachable_code)]
-            impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::Downstream<'o, R> for #name<'o, B, #resources_generics_usage> {
+            impl<'o, B: #body_function_bound, #resources_generics_decl R: Resource> Downstream<'o, R> for #name<'o, B, #resources_generics_usage> {
                 fn respond<'s>(
                     &'o self,
-                    value: macro_prelude::InternalResult<(u64, <R::Data as macro_prelude::Data<'o>>::Read)>,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
+                    value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
+                    scope: &rayon::Scope<'s>,
+                    timelines: &'s Timelines<'o>,
+                    env: ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
-                    macro_prelude::castaway::match_type!(R::INSTANCE, {
+                    castaway::match_type!(R::INSTANCE, {
                         #(
                             #read_types as _ => {
                                 assert!(
-                                    std::mem::size_of::<<#read_types::Data as macro_prelude::Data<'o>>::Read>()
-                                        == std::mem::size_of::<<R::Data as macro_prelude::Data<'o>>::Read>()
+                                    std::mem::size_of::<<#read_types::Data as Data<'o>>::Read>()
+                                        == std::mem::size_of::<<R::Data as Data<'o>>::Read>()
                                 );
                                 // Potentially the least safe code ever written.
                                 unsafe {
@@ -311,14 +309,14 @@ impl Node {
                         let result = self.run(env);
 
                         let mut state = self.state.lock();
-                        state.status = macro_prelude::OperationStatus::Done(result);
+                        state.status = OperationStatus::Done(result);
 
                         self.run_continuations(state, scope, timelines, env);
                     }
                 }
 
                 fn clear_cache(&self) {
-                    macro_prelude::castaway::match_type!(R::INSTANCE, {
+                    castaway::match_type!(R::INSTANCE, {
                         #(
                             #read_types as _ => {
                                 unsafe {
@@ -331,7 +329,7 @@ impl Node {
                     self.clear_cached_downstreams();
                 }
 
-                fn clear_upstream(&self, time_of_change: Option<macro_prelude::Duration>) -> bool {
+                fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
                     let (clear, retain) = if let Some(time_of_change) = time_of_change {
                         unsafe {
                             match *self.grounding_result.get() {
@@ -346,14 +344,14 @@ impl Node {
 
                     if clear {
                         let reads = self.reads.get();
-                        macro_prelude::castaway::match_type!(R::INSTANCE, {
+                        castaway::match_type!(R::INSTANCE, {
                             #(
                                 #read_types as _ => {
                                     unsafe {
                                         (*reads).#read_upstreams = None;
                                         (*reads).#read_responses = None;
                                     }
-                                    <Self as macro_prelude::Downstream::<'o, #read_types>>::clear_cache(self);
+                                    <Self as Downstream::<'o, #read_types>>::clear_cache(self);
                                 },
                             )*
                             _ => unreachable!()
@@ -364,13 +362,13 @@ impl Node {
                 }
             }
 
-            impl<'o, B: #body_function_bound, #resources_generics_decl> macro_prelude::GroundingDownstream<'o> for #name<'o, B, #resources_generics_usage> {
+            impl<'o, B: #body_function_bound, #resources_generics_decl> GroundingDownstream<'o> for #name<'o, B, #resources_generics_usage> {
                 fn respond_grounding<'s>(
                     &'o self,
-                    value: macro_prelude::InternalResult<(usize, macro_prelude::Duration)>,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
+                    value: InternalResult<(usize, Duration)>,
+                    scope: &rayon::Scope<'s>,
+                    timelines: &'s Timelines<'o>,
+                    env: ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
                     unsafe {
                         (*self.grounding_result.get()) = Some(value.map(|r| r.1));
@@ -379,26 +377,26 @@ impl Node {
                     let mut state = self.state.lock();
 
                     match state.status {
-                        macro_prelude::OperationStatus::Dormant => {},
-                        macro_prelude::OperationStatus::Working => {
+                        OperationStatus::Dormant => {},
+                        OperationStatus::Working => {
                             if let Ok((_, t)) = value {
                                 if #num_reads == 0 {
                                     drop(state);
                                     let result = self.run(env);
 
                                     let mut state = self.state.lock();
-                                    state.status = macro_prelude::OperationStatus::Done(result);
+                                    state.status = OperationStatus::Done(result);
 
                                     self.run_continuations(state, scope, timelines, env);
                                 } else {
                                     self.send_requests(state, t, scope, timelines, env);
                                 }
                             } else {
-                                state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
+                                state.status = OperationStatus::Done(Err(ObservedErrorOutput));
                                 self.run_continuations(state, scope, timelines, env);
                             }
                         }
-                        macro_prelude::OperationStatus::Done(_) => unreachable!()
+                        OperationStatus::Done(_) => unreachable!()
                     }
                 }
 
@@ -415,19 +413,19 @@ impl Node {
                 }
             }
 
-            impl<'o, B: #body_function_bound, #resources_generics_decl R: macro_prelude::Resource> macro_prelude::Upstream<'o, R> for #name<'o, B, #resources_generics_usage> {
+            impl<'o, B: #body_function_bound, #resources_generics_decl R: Resource> Upstream<'o, R> for #name<'o, B, #resources_generics_usage> {
                 fn request<'s>(
                     &'o self,
-                    continuation: macro_prelude::Continuation<'o, R>,
+                    continuation: Continuation<'o, R>,
                     already_registered: bool,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
+                    scope: &rayon::Scope<'s>,
+                    timelines: &'s Timelines<'o>,
+                    env: ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
                     let mut state = self.state.lock();
                     if !already_registered {
                         if let Some(d) = continuation.to_downstream() {
-                            macro_prelude::castaway::match_type!(R::INSTANCE, {
+                            castaway::match_type!(R::INSTANCE, {
                                 #(
                                     #write_types as _ => state.downstreams.push(#downstreams_name::#writes(
                                         unsafe { std::mem::transmute(d) }
@@ -439,8 +437,8 @@ impl Node {
                     }
 
                     match state.status {
-                        macro_prelude::OperationStatus::Dormant => {
-                            macro_prelude::castaway::match_type!(R::INSTANCE, {
+                        OperationStatus::Dormant => {
+                            castaway::match_type!(R::INSTANCE, {
                                 #(
                                     #write_types as _ => state.continuations.push(#continuations_name::#writes(
                                         unsafe { std::mem::transmute(continuation) }
@@ -448,7 +446,7 @@ impl Node {
                                 )*
                                 _ => unreachable!()
                             });
-                            state.status = macro_prelude::OperationStatus::Working;
+                            state.status = OperationStatus::Working;
                             match self.placement.get_static() {
                                 Some(t) => {
                                     if #num_reads == 0 {
@@ -456,7 +454,7 @@ impl Node {
                                         let result = self.run(env);
 
                                         let mut state = self.state.lock();
-                                        state.status = macro_prelude::OperationStatus::Done(result);
+                                        state.status = OperationStatus::Done(result);
 
                                         self.run_continuations(state, scope, timelines, env);
                                     } else {
@@ -467,24 +465,24 @@ impl Node {
                                     match *self.grounding_result.get() {
                                         Some(Ok(t)) => self.send_requests(state, t, scope, timelines, env),
                                         Some(Err(_)) => {
-                                            state.status = macro_prelude::OperationStatus::Done(Err(macro_prelude::ObservedErrorOutput));
+                                            state.status = OperationStatus::Done(Err(ObservedErrorOutput));
                                             self.run_continuations(state, scope, timelines, env);
                                         }
                                         None => {
                                             drop(state);
-                                            self.placement.request_grounding(macro_prelude::GroundingContinuation::Node(0, self), false, scope, timelines, env.increment())
+                                            self.placement.request_grounding(GroundingContinuation::Node(0, self), false, scope, timelines, env.increment())
                                         }
                                     }
                                 }
                             }
                         }
-                        macro_prelude::OperationStatus::Done(r) => {
+                        OperationStatus::Done(r) => {
                             drop(state);
                             let send = r.map(|o| {
                                 let time = unsafe {
                                     (*self.grounding_result.get()).unwrap().unwrap()
                                 };
-                                let value = macro_prelude::castaway::match_type!(R::INSTANCE, {
+                                let value = castaway::match_type!(R::INSTANCE, {
                                     #(
                                         #write_types as _ => {
                                             unsafe { std::mem::transmute_copy(&o.1.#writes) }
@@ -496,8 +494,8 @@ impl Node {
                             });
                             continuation.run(send, scope, timelines, env.increment());
                         }
-                        macro_prelude::OperationStatus::Working => {
-                            macro_prelude::castaway::match_type!(R::INSTANCE, {
+                        OperationStatus::Working => {
+                            castaway::match_type!(R::INSTANCE, {
                                 #(
                                     #write_types as _ => state.continuations.push(#continuations_name::#writes(
                                         unsafe {
@@ -511,21 +509,21 @@ impl Node {
                     }
                 }
 
-                fn notify_downstreams(&self, time_of_change: macro_prelude::Duration) {
+                fn notify_downstreams(&self, time_of_change: Duration) {
                     let mut state = self.state.lock();
 
                     state.downstreams.retain(|downstream| {
                         match downstream {
                             #(
-                                #downstreams_name::#writes(d) if macro_prelude::castaway::cast!(R::INSTANCE, #write_types).is_ok() => d.clear_upstream(Some(time_of_change)),
+                                #downstreams_name::#writes(d) if castaway::cast!(R::INSTANCE, #write_types).is_ok() => d.clear_upstream(Some(time_of_change)),
                             )*
                             _ => true
                         }
                     });
                 }
 
-                fn register_downstream_early(&self, downstream: &'o dyn macro_prelude::Downstream<'o, R>) {
-                    let wrapped = macro_prelude::castaway::match_type!(R::INSTANCE, {
+                fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>) {
+                    let wrapped = castaway::match_type!(R::INSTANCE, {
                         #(
                             #write_types as _ => unsafe {
                                 #downstreams_name::#writes(std::mem::transmute(downstream))
@@ -538,11 +536,11 @@ impl Node {
 
                 fn request_grounding<'s>(
                     &'o self,
-                    continuation: macro_prelude::GroundingContinuation<'o>,
+                    continuation: GroundingContinuation<'o>,
                     already_registered: bool,
-                    scope: &macro_prelude::rayon::Scope<'s>,
-                    timelines: &'s macro_prelude::Timelines<'o>,
-                    env: macro_prelude::ExecEnvironment<'s, 'o>
+                    scope: &rayon::Scope<'s>,
+                    timelines: &'s Timelines<'o>,
+                    env: ExecEnvironment<'s, 'o>
                 ) where 'o: 's {
                     self.placement.request_grounding(continuation, already_registered, scope, timelines, env);
                 }

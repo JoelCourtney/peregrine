@@ -1,15 +1,78 @@
+//! User-facing resource type implementations.
+//!
+//! This module contains built-in resource types that users can use directly
+//! in their models and activities.
+
 pub mod builtins;
-pub mod impls;
 pub mod piecewise;
 pub mod polynomial;
 pub mod timer;
 
+// Re-export commonly used types for convenience
+pub use builtins::{elapsed, now};
+pub use piecewise::Piecewise;
+pub use polynomial::{Linear, Polynomial, Quadratic};
+pub use timer::Stopwatch;
+
+// Re-export the init function for internal use
 use crate::Time;
+pub(crate) use builtins::init_builtins_timelines;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::hash::Hasher;
-use type_map::concurrent::TypeMap;
-use type_reg::untagged::TypeReg;
+
+#[macro_export]
+macro_rules! resource {
+    ($($(#[$attr:meta])* $vis:vis $name:ident: $ty:ty),* $(,)?) => {
+        $(
+            $(#[$attr])*
+            #[derive(Copy, Clone)]
+            #[allow(non_camel_case_types)]
+            $vis enum $name {
+                Unit
+            }
+
+            impl $crate::public::resource::Resource for $name {
+                const LABEL: &'static str = $crate::internal::macro_prelude::peregrine_macros::code_to_str!($name);
+                const ID: u64 = $crate::internal::macro_prelude::peregrine_macros::random_u64!();
+                type Data = $ty;
+                const INSTANCE: Self = Self::Unit;
+            }
+
+            impl $crate::internal::resource::ResourceHistoryPlugin for $name {
+                fn write_type_string(&self) -> String {
+                    $crate::internal::macro_prelude::peregrine_macros::code_to_str!($ty).to_string()
+                }
+
+                fn ser<'h>(&self, input: &'h $crate::internal::macro_prelude::type_map::concurrent::TypeMap, type_map: &'h mut $crate::internal::macro_prelude::type_reg::untagged::TypeMap<String>) {
+                    if let Some(h) = input.get::<$crate::internal::history::InnerHistory<$ty>>() {
+                        type_map.insert(self.write_type_string(), h.clone());
+                    }
+                }
+
+                fn register(&self, type_reg: &mut $crate::internal::macro_prelude::type_reg::untagged::TypeReg<String>) {
+                    type_reg.register::<$crate::internal::history::InnerHistory<$ty>>(self.write_type_string());
+                }
+                fn de<'h>(&self, output: &'h mut $crate::internal::macro_prelude::type_map::concurrent::TypeMap, type_map: &'h mut $crate::internal::macro_prelude::type_reg::untagged::TypeMap<String>) {
+                    match type_map.remove(&self.write_type_string()) {
+                        Some(sub) => {
+                            let sub_history = sub.into_inner().downcast::<$crate::internal::history::InnerHistory<$ty>>();
+                            match sub_history {
+                                Ok(downcasted) => {
+                                    output.insert(*downcasted);
+                                }
+                                Err(_) => unreachable!()
+                            }
+                        }
+                        None => {}
+                    }
+                }
+            }
+
+            $crate::internal::macro_prelude::inventory::submit!(&$name::Unit as &dyn $crate::internal::resource::ResourceHistoryPlugin);
+        )*
+    };
+}
 
 /// Allows a type to be stored and operated on by peregrine.
 ///
@@ -82,59 +145,6 @@ pub trait Resource: 'static + Sync + Copy {
     const INSTANCE: Self;
 }
 
-#[macro_export]
-macro_rules! resource {
-    ($($(#[$attr:meta])* $vis:vis $name:ident: $ty:ty),* $(,)?) => {
-        $(
-            $(#[$attr])*
-            #[derive(Copy, Clone)]
-            #[allow(non_camel_case_types)]
-            $vis enum $name {
-                Unit
-            }
-
-            impl $crate::resource::Resource for $name {
-                const LABEL: &'static str = $crate::reexports::peregrine_macros::code_to_str!($name);
-                const ID: u64 = $crate::reexports::peregrine_macros::random_u64!();
-                type Data = $ty;
-                const INSTANCE: Self = Self::Unit;
-            }
-
-            impl $crate::resource::ResourceHistoryPlugin for $name {
-                fn write_type_string(&self) -> String {
-                    $crate::reexports::peregrine_macros::code_to_str!($ty).to_string()
-                }
-
-                fn ser<'h>(&self, input: &'h $crate::reexports::type_map::concurrent::TypeMap, type_map: &'h mut $crate::reexports::type_reg::untagged::TypeMap<String>) {
-                    if let Some(h) = input.get::<$crate::history::InnerHistory<$ty>>() {
-                        type_map.insert(self.write_type_string(), h.clone());
-                    }
-                }
-
-                fn register(&self, type_reg: &mut $crate::reexports::type_reg::untagged::TypeReg<String>) {
-                    type_reg.register::<$crate::history::InnerHistory<$ty>>(self.write_type_string());
-                }
-                fn de<'h>(&self, output: &'h mut $crate::reexports::type_map::concurrent::TypeMap, type_map: &'h mut $crate::reexports::type_reg::untagged::TypeMap<String>) {
-                    match type_map.remove(&self.write_type_string()) {
-                        Some(sub) => {
-                            let sub_history = sub.into_inner().downcast::<$crate::history::InnerHistory<$ty>>();
-                            match sub_history {
-                                Ok(downcasted) => {
-                                    output.insert(*downcasted);
-                                }
-                                Err(_) => unreachable!()
-                            }
-                        }
-                        None => {}
-                    }
-                }
-            }
-
-            $crate::reexports::inventory::submit!(&$name::Unit as &dyn $crate::resource::ResourceHistoryPlugin);
-        )*
-    };
-}
-
 /// A trait for data that might or might not be hashable.
 ///
 /// This is used for caching; being able to hash inputs might increase the
@@ -166,36 +176,5 @@ impl MaybeHash for f64 {
     }
     fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
         state.write(&self.to_be_bytes());
-    }
-}
-
-#[doc(hidden)]
-pub trait ResourceHistoryPlugin: Sync {
-    fn write_type_string(&self) -> String;
-
-    fn ser<'h>(&self, input: &'h TypeMap, type_map: &'h mut type_reg::untagged::TypeMap<String>);
-
-    fn register(&self, type_reg: &mut TypeReg<String>);
-    fn de<'h>(
-        &self,
-        output: &'h mut TypeMap,
-        type_reg: &'h mut type_reg::untagged::TypeMap<String>,
-    );
-}
-
-pub trait ErasedResource: Send + Sync {
-    fn id(&self) -> u64;
-}
-
-impl dyn ErasedResource {
-    pub(crate) unsafe fn _downcast<TO: ErasedResource>(&self) -> &TO {
-        unsafe { &*(self as *const Self as *const TO) }
-    }
-
-    pub(crate) unsafe fn _downcast_mut<TO: ErasedResource>(&mut self) -> &mut TO {
-        unsafe { &mut *(self as *mut Self as *mut TO) }
-    }
-    pub(crate) unsafe fn downcast_owned<TO: ErasedResource + Sized>(self: Box<Self>) -> Box<TO> {
-        unsafe { Box::from_raw(Box::into_raw(self) as *mut TO) }
     }
 }

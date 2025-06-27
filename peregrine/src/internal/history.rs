@@ -1,8 +1,8 @@
 #![doc(hidden)]
 
 use crate::Time;
-use crate::resource::ResourceHistoryPlugin;
-use crate::resource::{Data, Resource};
+use crate::internal::resource::ResourceHistoryPlugin;
+use crate::public::resource::{Data, Resource};
 use ahash::AHasher;
 use dashmap::DashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -176,8 +176,7 @@ impl<'de> Deserialize<'de> for History {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::macro_prelude::duration_to_epoch;
-    use crate::resource;
+    use crate::internal::timeline::duration_to_epoch;
     use bincode::config::standard;
     use hifitime::Duration;
 
@@ -201,8 +200,8 @@ mod tests {
         assert_eq!("Hello World!", reference);
     }
 
-    resource!(a: u32);
-    resource!(b: String);
+    crate::resource!(a: u32);
+    crate::resource!(b: String);
 
     #[test]
     fn history_serde() -> anyhow::Result<()> {

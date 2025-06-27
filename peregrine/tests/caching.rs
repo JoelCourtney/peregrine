@@ -1,5 +1,7 @@
 mod util;
 
+use anyhow::Result;
+use peregrine::internal::history::History;
 use peregrine::*;
 use std::sync::atomic::Ordering;
 use util::*;

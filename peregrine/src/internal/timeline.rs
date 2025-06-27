@@ -1,10 +1,11 @@
 #![doc(hidden)]
 
-use crate::history::PassThroughHashBuilder;
-use crate::operation::grounding::UngroundedUpstreamResolver;
-use crate::operation::initial_conditions::InitialConditionOp;
-use crate::operation::{Upstream, UpstreamVec};
-use crate::resource::{ErasedResource, Resource};
+use crate::internal::history::PassThroughHashBuilder;
+use crate::internal::operation::grounding::UngroundedUpstreamResolver;
+use crate::internal::operation::initial_conditions::InitialConditionOp;
+use crate::internal::operation::{Upstream, UpstreamVec};
+use crate::internal::resource::ErasedResource;
+use crate::public::resource::Resource;
 use bumpalo_herd::{Herd, Member};
 use hifitime::TimeScale::TAI;
 use hifitime::{Duration, Epoch as Time};
@@ -494,16 +495,15 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::exec::ExecEnvironment;
-    use crate::operation::{Continuation, Downstream, Node, Upstream};
-    use crate::resource;
+    use crate::internal::exec::ExecEnvironment;
+    use crate::internal::operation::{Continuation, Downstream, Node, Upstream};
     use bumpalo_herd::Herd;
     use hifitime::Duration;
     use once_cell::sync::Lazy;
     use oneshot::channel;
     use rayon::Scope;
 
-    resource!(dummy: u32);
+    crate::resource!(dummy: u32);
 
     // Minimal Upstream implementation for testing
     struct DummyUpstream {
@@ -540,7 +540,7 @@ mod tests {
         fn register_downstream_early(&self, _downstream: &'o dyn Downstream<'o, dummy>) {}
         fn request_grounding<'s>(
             &'o self,
-            _continuation: crate::operation::grounding::GroundingContinuation<'o>,
+            _continuation: crate::internal::operation::grounding::GroundingContinuation<'o>,
             _already_registered: bool,
             _scope: &Scope<'s>,
             _timelines: &'s Timelines<'o>,
@@ -578,15 +578,16 @@ mod tests {
         };
     }
 
-    static HISTORY: Lazy<crate::history::History> = Lazy::new(crate::history::History::default);
-    static ERRORS: Lazy<crate::exec::ErrorAccumulator> =
-        Lazy::new(crate::exec::ErrorAccumulator::default);
+    static HISTORY: Lazy<crate::internal::history::History> =
+        Lazy::new(crate::internal::history::History::default);
+    static ERRORS: Lazy<crate::internal::exec::ErrorAccumulator> =
+        Lazy::new(crate::internal::exec::ErrorAccumulator::default);
 
     fn get_id<'o>(up: &'o dyn Upstream<'o, dummy>, herd: &'o Herd) -> u32 {
         let (tx, rx) = channel();
         // SAFETY: We never use the scope in DummyUpstream::request, so this is fine for the test.
         let timelines = Timelines::new(herd);
-        let env = crate::exec::ExecEnvironment {
+        let env = crate::internal::exec::ExecEnvironment {
             history: &HISTORY,
             errors: &ERRORS,
             stack_counter: 0,
