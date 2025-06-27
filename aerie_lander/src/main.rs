@@ -1,4 +1,4 @@
-use crate::model::{Eng, Power};
+use crate::model::{Comm, Dsn, Eng, Power};
 
 mod model;
 
@@ -9,6 +9,8 @@ fn main() {
 peregrine::model! {
     pub Lander {
         ..Eng,
-        ..Power
+        ..Power,
+        ..Comm,
+        ..Dsn,
     }
 }

@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 peregrine = { path = "../peregrine",  features = ["serde"] }
+serde = { version = "*", features = ["derive"] }
