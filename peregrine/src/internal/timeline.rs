@@ -29,6 +29,7 @@ pub struct ReactiveDaemon<'o> {
     triggers: Vec<u64>,
     #[allow(unused_parens)]
     trigger_fn: Box<dyn Fn(Placement<'o>, Member<'o>) -> Vec<&'o dyn Node<'o>> + Sync>,
+    #[allow(clippy::type_complexity)]
     record: Mutex<HashMap<(Duration, Option<Duration>), &'o dyn Node<'o>>>,
 }
 
@@ -99,7 +100,7 @@ impl<'o> Timelines<'o> {
             ),
         };
         if !is_daemon {
-            for (_, trigger) in &self.reactive_daemons {
+            for trigger in self.reactive_daemons.values() {
                 if trigger.triggers.contains(&R::ID) {
                     let mut record = trigger.record.lock();
                     if !record.contains_key(&times) {
@@ -128,7 +129,7 @@ impl<'o> Timelines<'o> {
             ),
         };
         if !is_daemon {
-            for (_, trigger) in &self.reactive_daemons {
+            for trigger in self.reactive_daemons.values() {
                 if trigger.triggers.contains(&R::ID) {
                     let mut record = trigger.record.lock();
                     if record.contains_key(&times) {

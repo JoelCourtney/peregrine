@@ -124,6 +124,7 @@ model! {
     }
 }
 
+#[allow(unused)]
 pub fn init_plan(session: &Session) -> Plan<AB> {
     session.new_plan(seconds(-1), initial_conditions! { a: 0, b: 0 })
 }

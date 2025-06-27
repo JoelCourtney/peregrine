@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Orbiter {
-    Ody,
-    Mro,
-    Tgo,
-    Mvn,
-    Mex,
+    _Ody,
+    _Mro,
+    _Tgo,
+    _Mvn,
+    _Mex,
 }
 
 #[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

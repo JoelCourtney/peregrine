@@ -23,7 +23,7 @@ impl ToTokens for Model {
             .chain(new_resource_names.clone().map(|id| id.into()))
             .collect::<Vec<_>>();
 
-        let daemons = daemons.into_iter().map(|d| {
+        let daemons = daemons.iter().map(|d| {
             let Daemon {
                 resources,
                 mut function_call,
