@@ -1,4 +1,4 @@
-use crate::model::{Comm, Dsn, Eng, Power};
+use crate::model::{Apss, Comm, Dsn, Eng, HeatProbe, Power};
 
 mod model;
 
@@ -12,5 +12,7 @@ peregrine::model! {
         ..Power,
         ..Comm,
         ..Dsn,
+        ..Apss,
+        ..HeatProbe,
     }
 }

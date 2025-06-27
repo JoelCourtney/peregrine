@@ -2,12 +2,14 @@ use quote::{ToTokens, format_ident, quote};
 use rand::Rng;
 use syn::{DeriveInput, LitInt, parse_macro_input};
 
+use crate::maybe_hash::{generate_enum_impl, generate_struct_impl};
 use crate::model::Model;
 use crate::node::Node;
 use crate::operation::Op;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 
+mod maybe_hash;
 mod model;
 mod node;
 mod operation;
@@ -273,7 +275,7 @@ pub fn derive_data(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(MaybeHash, attributes(hash_if))]
+#[proc_macro_derive(MaybeHash, attributes(hash_if, always_hash))]
 pub fn derive_maybe_hash(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -286,28 +288,39 @@ pub fn derive_maybe_hash(input: TokenStream) -> TokenStream {
             // Parse the attribute as #[hash_if = "expr"]
             if let Ok(syn::Expr::Lit(expr_lit)) = attr.parse_args() {
                 if let syn::Lit::Str(litstr) = expr_lit.lit {
-                    hash_if_expr = Some(litstr.value());
+                    hash_if_expr =
+                        Some(litstr.value().parse().expect("Invalid hash_if expression"));
                 }
             }
         }
     }
-    let is_hashable_body = if let Some(expr) = hash_if_expr {
-        let expr: proc_macro2::TokenStream = expr.parse().expect("Invalid hash_if expression");
-        quote! { #expr }
-    } else {
-        quote! { true }
-    };
 
-    let expanded = quote! {
-        impl #impl_generics peregrine::MaybeHash for #name #ty_generics #where_clause {
-            fn is_hashable(&self) -> bool {
-                #is_hashable_body
-            }
-            fn hash_unchecked<H: std::hash::Hasher>(&self, state: &mut H) {
-                use std::hash::Hash;
-                self.hash(state);
-            }
+    let expanded = match &input.data {
+        syn::Data::Struct(data) => generate_struct_impl(
+            name,
+            &data.fields,
+            impl_generics,
+            ty_generics,
+            where_clause,
+            hash_if_expr,
+        ),
+        syn::Data::Enum(data) => generate_enum_impl(
+            name,
+            &data.variants.iter().collect::<Vec<_>>(),
+            impl_generics,
+            ty_generics,
+            where_clause,
+            hash_if_expr,
+        ),
+        syn::Data::Union(_) => {
+            return syn::Error::new_spanned(
+                &input.ident,
+                "MaybeHash derive macro does not support unions",
+            )
+            .to_compile_error()
+            .into();
         }
     };
+
     TokenStream::from(expanded)
 }
