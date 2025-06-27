@@ -306,7 +306,9 @@
 //! - **Model Composition;** You can create submodels, including ones that share common resources
 //!   with each other, and then combine them into full models. Plans that work on the submodels can
 //!   be combined into the full model.
-//! - **Dynamic Delay in Operations;** TODO
+//! - **Dynamic Delay in Operations;** Operations can have delays that are determined during simulation
+//!   rather than plan construction. This allows for more flexible scheduling where the placement of an
+//!   operation depends on the current state of resources.
 //! - **Generalized Dynamic Resources;** The [Data] trait allows you to produce arbitrary functions
 //!   from a single operation. This improves quality of life and enables hypotheticals. Currently I've
 //!   implemented [polynomials][resource_types::polynomial::Polynomial] and [piecewise functions][resource_types::piecewise::Piecewise].
