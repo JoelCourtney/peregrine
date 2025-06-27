@@ -43,7 +43,7 @@ pub struct DoubleDelay;
 #[typetag::serde]
 impl Activity for DoubleDelay {
     fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
-        ops.wait(delay! { Duration::from_seconds(10.0) => dbg!(ref: elapsed) });
+        ops.wait(delay! { Duration::from_seconds(10.0) => ref: elapsed });
         ops += op! { ref mut: a += 1; };
         Ok(Duration::ZERO)
     }

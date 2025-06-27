@@ -109,7 +109,7 @@ impl Node {
                     let start_index = if env.stack_counter < STACK_LIMIT { 1 } else { 0 };
 
                     let time = unsafe {
-                        (*self.grounding_result.get()).unwrap()
+                        (*self.grounding_result.get()).expect("expected grounding result to be present")
                     };
 
                     for c in swapped_continuations.drain(start_index..) {
@@ -154,9 +154,9 @@ impl Node {
                             };
                             let continuation = Continuation::Node(self);
                             if num_requests == 0 && env.stack_counter < STACK_LIMIT {
-                                #read_upstreams.unwrap().request(continuation, already_registered, scope, timelines, env.increment());
+                                #read_upstreams.expect("expected upstream to be present").request(continuation, already_registered, scope, timelines, env.increment());
                             } else {
-                                scope.spawn(move |s| #read_upstreams.unwrap().request(continuation, already_registered, s, timelines, env.reset()));
+                                scope.spawn(move |s| #read_upstreams.expect("expected upstream to be present").request(continuation, already_registered, s, timelines, env.reset()));
                             }
                         }
                     )*
@@ -166,12 +166,12 @@ impl Node {
                     let reads = self.reads.get();
 
                     let (#((#read_response_hashes, #read_responses),)*) = unsafe {
-                        (#((*reads).#read_responses.unwrap()?,)*)
+                        (#((*reads).#read_responses.unwrap_or_else(|| panic!("expected response to be present: resource {}, node {:p}", #read_types::LABEL, self))?,)*)
                     };
 
                     let time_as_epoch = duration_to_epoch(
                         unsafe {
-                            (*self.grounding_result.get()).unwrap().unwrap()
+                            (*self.grounding_result.get()).expect("expected grounding result to be present").expect("expected grounding result to be ok")
                         }
                     );
 
@@ -239,10 +239,10 @@ impl Node {
             }
 
             impl<'o, B: #body_function_bound, #resources_generics_decl> Node<'o> for #name<'o, B, #resources_generics_usage> {
-                fn insert_self(&'o self, timelines: &Timelines<'o>) -> Result<()> {
+                fn insert_self(&'o self, timelines: &Timelines<'o>, is_daemon: bool) -> Result<()> {
                     let notify_time = self.placement.min();
                     #(
-                        let previous = self.placement.insert_me::<#write_types>(self, timelines);
+                        let previous = timelines.insert::<#write_types>(self.placement, self, is_daemon);
                         assert!(!previous.is_empty());
                         for p in previous {
                             p.notify_downstreams(notify_time);
@@ -250,10 +250,10 @@ impl Node {
                     )*
                     Ok(())
                 }
-                fn remove_self(&self, timelines: &Timelines<'o>) -> Result<()> {
+                fn remove_self(&self, timelines: &Timelines<'o>, is_daemon: bool) -> Result<()> {
                     #(
-                        let removed = self.placement.remove_me::<#write_types>(timelines);
-                        if !removed {
+                        let removed = timelines.remove::<#write_types>(self.placement, is_daemon);
+                        if !removed && !is_daemon {
                             bail!("Removal failed; could not find self at the expected time.")
                         }
                     )*
@@ -288,6 +288,7 @@ impl Node {
                                     std::mem::size_of::<<#read_types::Data as Data<'o>>::Read>()
                                         == std::mem::size_of::<<R::Data as Data<'o>>::Read>()
                                 );
+
                                 // Potentially the least safe code ever written.
                                 unsafe {
                                     let transmuted = std::mem::transmute_copy(&value);
@@ -480,7 +481,7 @@ impl Node {
                             drop(state);
                             let send = r.map(|o| {
                                 let time = unsafe {
-                                    (*self.grounding_result.get()).unwrap().unwrap()
+                                    (*self.grounding_result.get()).expect("expected grounding result to be present").expect("expected grounding result to be ok")
                                 };
                                 let value = castaway::match_type!(R::INSTANCE, {
                                     #(

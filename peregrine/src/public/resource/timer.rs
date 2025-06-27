@@ -1,31 +1,64 @@
-use crate::Time;
-use crate::public::resource::{Data, MaybeHash};
+use crate::public::resource::Data;
+use crate::{MaybeHash, Time};
 use hifitime::Duration;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
-pub struct Stopwatch(Option<Time>, Time);
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default, Hash)]
+pub struct Stopwatch {
+    duration: Duration,
+    running: bool,
+}
 
 impl Stopwatch {
     pub fn new() -> Self {
-        Self(None, Time::default())
+        Self::default()
     }
 
     pub fn start(&mut self) {
-        self.0 = Some(self.1);
+        self.running = true;
     }
 
     pub fn stop(&mut self) {
-        self.0 = None;
+        self.running = false;
     }
 
-    pub fn elapsed(&self) -> Option<Duration> {
-        self.0.map(|start| self.1 - start)
+    pub fn reset(&mut self) {
+        self.duration = Duration::ZERO;
+        self.running = false;
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.duration
     }
 
     pub fn is_running(&self) -> bool {
-        self.0.is_some()
+        self.running
+    }
+}
+
+impl Data<'_> for Stopwatch {
+    type Read = (Stopwatch, Time);
+    type Sample = Stopwatch;
+
+    fn to_read(&self, written: Time) -> Self::Read {
+        (*self, written)
+    }
+
+    fn from_read(read: Self::Read, now: Time) -> Self {
+        let new_duration = if read.0.running {
+            read.0.duration + (now - read.1)
+        } else {
+            read.0.duration
+        };
+        Stopwatch {
+            duration: new_duration,
+            running: read.0.running,
+        }
+    }
+
+    fn sample(read: &Self::Read, now: Time) -> Self::Sample {
+        Self::from_read(*read, now)
     }
 }
 
@@ -35,24 +68,6 @@ impl MaybeHash for Stopwatch {
     }
 
     fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-        self.1.hash(state);
-    }
-}
-
-impl Data<'_> for Stopwatch {
-    type Read = Option<Time>;
-    type Sample = Option<Duration>;
-
-    fn to_read(&self, _written: Time) -> Self::Read {
-        self.0
-    }
-
-    fn from_read(read: Self::Read, now: Time) -> Self {
-        Self(read, now)
-    }
-
-    fn sample(read: &Self::Read, now: Time) -> Self::Sample {
-        read.map(|start| now - start)
+        self.hash(state);
     }
 }

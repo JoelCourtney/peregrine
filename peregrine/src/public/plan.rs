@@ -80,7 +80,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let _duration = activity.run(ops_consumer)?;
 
         for op in &*operations.borrow() {
-            op.insert_self(&self.timelines)?;
+            op.insert_self(&self.timelines, false)?;
         }
 
         self.activities.insert(
@@ -102,7 +102,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
             .remove(&id)
             .ok_or_else(|| anyhow!("could not find activity with id {id:?}"))?;
         for op in decomposed.operations {
-            op.remove_self(&self.timelines)?;
+            op.remove_self(&self.timelines, false)?;
         }
         unsafe { std::ptr::drop_in_place(decomposed.activity) };
 

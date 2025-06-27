@@ -5,10 +5,10 @@
 use hifitime::Duration;
 
 pub mod activity;
+pub mod initial_conditions;
 pub mod plan;
 pub mod resource;
 pub mod session;
-pub mod initial_conditions;
 
 /// A selection of resources, with tools for creating a plan and storing history.
 ///

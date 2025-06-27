@@ -3,8 +3,6 @@ pub mod impls;
 use type_map::concurrent::TypeMap;
 use type_reg::untagged::TypeReg;
 
-
-
 #[doc(hidden)]
 pub trait ResourceHistoryPlugin: Sync {
     fn write_type_string(&self) -> String;

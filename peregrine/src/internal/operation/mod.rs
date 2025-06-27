@@ -20,8 +20,8 @@ use std::fmt::{Debug, Display, Formatter};
 pub type InternalResult<T> = Result<T, ObservedErrorOutput>;
 
 pub trait Node<'o>: Sync {
-    fn insert_self(&'o self, timelines: &Timelines<'o>) -> Result<()>;
-    fn remove_self(&self, timelines: &Timelines<'o>) -> Result<()>;
+    fn insert_self(&'o self, timelines: &Timelines<'o>, is_daemon: bool) -> Result<()>;
+    fn remove_self(&self, timelines: &Timelines<'o>, is_daemon: bool) -> Result<()>;
 }
 
 pub trait NodeId {

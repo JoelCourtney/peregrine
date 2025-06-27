@@ -10,4 +10,11 @@ pub struct Model {
     imported_resources: Vec<Path>,
     new_resources: Vec<(Visibility, Ident, Type)>,
     sub_models: Vec<Path>,
+    daemons: Vec<Daemon>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Daemon {
+    pub resources: Vec<Path>,
+    pub function_call: syn::ExprCall,
 }

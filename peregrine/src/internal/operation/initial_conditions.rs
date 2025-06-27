@@ -67,11 +67,11 @@ impl<R: Resource> InitialConditionOp<'_, R> {
 }
 
 impl<'o, R: Resource> Node<'o> for InitialConditionOp<'o, R> {
-    fn insert_self(&'o self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
+    fn insert_self(&'o self, _timelines: &Timelines<'o>, _is_daemon: bool) -> anyhow::Result<()> {
         unreachable!()
     }
 
-    fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
+    fn remove_self(&self, _timelines: &Timelines<'o>, _is_daemon: bool) -> anyhow::Result<()> {
         Err(anyhow!("Cannot remove initial conditions."))
     }
 }

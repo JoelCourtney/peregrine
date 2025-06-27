@@ -1,7 +1,7 @@
 use crate::internal::exec::ExecEnvironment;
 use crate::internal::operation::{
-    Continuation, Downstream, GroundingDownstream, InternalResult, Node, ObservedErrorOutput,
-    Upstream, UpstreamVec,
+    Continuation, Downstream, GroundingDownstream, InternalResult, ObservedErrorOutput, Upstream,
+    UpstreamVec,
 };
 use crate::internal::timeline::Timelines;
 use crate::public::resource::Resource;
@@ -69,16 +69,6 @@ impl<'o, R: Resource> UngroundedUpstreamResolver<'o, R> {
             downstream: Mutex::new(None),
             cached_decision: Mutex::new(None),
         }
-    }
-}
-
-impl<'o, R: Resource> Node<'o> for UngroundedUpstreamResolver<'o, R> {
-    fn insert_self(&'o self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
-        unreachable!()
-    }
-
-    fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
-        unreachable!()
     }
 }
 

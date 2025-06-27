@@ -3,7 +3,8 @@
 use crate::internal::history::PassThroughHashBuilder;
 use crate::internal::operation::grounding::UngroundedUpstreamResolver;
 use crate::internal::operation::initial_conditions::InitialConditionOp;
-use crate::internal::operation::{Upstream, UpstreamVec};
+use crate::internal::operation::{Node, Upstream, UpstreamVec};
+use crate::internal::placement::Placement;
 use crate::internal::resource::ErasedResource;
 use crate::public::resource::Resource;
 use bumpalo_herd::{Herd, Member};
@@ -11,21 +12,46 @@ use hifitime::TimeScale::TAI;
 use hifitime::{Duration, Epoch as Time};
 use immutable_chunkmap::map::MapM;
 use parking_lot::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
 use slab::Slab;
 use smallvec::SmallVec;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Bound, RangeBounds};
 
-pub struct Timelines<'o>(
-    HashMap<u64, RwLock<Box<dyn ErasedTimeline + 'o>>, PassThroughHashBuilder>,
-    &'o Herd,
-);
+pub struct Timelines<'o> {
+    map: HashMap<u64, RwLock<Box<dyn ErasedTimeline + 'o>>, PassThroughHashBuilder>,
+    herd: &'o Herd,
+    reactive_daemons: HashMap<u64, ReactiveDaemon<'o>>,
+}
 
+pub struct ReactiveDaemon<'o> {
+    triggers: Vec<u64>,
+    #[allow(unused_parens)]
+    trigger_fn: Box<dyn Fn(Placement<'o>, Member<'o>) -> Vec<&'o dyn Node<'o>> + Sync>,
+    record: Mutex<HashMap<(Duration, Option<Duration>), &'o dyn Node<'o>>>,
+}
+
+impl<'o> ReactiveDaemon<'o> {
+    #[allow(unused_parens)]
+    pub fn new(
+        triggers: Vec<u64>,
+        trigger_fn: Box<dyn Fn(Placement<'o>, Member<'o>) -> Vec<&'o dyn Node<'o>> + Sync>,
+    ) -> Self {
+        Self {
+            triggers,
+            trigger_fn,
+            record: Mutex::new(HashMap::new()),
+        }
+    }
+}
 impl<'o> Timelines<'o> {
     pub fn new(herd: &'o Herd) -> Self {
-        Self(HashMap::with_hasher(PassThroughHashBuilder), herd)
+        Self {
+            map: HashMap::with_hasher(PassThroughHashBuilder),
+            herd,
+            reactive_daemons: HashMap::new(),
+        }
     }
 
     pub fn init_for_resource<R: Resource>(
@@ -33,15 +59,15 @@ impl<'o> Timelines<'o> {
         time: Duration,
         op: InitialConditionOp<'o, R>,
     ) {
-        assert!(!self.0.contains_key(&R::ID));
-        self.0.insert(
+        assert!(!self.map.contains_key(&R::ID));
+        self.map.insert(
             R::ID,
-            RwLock::new(Box::new(Timeline::init(time, self.1.get().alloc(op)))),
+            RwLock::new(Box::new(Timeline::init(time, self.herd.get().alloc(op)))),
         );
     }
 
     pub fn contains_resource<R: Resource>(&self) -> bool {
-        self.0.contains_key(&R::ID)
+        self.map.contains_key(&R::ID)
     }
 
     pub fn find_upstream<R: Resource>(&self, time: Duration) -> &'o dyn Upstream<'o, R> {
@@ -53,31 +79,67 @@ impl<'o> Timelines<'o> {
             drop(inner_mut);
             inner = self.inner_timeline();
         }
-        inner.last_before(time, self.1.get())
+        inner.last_before(time, self.herd.get())
     }
 
-    pub fn insert_grounded<R: Resource>(
+    pub fn insert<R: Resource>(
         &self,
-        time: Duration,
+        placement: Placement<'o>,
         op: &'o dyn Upstream<'o, R>,
+        is_daemon: bool,
     ) -> UpstreamVec<'o, R> {
-        self.inner_timeline_mut().insert_grounded(time, op)
-    }
-    pub fn remove_grounded<R: Resource + 'o>(&self, time: Duration) -> bool {
-        self.inner_timeline_mut::<R>().remove_grounded(time)
+        let (result, times) = match placement {
+            Placement::Static(time) => (
+                self.inner_timeline_mut().insert_grounded(time, op),
+                (time, None),
+            ),
+            Placement::Dynamic { min, max, .. } => (
+                self.inner_timeline_mut().insert_ungrounded(min, max, op),
+                (min, Some(max)),
+            ),
+        };
+        if !is_daemon {
+            for (_, trigger) in &self.reactive_daemons {
+                if trigger.triggers.contains(&R::ID) {
+                    let mut record = trigger.record.lock();
+                    if !record.contains_key(&times) {
+                        let nodes = (trigger.trigger_fn)(placement, self.herd.get());
+                        for node in nodes {
+                            record.insert(times, node);
+                            node.insert_self(self, true)
+                                .expect("Failed to insert daemon trigger");
+                        }
+                    }
+                }
+            }
+        }
+        result
     }
 
-    pub fn insert_ungrounded<R: Resource>(
-        &self,
-        min: Duration,
-        max: Duration,
-        op: &'o dyn Upstream<'o, R>,
-    ) -> UpstreamVec<'o, R> {
-        self.inner_timeline_mut().insert_ungrounded(min, max, op)
-    }
-
-    pub fn remove_ungrounded<R: Resource + 'o>(&self, min: Duration, max: Duration) -> bool {
-        self.inner_timeline_mut::<R>().remove_ungrounded(min, max)
+    pub fn remove<R: Resource + 'o>(&self, placement: Placement<'o>, is_daemon: bool) -> bool {
+        let (result, times) = match placement {
+            Placement::Static(time) => (
+                self.inner_timeline_mut::<R>().remove_grounded(time),
+                (time, None),
+            ),
+            Placement::Dynamic { min, max, .. } => (
+                self.inner_timeline_mut::<R>().remove_ungrounded(min, max),
+                (min, Some(max)),
+            ),
+        };
+        if !is_daemon {
+            for (_, trigger) in &self.reactive_daemons {
+                if trigger.triggers.contains(&R::ID) {
+                    let mut record = trigger.record.lock();
+                    if record.contains_key(&times) {
+                        let node = record.remove(&times).unwrap();
+                        node.remove_self(self, true)
+                            .expect("Failed to remove daemon trigger");
+                    }
+                }
+            }
+        }
+        result
     }
 
     pub(crate) fn range<R: Resource>(
@@ -97,7 +159,7 @@ impl<'o> Timelines<'o> {
 
     fn inner_timeline<R: Resource>(&self) -> MappedRwLockReadGuard<Timeline<'o, R>> {
         let reference = self
-            .0
+            .map
             .get(&R::ID)
             .unwrap_or_else(|| {
                 panic!(
@@ -113,7 +175,7 @@ impl<'o> Timelines<'o> {
 
     fn inner_timeline_mut<R: Resource>(&self) -> MappedRwLockWriteGuard<Timeline<'o, R>> {
         let reference = self
-            .0
+            .map
             .get(&R::ID)
             .unwrap_or_else(|| {
                 panic!(
@@ -125,6 +187,10 @@ impl<'o> Timelines<'o> {
         RwLockWriteGuard::map(reference, |r| unsafe {
             &mut *(r.as_mut() as *mut dyn ErasedTimeline as *mut Timeline<'o, R>)
         })
+    }
+
+    pub fn add_reactive_daemon(&mut self, id: u64, trigger: ReactiveDaemon<'o>) {
+        self.reactive_daemons.insert(id, trigger);
     }
 }
 
@@ -515,10 +581,14 @@ mod tests {
         }
     }
     impl<'o> Node<'o> for DummyUpstream {
-        fn insert_self(&'o self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
+        fn insert_self(
+            &'o self,
+            _timelines: &Timelines<'o>,
+            _is_daemon: bool,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
-        fn remove_self(&self, _timelines: &Timelines<'o>) -> anyhow::Result<()> {
+        fn remove_self(&self, _timelines: &Timelines<'o>, _is_daemon: bool) -> anyhow::Result<()> {
             Ok(())
         }
     }

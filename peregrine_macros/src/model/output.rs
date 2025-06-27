@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::model::{Daemon, Model};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, TokenStreamExt, quote};
 
@@ -10,6 +10,7 @@ impl ToTokens for Model {
             imported_resources,
             new_resources,
             sub_models,
+            daemons,
         } = self;
 
         let new_resource_visibilities = new_resources.iter().map(|r| r.0.clone());
@@ -22,18 +23,43 @@ impl ToTokens for Model {
             .chain(new_resource_names.clone().map(|id| id.into()))
             .collect::<Vec<_>>();
 
+        let daemons = daemons.into_iter().map(|d| {
+            let Daemon {
+                resources,
+                mut function_call,
+            } = d.clone();
+
+            function_call
+                .args
+                .insert(0, syn::Expr::Verbatim(quote!(ops)));
+
+            quote! {
+                peregrine::internal::macro_prelude::ReactiveDaemon::new(
+                    vec![#(#resources::ID),*],
+                    Box::new(|placement, member| {
+                        let result = std::cell::RefCell::new(vec![]);
+                        let ops = peregrine::Ops::new(placement, &member, &result);
+                        #function_call;
+                        result.into_inner()
+                    })
+                )
+            }
+        });
+
         let result = quote! {
             #visibility enum #name {}
 
             impl<'o> peregrine::Model<'o> for #name {
                 fn init_history(history: &mut peregrine::internal::macro_prelude::History) {
                     #(history.init::<#resources>();)*
+                    #(#sub_models::init_history(history);)*
                 }
                 fn init_timelines(
                     time: peregrine::Duration,
                     initial_conditions: &mut peregrine::internal::macro_prelude::InitialConditions,
                     timelines: &mut peregrine::internal::macro_prelude::Timelines<'o>
                 ) {
+                    use peregrine::Resource;
                     #(
                         if !timelines.contains_resource::<#resources>() {
                             timelines.init_for_resource::<#resources>(
@@ -45,6 +71,13 @@ impl ToTokens for Model {
                                 )
                             );
                         }
+                    )*
+
+                    #(
+                        timelines.add_reactive_daemon(
+                            peregrine::internal::macro_prelude::peregrine_macros::random_u64!(),
+                            #daemons
+                        );
                     )*
 
                     #(#sub_models::init_timelines(time, initial_conditions, timelines);)*

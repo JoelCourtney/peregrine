@@ -37,7 +37,7 @@ impl History {
     ) -> <R::Data as Data>::Read {
         self.0
             .get::<InnerHistory<R::Data>>()
-            .expect("history not initialized")
+            .unwrap_or_else(|| panic!("history not initialized for resource: {}", R::LABEL))
             .insert(hash, value, written)
     }
     pub fn get<R: Resource>(&self, hash: u64, written: Time) -> Option<<R::Data as Data>::Read> {

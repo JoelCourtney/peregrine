@@ -362,7 +362,7 @@ pub mod internal;
 pub use anyhow;
 pub use hifitime;
 pub use hifitime::{Duration, Epoch as Time};
-pub use peregrine_macros::{delay, model, op};
+pub use peregrine_macros::{Data, MaybeHash, delay, model, op};
 pub use public::{
     Model,
     activity::*,

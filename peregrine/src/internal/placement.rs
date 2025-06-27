@@ -2,10 +2,9 @@ use crate::Time;
 use crate::internal::exec::ExecEnvironment;
 use crate::internal::operation;
 use crate::internal::operation::grounding::peregrine_grounding;
-use crate::internal::operation::{Continuation, Node, Upstream, UpstreamVec};
+use crate::internal::operation::{Continuation, Node, Upstream};
 use crate::internal::timeline::Timelines;
 use crate::public::activity::Activity;
-use crate::public::resource::Resource;
 use bumpalo_herd::Member;
 use hifitime::Duration;
 use operation::grounding::{Delay, GroundingContinuation};
@@ -52,24 +51,6 @@ impl<'o> Placement<'o> {
         match self {
             Placement::Static(start) => *start,
             Placement::Dynamic { max, .. } => *max,
-        }
-    }
-
-    pub fn insert_me<R: Resource>(
-        &self,
-        me: &'o dyn Upstream<'o, R>,
-        timelines: &Timelines<'o>,
-    ) -> UpstreamVec<'o, R> {
-        match self {
-            Placement::Static(d) => timelines.insert_grounded::<R>(*d, me),
-            Placement::Dynamic { min, max, .. } => timelines.insert_ungrounded::<R>(*min, *max, me),
-        }
-    }
-
-    pub fn remove_me<R: Resource>(&self, timelines: &Timelines<'o>) -> bool {
-        match *self {
-            Placement::Static(d) => timelines.remove_grounded::<R>(d),
-            Placement::Dynamic { min, max, .. } => timelines.remove_ungrounded::<R>(min, max),
         }
     }
 

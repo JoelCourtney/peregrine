@@ -56,6 +56,21 @@ pub struct Ops<'v, 'o: 'v> {
     pub(crate) operations: &'v RefCell<Vec<&'o dyn Node<'o>>>,
 }
 
+impl<'v, 'o: 'v> Ops<'v, 'o> {
+    #[doc(hidden)]
+    pub fn new(
+        placement: Placement<'o>,
+        bump: &'v Member<'o>,
+        operations: &'v RefCell<Vec<&'o dyn Node<'o>>>,
+    ) -> Self {
+        Self {
+            placement,
+            bump,
+            operations,
+        }
+    }
+}
+
 impl<'v, 'o: 'v> OpsReceiver<'v, 'o> for Ops<'v, 'o> {
     #[inline]
     fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {

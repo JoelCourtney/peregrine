@@ -1,12 +1,12 @@
-use syn::{LitInt, parse_macro_input};
+use quote::{ToTokens, format_ident, quote};
+use rand::Rng;
+use syn::{DeriveInput, LitInt, parse_macro_input};
 
 use crate::model::Model;
 use crate::node::Node;
 use crate::operation::Op;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{ToTokens, format_ident, quote};
-use rand::Rng;
 
 mod model;
 mod node;
@@ -145,7 +145,8 @@ pub fn impl_nodes(input: TokenStream) -> TokenStream {
         use peregrine::*;
         use peregrine::internal::macro_prelude::*;
         #result
-    }.into()
+    }
+    .into()
 }
 
 fn impl_node(
@@ -235,12 +236,78 @@ pub fn delay(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         {
             use peregrine::internal::macro_prelude::{builtins::elapsed, peregrine_grounding};
-            move |placement: peregrine::internal::macro_prelude::Placement<'o>| peregrine::internal::macro_prelude::Delay {
+            move |placement| peregrine::internal::macro_prelude::Delay {
+                node: (op! { mut: peregrine_grounding = ref: elapsed + std::cmp::min(#tt, #expr); })(placement),
                 min: placement.min(),
                 max: placement.max() + #expr,
-                node: (op! { mut: peregrine_grounding = ref: elapsed + std::cmp::min(#tt, #expr); })(placement)
             }
         }
     };
     expanded.into()
+}
+
+#[proc_macro_derive(Data)]
+pub fn derive_data(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let expanded = quote! {
+        impl<'h> #impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
+            type Read = Self;
+            type Sample = Self;
+
+            fn to_read(&self, _written: peregrine::Time) -> Self::Read {
+                *self
+            }
+
+            fn from_read(read: Self, _written: peregrine::Time) -> Self {
+                read
+            }
+
+            fn sample(read: &Self::Read, _now: peregrine::Time) -> Self::Sample {
+                *read
+            }
+        }
+    };
+    TokenStream::from(expanded)
+}
+
+#[proc_macro_derive(MaybeHash, attributes(hash_if))]
+pub fn derive_maybe_hash(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    // Look for #[hash_if = "expr"]
+    let mut hash_if_expr = None;
+    for attr in &input.attrs {
+        if attr.path().is_ident("hash_if") {
+            // Parse the attribute as #[hash_if = "expr"]
+            if let Ok(syn::Expr::Lit(expr_lit)) = attr.parse_args() {
+                if let syn::Lit::Str(litstr) = expr_lit.lit {
+                    hash_if_expr = Some(litstr.value());
+                }
+            }
+        }
+    }
+    let is_hashable_body = if let Some(expr) = hash_if_expr {
+        let expr: proc_macro2::TokenStream = expr.parse().expect("Invalid hash_if expression");
+        quote! { #expr }
+    } else {
+        quote! { true }
+    };
+
+    let expanded = quote! {
+        impl #impl_generics peregrine::MaybeHash for #name #ty_generics #where_clause {
+            fn is_hashable(&self) -> bool {
+                #is_hashable_body
+            }
+            fn hash_unchecked<H: std::hash::Hasher>(&self, state: &mut H) {
+                use std::hash::Hash;
+                self.hash(state);
+            }
+        }
+    };
+    TokenStream::from(expanded)
 }
