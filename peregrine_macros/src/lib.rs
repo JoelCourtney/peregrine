@@ -9,6 +9,7 @@ use crate::operation::Op;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 
+mod data;
 mod maybe_hash;
 mod model;
 mod node;
@@ -248,31 +249,10 @@ pub fn delay(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-#[proc_macro_derive(Data)]
+#[proc_macro_derive(Data, attributes(sample))]
 pub fn derive_data(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let expanded = quote! {
-        impl<'h> #impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
-            type Read = Self;
-            type Sample = Self;
-
-            fn to_read(&self, _written: peregrine::Time) -> Self::Read {
-                *self
-            }
-
-            fn from_read(read: Self, _written: peregrine::Time) -> Self {
-                read
-            }
-
-            fn sample(read: &Self::Read, _now: peregrine::Time) -> Self::Sample {
-                *read
-            }
-        }
-    };
-    TokenStream::from(expanded)
+    data::generate_data_impl(input)
 }
 
 #[proc_macro_derive(MaybeHash, attributes(hash_if, always_hash))]

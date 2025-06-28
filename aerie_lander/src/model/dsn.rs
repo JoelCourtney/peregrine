@@ -49,6 +49,8 @@ fn set_active_station<STATION: Resource<Data = StationState>>(mut ops: Ops, stat
     ops += op! {
         if ref: STATION.allocated == Allocated::Allocated && ref: STATION.visible == Visibility::InView {
             ref mut: current_station = station;
+        } else if ref: current_station == station {
+            ref mut: current_station = DsnStation::None;
         }
     };
 }

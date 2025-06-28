@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
+use quote::{format_ident, quote};
 
 pub fn generate_struct_impl(
     name: &syn::Ident,
@@ -12,31 +12,70 @@ pub fn generate_struct_impl(
     let mut is_hashable_checks = Vec::new();
     let mut hash_unchecked_calls = Vec::new();
 
-    for field in fields.iter() {
-        let field_name = field.ident.as_ref().unwrap();
+    match fields {
+        syn::Fields::Named(named_fields) => {
+            for field in &named_fields.named {
+                let field_name = field
+                    .ident
+                    .as_ref()
+                    .expect("Named field should have an identifier");
 
-        // Check if field has #[always_hash] attribute
-        let has_always_hash = field
-            .attrs
-            .iter()
-            .any(|attr| attr.path().is_ident("always_hash"));
+                // Check if field has #[always_hash] attribute
+                let has_always_hash = field
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("always_hash"));
 
-        if has_always_hash {
-            // For #[always_hash] fields, skip is_hashable check and use normal Hash
-            hash_unchecked_calls.push(quote! {
-                {
-                    use std::hash::Hash;
-                    self.#field_name.hash(state);
+                if has_always_hash {
+                    // For #[always_hash] fields, skip is_hashable check and use normal Hash
+                    hash_unchecked_calls.push(quote! {
+                        {
+                            use std::hash::Hash;
+                            self.#field_name.hash(state);
+                        }
+                    });
+                } else {
+                    // For regular fields, delegate to MaybeHash implementation
+                    is_hashable_checks.push(quote! {
+                        self.#field_name.is_hashable()
+                    });
+                    hash_unchecked_calls.push(quote! {
+                        self.#field_name.hash_unchecked(state);
+                    });
                 }
-            });
-        } else {
-            // For regular fields, delegate to MaybeHash implementation
-            is_hashable_checks.push(quote! {
-                self.#field_name.is_hashable()
-            });
-            hash_unchecked_calls.push(quote! {
-                self.#field_name.hash_unchecked(state);
-            });
+            }
+        }
+        syn::Fields::Unnamed(unnamed_fields) => {
+            for (i, field) in unnamed_fields.unnamed.iter().enumerate() {
+                let field_index = syn::Index::from(i);
+
+                // Check if field has #[always_hash] attribute
+                let has_always_hash = field
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("always_hash"));
+
+                if has_always_hash {
+                    // For #[always_hash] fields, skip is_hashable check and use normal Hash
+                    hash_unchecked_calls.push(quote! {
+                        {
+                            use std::hash::Hash;
+                            self.#field_index.hash(state);
+                        }
+                    });
+                } else {
+                    // For regular fields, delegate to MaybeHash implementation
+                    is_hashable_checks.push(quote! {
+                        self.#field_index.is_hashable()
+                    });
+                    hash_unchecked_calls.push(quote! {
+                        self.#field_index.hash_unchecked(state);
+                    });
+                }
+            }
+        }
+        syn::Fields::Unit => {
+            // Unit structs have no fields, so no checks or calls needed
         }
     }
 
@@ -88,14 +127,21 @@ pub fn generate_enum_impl(
                 let field_names: Vec<_> = fields
                     .named
                     .iter()
-                    .map(|f| f.ident.as_ref().unwrap())
+                    .map(|f| {
+                        f.ident
+                            .as_ref()
+                            .expect("Named field should have an identifier")
+                    })
                     .collect();
 
                 let mut field_is_hashable_checks = Vec::new();
                 let mut field_hash_calls = Vec::new();
 
                 for field in &fields.named {
-                    let field_name = field.ident.as_ref().unwrap();
+                    let field_name = field
+                        .ident
+                        .as_ref()
+                        .expect("Named field should have an identifier");
 
                     let has_always_hash = field
                         .attrs
@@ -141,14 +187,15 @@ pub fn generate_enum_impl(
             }
             syn::Fields::Unnamed(fields) => {
                 // Unnamed fields variant
-                let field_indices: Vec<_> =
-                    (0..fields.unnamed.len()).map(syn::Index::from).collect();
+                let field_identifiers: Vec<_> = (0..fields.unnamed.len())
+                    .map(|i| format_ident!("field_{}", i))
+                    .collect();
 
                 let mut field_is_hashable_checks = Vec::new();
                 let mut field_hash_calls = Vec::new();
 
                 for (i, field) in fields.unnamed.iter().enumerate() {
-                    let field_index = syn::Index::from(i);
+                    let field_ident = format_ident!("field_{}", i);
 
                     let has_always_hash = field
                         .attrs
@@ -159,15 +206,15 @@ pub fn generate_enum_impl(
                         field_hash_calls.push(quote! {
                             {
                                 use std::hash::Hash;
-                                #field_index.hash(state);
+                                #field_ident.hash(state);
                             }
                         });
                     } else {
                         field_is_hashable_checks.push(quote! {
-                            #field_index.is_hashable()
+                            #field_ident.is_hashable()
                         });
                         field_hash_calls.push(quote! {
-                            #field_index.hash_unchecked(state);
+                            #field_ident.hash_unchecked(state);
                         });
                     }
                 }
@@ -181,11 +228,11 @@ pub fn generate_enum_impl(
                 };
 
                 match_arms_is_hashable.push(quote! {
-                    #name::#variant_name(#(#field_indices),*) => #is_hashable_body
+                    #name::#variant_name(#(#field_identifiers),*) => #is_hashable_body
                 });
 
                 match_arms_hash_unchecked.push(quote! {
-                    #name::#variant_name(#(#field_indices),*) => {
+                    #name::#variant_name(#(#field_identifiers),*) => {
                         use std::hash::Hash;
                         std::mem::discriminant(self).hash(state);
                         #(#field_hash_calls)*

@@ -12,7 +12,7 @@ pub enum PowerState {
 
 #[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum SSAState {
+pub enum SsaState {
     Off,
     Idle,
     Checkout,
@@ -22,7 +22,7 @@ pub enum SSAState {
 
 #[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RADState {
+pub enum RadState {
     Off,
     Idle,
     Single,
@@ -31,33 +31,13 @@ pub enum RADState {
     Hourly,
 }
 
-#[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum HeatProbeParameter {
-    HeatProbeMonTempDuration,
-    HeatProbeMonWaitDuration,
-    HeatProbeSinglepenCoolDuration,
-    HeatProbeSinglepenTemaDuration,
-    HeatProbeHammerTimeout,
-    HeatProbeCoTempDuration,
-    HeatProbeCoTemaDuration,
-    HeatProbeCoStatilTlmDuration,
-    RadHeatupDuration,
-    RadMeasDuration,
-    RadHourlyWaitDuration,
-    RadStdWaitDurationShort,
-    RadStdWaitDurationLong,
-    RadSinglemeasDuration,
-    RadCalMeasDuration,
-}
-
 model! {
     pub HeatProbe {
         pub power_state: PowerState,
         pub heat_probe_internal_data: Linear,
         pub sci_data_sent_in_activity: f64,
-        pub ssa_state: SSAState,
-        pub rad_state: RADState,
+        pub ssa_state: SsaState,
+        pub rad_state: RadState,
         pub heat_probe_mon_temp_duration_table: Duration,
         pub heat_probe_mon_wait_duration_table: Duration,
         pub heat_probe_singlepen_cool_duration_table: Duration,
