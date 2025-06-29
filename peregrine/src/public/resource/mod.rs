@@ -125,7 +125,7 @@ pub trait Data<'h>:
     /// Create a sample from the [Self::Read] value and the current time. Like [from_read],
     /// this function will need to provide an interface that is evolved in time to `now`.
     /// Unlike [from_read], you should try to do that without cloning or mutating any data.
-    fn sample(read: &Self::Read, now: Time) -> Self::Sample;
+    fn sample(read: Self::Read, now: Time) -> Self::Sample;
 }
 
 /// Marks a type as a resource label.
@@ -159,22 +159,4 @@ pub trait MaybeHash {
     ///
     /// Unhashable data types should panic if this method is called.
     fn hash_unchecked<H: Hasher>(&self, state: &mut H);
-}
-
-impl MaybeHash for f32 {
-    fn is_hashable(&self) -> bool {
-        self.is_normal()
-    }
-    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
-        state.write(&self.to_be_bytes());
-    }
-}
-
-impl MaybeHash for f64 {
-    fn is_hashable(&self) -> bool {
-        self.is_normal()
-    }
-    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
-        state.write(&self.to_be_bytes());
-    }
 }

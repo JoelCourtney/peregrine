@@ -9,6 +9,9 @@ pub use crate::internal::{
     timeline::*,
 };
 
+#[allow(unused_imports)]
+pub use crate::internal::operation::node_impls::*;
+
 // Re-export commonly used types
 pub use anyhow::Context;
 pub use anyhow::Result;

@@ -176,7 +176,7 @@ impl Node {
                     );
 
                     let (#(#read_write_responses,)*) = (#(<#read_write_types as Resource>::Data::from_read(#read_write_responses, time_as_epoch),)*);
-                    let (#(#read_only_responses,)*) = (#(<#read_only_types as Resource>::Data::sample(&#read_only_responses, time_as_epoch),)*);
+                    let (#(#read_only_responses,)*) = (#(<#read_only_types as Resource>::Data::sample(#read_only_responses, time_as_epoch),)*);
 
                     let hash = {
                         use std::hash::{Hasher, BuildHasher, Hash};

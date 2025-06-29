@@ -1,31 +1,19 @@
+use crate as peregrine;
 use crate::Time;
-use crate::public::resource::{Data, MaybeHash};
+use crate::public::resource::Data;
 use hifitime::Duration;
+use peregrine::MaybeHash;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::hash::Hasher;
 use std::mem::transmute;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Piecewise<T> {
+#[derive(MaybeHash, Clone, Serialize, Deserialize, Debug)]
+pub struct Piecewise<T: MaybeHash> {
     pub default: Box<T>,
     pub pieces: SmallVec<(Duration, T), 2>,
 }
 
-impl<'h, T: Data<'h> + Clone> MaybeHash for Piecewise<T> {
-    fn is_hashable(&self) -> bool {
-        self.default.is_hashable() && self.pieces.iter().all(|(_, piece)| piece.is_hashable())
-    }
-
-    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
-        self.default.hash_unchecked(state);
-        self.pieces
-            .iter()
-            .for_each(|(_, piece)| piece.hash_unchecked(state));
-    }
-}
-
-impl<'h, T: Data<'h> + Clone> Data<'h> for Piecewise<T> {
+impl<'h, T: Data<'h> + Clone + MaybeHash> Data<'h> for Piecewise<T> {
     type Read = (Time, &'h T, &'h [(Duration, T)]);
     type Sample = T::Sample;
 
@@ -61,7 +49,7 @@ impl<'h, T: Data<'h> + Clone> Data<'h> for Piecewise<T> {
         }
     }
 
-    fn sample(read: &Self::Read, now: Time) -> Self::Sample {
+    fn sample(read: Self::Read, now: Time) -> Self::Sample {
         let elapsed = now - read.0;
         let mut index = 0;
         while index < read.2.len() && read.2[index].0 <= elapsed {
@@ -72,7 +60,7 @@ impl<'h, T: Data<'h> + Clone> Data<'h> for Piecewise<T> {
         } else {
             (read.0 + read.2[index - 1].0, read.2[index - 1].1.clone())
         };
-        T::sample(&selection.to_read(start), now)
+        T::sample(selection.to_read(start), now)
     }
 }
 

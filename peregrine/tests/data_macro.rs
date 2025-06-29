@@ -98,7 +98,7 @@ fn test_struct_basic() {
     assert_eq!(evolved.count, 42); // count should not evolve
 
     // Test sampling
-    let sample = TestStruct::sample(&read, now);
+    let sample = TestStruct::sample(read, now);
     assert!((sample.value.value - 14.0).abs() < 1e-10);
     assert_eq!(sample.count, 42);
 }
@@ -115,7 +115,7 @@ fn test_struct_custom_sample() {
     let now = written + 3.seconds();
 
     // Test that sample type is different from original
-    let sample = CustomSampleStruct::sample(&read, now);
+    let sample = CustomSampleStruct::sample(read, now);
 
     // Value should have evolved: 5.0 + 1.5 * 3.0 = 9.5
     assert!((sample.value.value - 9.5).abs() < 1e-10);
@@ -140,7 +140,7 @@ fn test_struct_self_sample() {
     let now = written + 4.seconds();
 
     // Test that sample returns the same type as original
-    let sample = SelfSampleStruct::sample(&read, now);
+    let sample = SelfSampleStruct::sample(read, now);
 
     // Value should have evolved: 3.0 + 0.5 * 4.0 = 5.0
     assert!((sample.value.value - 5.0).abs() < 1e-10);
@@ -167,7 +167,7 @@ fn test_struct_unnamed() {
     assert_eq!(evolved.1, 100);
 
     // Test sampling
-    let sample = UnnamedStruct::sample(&read, now);
+    let sample = UnnamedStruct::sample(read, now);
     assert!((sample.0.value - 8.5).abs() < 1e-10);
     assert_eq!(sample.1, 100);
 }
@@ -195,7 +195,7 @@ fn test_enum_basic() {
     }
 
     // Test sampling - use the generated sample type
-    let sample = TestEnum::sample(&read, now);
+    let sample = TestEnum::sample(read, now);
     match sample {
         TestEnumSample::Multiple { value, count } => {
             assert!((value.value - 9.5).abs() < 1e-10);
@@ -220,7 +220,7 @@ fn test_enum_unit() {
         _ => panic!("Expected Unit variant"),
     }
 
-    let sample = TestEnum::sample(&read, now);
+    let sample = TestEnum::sample(read, now);
     match sample {
         TestEnumSample::Unit => {}
         _ => panic!("Expected Unit variant"),
@@ -246,7 +246,7 @@ fn test_enum_single() {
     }
 
     // Test sampling
-    let sample = TestEnum::sample(&read, now);
+    let sample = TestEnum::sample(read, now);
     match sample {
         TestEnumSample::Single(value) => {
             assert!((value.value - 3.0).abs() < 1e-10);
@@ -267,7 +267,7 @@ fn test_enum_custom_sample() {
     let now = written + 2.0.seconds();
 
     // Test that sample type is different from original
-    let sample = CustomSampleEnum::sample(&read, now);
+    let sample = CustomSampleEnum::sample(read, now);
     match sample {
         CustomSampleEnumSample::Multiple { value, flag } => {
             // Value should have evolved: 4.0 + 1.0 * 2.0 = 6.0
@@ -290,7 +290,7 @@ fn test_enum_self_sample() {
     let now = written + 3.0.seconds();
 
     // Test that sample returns the same type as original
-    let sample = SelfSampleEnum::sample(&read, now);
+    let sample = SelfSampleEnum::sample(read, now);
     match sample {
         SelfSampleEnumSample::Multiple { value, name } => {
             // Value should have evolved: 6.0 + 0.5 * 3.0 = 7.5
@@ -313,7 +313,7 @@ fn test_fieldless_struct() {
     let evolved = FieldlessStruct::from_read(read, now);
     assert!(matches!(evolved, FieldlessStruct));
 
-    let sample = FieldlessStruct::sample(&read, now);
+    let sample = FieldlessStruct::sample(read, now);
     assert!(matches!(sample, FieldlessStruct));
 }
 
@@ -329,7 +329,7 @@ fn test_fieldless_enum() {
     let evolved = FieldlessEnum::from_read(read, now);
     assert!(matches!(evolved, FieldlessEnum::Unit));
 
-    let sample = FieldlessEnum::sample(&read, now);
+    let sample = FieldlessEnum::sample(read, now);
     assert!(matches!(sample, FieldlessEnum::Unit));
 }
 
@@ -350,7 +350,7 @@ fn test_public_struct() {
     assert!((evolved.value.value - 10.0).abs() < 1e-10);
     assert_eq!(evolved.count, 15);
 
-    let sample = PublicStruct::sample(&read, now);
+    let sample = PublicStruct::sample(read, now);
     assert!((sample.value.value - 10.0).abs() < 1e-10);
     assert_eq!(sample.count, 15);
 }
@@ -396,7 +396,7 @@ fn test_sample_consistency() {
     let now = written + 2.0.seconds();
 
     // Sample and from_read should produce consistent results
-    let sample = TestStruct::sample(&read, now);
+    let sample = TestStruct::sample(read, now);
     let evolved = TestStruct::from_read(read, now);
 
     assert!((sample.value.value - evolved.value.value).abs() < 1e-10);

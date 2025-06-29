@@ -57,8 +57,8 @@ impl Data<'_> for Stopwatch {
         }
     }
 
-    fn sample(read: &Self::Read, now: Time) -> Self::Sample {
-        Self::from_read(*read, now)
+    fn sample(read: Self::Read, now: Time) -> Self::Sample {
+        Self::from_read(read, now)
     }
 }
 

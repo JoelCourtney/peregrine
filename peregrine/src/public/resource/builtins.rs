@@ -65,7 +65,7 @@ impl Data<'_> for PeregrineTimeTracker {
         PeregrineTimeTracker
     }
 
-    fn sample(_read: &Self::Read, now: Time) -> Self::Sample {
+    fn sample(_read: Self::Read, now: Time) -> Self::Sample {
         now
     }
 }
@@ -96,7 +96,7 @@ impl Data<'_> for PeregrineElapsedTimeTracker {
         panic!("You cannot write to the `elapsed` builtin. Use a Stopwatch.")
     }
 
-    fn sample(written: &Self::Read, now: Time) -> Self::Sample {
-        now - *written
+    fn sample(written: Self::Read, now: Time) -> Self::Sample {
+        now - written
     }
 }

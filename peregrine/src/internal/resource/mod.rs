@@ -1,4 +1,14 @@
-pub mod impls;
+#[cfg(feature = "uom")]
+mod uom;
+
+#[cfg(feature = "bigdecimal")]
+mod bigdecimal;
+
+#[cfg(feature = "nalgebra")]
+mod nalgebra;
+
+mod basic;
+mod num;
 
 use type_map::concurrent::TypeMap;
 use type_reg::untagged::TypeReg;

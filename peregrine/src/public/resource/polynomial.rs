@@ -1,10 +1,11 @@
+use crate as peregrine;
+use crate::MaybeHash;
 use crate::Time;
-use crate::public::resource::{Data, MaybeHash};
+use crate::public::resource::Data;
 use hifitime::{Duration, TimeUnits};
-use num_traits::Zero;
+use num::Zero;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::hash::Hasher;
 use std::ops::{Add, Mul};
 
 pub type Linear<Y = f64> = Polynomial<1, Y>;
@@ -13,8 +14,8 @@ pub type Cubic<Y = f64> = Polynomial<3, Y>;
 pub type Quartic<Y = f64> = Polynomial<4, Y>;
 pub type Quintic<Y = f64> = Polynomial<5, Y>;
 
-#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
-pub struct Polynomial<const DEGREE: usize, Y> {
+#[derive(Copy, Clone, Serialize, Deserialize, Debug, MaybeHash)]
+pub struct Polynomial<const DEGREE: usize, Y: MaybeHash> {
     pub value: Y,
     #[serde(with = "serde_arrays")]
     pub higher_coefficients: [Y; DEGREE],
@@ -57,25 +58,12 @@ impl<
         this
     }
 
-    fn sample(read: &Self::Read, now: Time) -> Self::Sample {
-        Self::from_read(*read, now)
+    fn sample(read: Self::Read, now: Time) -> Self::Sample {
+        Self::from_read(read, now)
     }
 }
 
-impl<const DEGREE: usize, Y: MaybeHash> MaybeHash for Polynomial<DEGREE, Y> {
-    fn is_hashable(&self) -> bool {
-        self.basis.is_hashable() && self.higher_coefficients.iter().all(|c| c.is_hashable())
-    }
-    fn hash_unchecked<H: Hasher>(&self, state: &mut H) {
-        self.basis.hash_unchecked(state);
-        self.higher_coefficients
-            .iter()
-            .for_each(|c| c.hash_unchecked(state));
-        self.value.hash_unchecked(state);
-    }
-}
-
-impl<const DEGREE: usize, Y: Default + Copy> Default for Polynomial<DEGREE, Y> {
+impl<const DEGREE: usize, Y: Default + Copy + MaybeHash> Default for Polynomial<DEGREE, Y> {
     fn default() -> Self {
         Self {
             value: Default::default(),
@@ -88,7 +76,7 @@ impl<const DEGREE: usize, Y: Default + Copy> Default for Polynomial<DEGREE, Y> {
 macro_rules! impl_constructors {
     ($($n:literal => $($etc:ident)*;)*) => {
         $(
-            impl<Y: Copy> Polynomial<$n, Y> {
+            impl<Y: Copy + MaybeHash> Polynomial<$n, Y> {
                 pub fn new(basis: Duration, a: Y, $($etc: Y,)*) -> Self {
                     Self {
                         value: a,
@@ -110,7 +98,7 @@ impl_constructors![
     5 => b c d e f;
 ];
 
-impl<const DEGREE: usize, Y: Copy + Zero> Polynomial<DEGREE, Y> {
+impl<const DEGREE: usize, Y: Copy + Zero + MaybeHash> Polynomial<DEGREE, Y> {
     pub fn constant(a: Y) -> Self {
         Self {
             value: a,
@@ -120,7 +108,7 @@ impl<const DEGREE: usize, Y: Copy + Zero> Polynomial<DEGREE, Y> {
     }
 }
 
-impl<const DEGREE: usize, Y: Copy> Polynomial<DEGREE, Y> {
+impl<const DEGREE: usize, Y: Copy + MaybeHash> Polynomial<DEGREE, Y> {
     pub fn slope(&self) -> Y {
         self.higher_coefficients[0]
     }

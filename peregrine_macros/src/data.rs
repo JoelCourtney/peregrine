@@ -31,7 +31,7 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
 
                 fn to_read(&self, _written: peregrine::Time) -> Self::Read { *self }
                 fn from_read(read: Self, _written: peregrine::Time) -> Self { read }
-                fn sample(read: &Self::Read, _now: peregrine::Time) -> Self::Sample { *read }
+                fn sample(read: Self::Read, _now: peregrine::Time) -> Self::Sample { read }
             }
         };
         return TokenStream::from(expanded);
@@ -69,7 +69,7 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
                 quote! { Read },
             )
         };
-        let sample_body = quote! { Self::from_read(*read, now) };
+        let sample_body = quote! { Self::from_read(read, now) };
         let data_impl = generate_data_methods(
             name,
             fields,
@@ -134,8 +134,8 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
         generate_struct_field_operations(
             fields,
             &sample_type_name,
-            |field_name, field_type| quote! { #field_name: <#field_type as peregrine::Data<'h>>::sample(&read.#field_name, now) },
-            |field_index, field_type| quote! { <#field_type as peregrine::Data<'h>>::sample(&read.#field_index, now) },
+            |field_name, field_type| quote! { #field_name: <#field_type as peregrine::Data<'h>>::sample(read.#field_name, now) },
+            |field_index, field_type| quote! { <#field_type as peregrine::Data<'h>>::sample(read.#field_index, now) },
         )
     } else {
         generate_enum_operations(
@@ -143,8 +143,8 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
             &variants,
             &sample_type_name,
             quote! { read },
-            |field_name, field_type| quote! { #field_name: <#field_type as peregrine::Data<'h>>::sample(&#field_name, now) },
-            |field_name, field_type| quote! { <#field_type as peregrine::Data<'h>>::sample(&#field_name, now) },
+            |field_name, field_type| quote! { #field_name: <#field_type as peregrine::Data<'h>>::sample(#field_name, now) },
+            |field_name, field_type| quote! { <#field_type as peregrine::Data<'h>>::sample(#field_name, now) },
         )
     };
 
@@ -323,7 +323,7 @@ fn generate_data_methods(
     quote! {
         fn to_read(&self, written: peregrine::Time) -> Self::Read { #to_read_body }
         fn from_read(read: Self::Read, now: peregrine::Time) -> Self { #from_read_body }
-        fn sample(read: &Self::Read, now: peregrine::Time) -> Self::Sample { #sample_body }
+        fn sample(read: Self::Read, now: peregrine::Time) -> Self::Sample { #sample_body }
     }
 }
 

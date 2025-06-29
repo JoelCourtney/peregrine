@@ -212,7 +212,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
             .range(..=time)
             .next_back()
             .ok_or_else(|| anyhow!("No operations to sample found at or before {time}"))?;
-        Ok(R::Data::sample(latest.1, time))
+        Ok(R::Data::sample(*latest.1, time))
     }
 }
 

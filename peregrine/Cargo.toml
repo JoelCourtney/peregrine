@@ -12,9 +12,15 @@ keywords = ["simulation"]
 categories = ["aerospace::simulation", "simulation"]
 
 [features]
+default = ["compatibility", "serde"]
+
 serde = []
-default = []
 pregenerate_nodes = ["peregrine_macros/pregenerated"]
+
+compatibility = ["uom", "bigdecimal", "nalgebra"]
+uom = ["dep:uom"]
+bigdecimal = ["dep:bigdecimal"]
+nalgebra = ["dep:nalgebra"]
 
 [dependencies]
 
@@ -45,6 +51,8 @@ inventory = "0.3.20"
 # A custom version (see relative path) of the unmaintained serde closure crate.
 # Used to hash closure inputs captured in the op! macro.
 serde_closure = { path = "../serde_closure" }
+# Used to hash floats
+ordered-float = "5.0.0"
 
 ## MEMORY
 # An arena allocator used for Futures during simulation, and operations trait objects.
@@ -76,7 +84,7 @@ hifitime = "4.0.2"
 # Used for convience, not having to manually implement simple traits.
 derive_more = { version = "2.0.1", features = ["deref", "deref_mut", "error"] }
 # Used for implementing common resource abstractions that use numerics.
-num-traits = "0.2.19"
+num = { version = "0.4.3", features = ["serde"] }
 # Used to easily copy-paste a declaration multiple times with duck-typed inputs.
 duplicate = "2.0.0"
 # Used in the initial conditions macro to detect types that have defaults.
@@ -87,6 +95,11 @@ castaway = "0.2.3"
 ## ERROR HANDLING
 # Used to allow modellers to return errors from activities and operations
 anyhow = "1.0.97"
+
+## COMPATIBILITY
+uom = { version = "0.37.0", features = ["serde"], optional = true }
+bigdecimal = { version = "0.4.8", features = ["serde"], optional = true }
+nalgebra = { version = "0.33.2", features = ["serde", "serde-serialize"], optional = true }
 
 [dev-dependencies]
 rand = "0.9.0"

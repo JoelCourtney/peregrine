@@ -84,9 +84,9 @@ impl ToTokens for Op {
         }
 
         let mod_name = if !empty_declaration {
-            quote! { local_module }
+            quote! { local_module:: }
         } else {
-            quote! {}
+            quote! { peregrine::internal::macro_prelude:: }
         };
 
         let instantiation = result(&idents, self.body_function(), mod_name);
@@ -132,6 +132,6 @@ fn result(idents: &Idents, body_function: TokenStream, mod_name: TokenStream) ->
     };
 
     quote! {
-        move |placement| #mod_name::#op_name::<'_,_, #resources_generics>::new(placement, #body_function)
+        move |placement| #mod_name #op_name::<'_,_, #resources_generics>::new(placement, #body_function)
     }
 }
