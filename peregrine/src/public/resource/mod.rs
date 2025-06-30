@@ -45,22 +45,22 @@ macro_rules! resource {
 
             impl $crate::internal::resource::ResourceHistoryPlugin for $name {
                 fn write_type_string(&self) -> String {
-                    $crate::internal::macro_prelude::peregrine_macros::code_to_str!($ty).to_string()
+                    $crate::internal::macro_prelude::peregrine_macros::code_to_str!($name).to_string()
                 }
 
                 fn ser<'h>(&self, input: &'h $crate::internal::macro_prelude::type_map::concurrent::TypeMap, type_map: &'h mut $crate::internal::macro_prelude::type_reg::untagged::TypeMap<String>) {
-                    if let Some(h) = input.get::<$crate::internal::history::InnerHistory<$ty>>() {
+                    if let Some(h) = input.get::<$crate::internal::history::InnerHistory<$name>>() {
                         type_map.insert(self.write_type_string(), h.clone());
                     }
                 }
 
                 fn register(&self, type_reg: &mut $crate::internal::macro_prelude::type_reg::untagged::TypeReg<String>) {
-                    type_reg.register::<$crate::internal::history::InnerHistory<$ty>>(self.write_type_string());
+                    type_reg.register::<$crate::internal::history::InnerHistory<$name>>(self.write_type_string());
                 }
                 fn de<'h>(&self, output: &'h mut $crate::internal::macro_prelude::type_map::concurrent::TypeMap, type_map: &'h mut $crate::internal::macro_prelude::type_reg::untagged::TypeMap<String>) {
                     match type_map.remove(&self.write_type_string()) {
                         Some(sub) => {
-                            let sub_history = sub.into_inner().downcast::<$crate::internal::history::InnerHistory<$ty>>();
+                            let sub_history = sub.into_inner().downcast::<$crate::internal::history::InnerHistory<$name>>();
                             match sub_history {
                                 Ok(downcasted) => {
                                     output.insert(*downcasted);

@@ -22,7 +22,7 @@ impl History {
         History(TypeMap::new())
     }
     pub fn init<R: Resource>(&mut self) {
-        match self.0.entry::<InnerHistory<R::Data>>() {
+        match self.0.entry::<InnerHistory<R>>() {
             Entry::Occupied(_) => {}
             Entry::Vacant(v) => {
                 v.insert(InnerHistory::default());
@@ -36,13 +36,13 @@ impl History {
         written: Time,
     ) -> <R::Data as Data>::Read {
         self.0
-            .get::<InnerHistory<R::Data>>()
+            .get::<InnerHistory<R>>()
             .unwrap_or_else(|| panic!("history not initialized for resource: {}", R::LABEL))
             .insert(hash, value, written)
     }
     pub fn get<R: Resource>(&self, hash: u64, written: Time) -> Option<<R::Data as Data>::Read> {
         self.0
-            .get::<InnerHistory<R::Data>>()
+            .get::<InnerHistory<R>>()
             .and_then(|h| h.get(hash, written))
     }
     pub fn take_inner(&mut self) -> TypeMap {
@@ -65,9 +65,9 @@ const DASHMAP_STARTING_CAPACITY: usize = 1000;
 
 /// See [Resource].
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct InnerHistory<T>(DashMap<u64, T, PassThroughHashBuilder>);
+pub struct InnerHistory<R: Resource>(DashMap<u64, R::Data, PassThroughHashBuilder>);
 
-impl<T: for<'h> Data<'h>> Default for InnerHistory<T> {
+impl<R: Resource> Default for InnerHistory<R> {
     fn default() -> Self {
         InnerHistory(DashMap::with_capacity_and_hasher(
             DASHMAP_STARTING_CAPACITY,
@@ -76,16 +76,13 @@ impl<T: for<'h> Data<'h>> Default for InnerHistory<T> {
     }
 }
 
-impl<'h, T: Data<'h>> InnerHistory<T>
-where
-    Self: 'h,
-{
-    fn insert(&self, hash: u64, value: T, written: Time) -> T::Read {
+impl<R: Resource> InnerHistory<R> {
+    fn insert(&self, hash: u64, value: R::Data, written: Time) -> <R::Data as Data>::Read {
         let inserted = self.0.entry(hash).or_insert(value);
         inserted.to_read(written)
     }
 
-    fn get(&self, hash: u64, written: Time) -> Option<T::Read> {
+    fn get(&self, hash: u64, written: Time) -> Option<<R::Data as Data>::Read> {
         self.0.get(&hash).map(move |r| r.value().to_read(written))
     }
 }
@@ -182,9 +179,11 @@ mod tests {
 
     const TIME: Time = duration_to_epoch(Duration::ZERO);
 
+    crate::resource!(s: String);
+
     #[test]
     fn deref_history_valid_across_realloc() {
-        let history = InnerHistory::<String>::default();
+        let history = InnerHistory::<s>::default();
 
         // Chosen by button mashing :)
         let hash = 0b10110100100101001010;
