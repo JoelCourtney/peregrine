@@ -13,38 +13,38 @@ use std::hash::Hash;
 // Test models with various nalgebra types
 model! {
     StaticMatrixModel {
-        matrix_2x2: Matrix2<f64>,
-        matrix_3x3: Matrix3<f64>,
-        matrix_4x4: Matrix4<f64>,
-        matrix_3x2: Matrix3x2<f64>,
-        matrix_2x3: Matrix2x3<f64>,
-        matrix_3x4: Matrix3x4<f64>,
-        matrix_4x3: Matrix4x3<f64>,
-        vector_2: Vector2<f64>,
-        vector_3: Vector3<f64>,
-        vector_4: Vector4<f64>,
+        matrix_2x2: Matrix2<f64>;
+        matrix_3x3: Matrix3<f64>;
+        matrix_4x4: Matrix4<f64>;
+        matrix_3x2: Matrix3x2<f64>;
+        matrix_2x3: Matrix2x3<f64>;
+        matrix_3x4: Matrix3x4<f64>;
+        matrix_4x3: Matrix4x3<f64>;
+        vector_2: Vector2<f64>;
+        vector_3: Vector3<f64>;
+        vector_4: Vector4<f64>;
     }
 }
 
 model! {
     DynamicMatrixModel {
-        dynamic_matrix: DMatrix<f64>,
-        dynamic_vector: DVector<f64>,
+        dynamic_matrix: DMatrix<f64>;
+        dynamic_vector: DVector<f64>;
     }
 }
 
 model! {
     QuaternionModel {
-        quaternion: Quaternion<f64>,
-        unit_quaternion: UnitQuaternion<f64>,
+        quaternion: Quaternion<f64>;
+        unit_quaternion: UnitQuaternion<f64>;
     }
 }
 
 model! {
     RotationModel {
-        rotation_2d: Rotation2<f64>,
-        rotation_3d: Rotation3<f64>,
-        unit_complex: UnitComplex<f64>,
+        rotation_2d: Rotation2<f64>;
+        rotation_3d: Rotation3<f64>;
+        unit_complex: UnitComplex<f64>;
     }
 }
 

@@ -10,13 +10,16 @@ use parking_lot::Mutex;
 use rayon::Scope;
 use smallvec::SmallVec;
 
+#[allow(unused_imports)]
+use crate as peregrine;
+
 pub struct Delay<U> {
     pub min: Duration,
     pub max: Duration,
     pub node: U,
 }
 
-crate::resource!(pub peregrine_grounding: Duration);
+peregrine::resource!(pub peregrine_grounding: Duration;);
 
 pub enum GroundingContinuation<'o> {
     Node(usize, &'o dyn GroundingDownstream<'o>),

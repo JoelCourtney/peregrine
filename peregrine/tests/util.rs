@@ -114,14 +114,14 @@ impl EvalCounter {
 
 model! {
     pub B {
-        pub b: u32
+        pub b: u32;
     }
 }
 model! {
     pub AB {
-        pub a: u32,
-        ..B
+        pub a: u32;
     }
+    mod B;
 }
 
 #[allow(unused)]

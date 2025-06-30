@@ -9,20 +9,22 @@ use peregrine::{Session, Time, initial_conditions, model, pieces, resource};
 mod activities;
 
 model! {
-    pub PotatoSat {
-        battery,
-        mode,
-        line,
-        int_pieces,
+    use battery;
+    use mode;
+    use line;
+    use int_pieces;
 
-        pub timer: Stopwatch
+    pub PotatoSat {
+        pub timer: Stopwatch;
     }
 }
 
-resource!(battery: f32);
-resource!(mode: String);
-resource!(line: Quadratic);
-resource!(int_pieces: Piecewise<Linear>);
+resource! {
+    battery: f32;
+    mode: String;
+    line: Quadratic;
+    int_pieces: Piecewise<Linear>;
+}
 
 fn main() -> Result<()> {
     let session = Session::new();

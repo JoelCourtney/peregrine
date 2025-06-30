@@ -20,7 +20,7 @@ pub(crate) fn init_builtins_timelines<'o>(time: Duration, timelines: &mut Timeli
     );
 }
 
-crate::resource!(
+peregrine::resource!(
     /// A resource for the current simulation [Time].
     ///
     /// This is a builtin and will automatically be added to all models.
@@ -30,7 +30,7 @@ crate::resource!(
     ///
     /// Using this resource will prevent your operation from using cached
     /// values if it is translated in time.
-    pub now: PeregrineTimeTracker,
+    pub now: PeregrineTimeTracker;
 
     /// A resource for the current elapsed [Duration] of the simulation,
     /// since the plan start / initial conditions.
@@ -38,7 +38,7 @@ crate::resource!(
     /// This is a builtin and will automatically be added to all models.
     /// Unlike [now], elapsed does contain data that could be overwritten,
     /// but this is illegal and if you try to do so it will [panic] at runtime.
-    pub elapsed: PeregrineElapsedTimeTracker,
+    pub elapsed: PeregrineElapsedTimeTracker;
 );
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]

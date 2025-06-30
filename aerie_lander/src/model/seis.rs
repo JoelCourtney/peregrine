@@ -150,98 +150,98 @@ pub struct DeviceTypeMetrics {
 
 model! {
     pub Seis {
-        pub powered_on: bool = false,
-        pub mde_should_be_on: bool = false,
-        pub combined_channel_out_rates: Vec<ChannelOutRateGroup> = Vec::new(),
-        pub internal_volume: Linear,
-        pub volume_to_send_to_vc: Linear,
-        pub continuous_data_sent_in: f64 = 0.0,
-        pub transfer_rate: f64 = 1666.66 / 3600.0,
-        pub vbb_mode: VbbMode = VbbMode::Sci,
-        pub vbb1_on: bool = false,
-        pub vbb2_on: bool = false,
-        pub vbb3_on: bool = false,
-        pub sp1_on: bool = false,
-        pub sp2_on: bool = false,
-        pub sp3_on: bool = false,
-        pub scit_on: bool = false,
-        pub channel_vbb1_vel_lr_lg_en: ChannelRate,
-        pub channel_vbb1_vel_lr_lg_sc: ChannelRate,
-        pub channel_vbb1_vel_lr_hg_en: ChannelRate,
-        pub channel_vbb1_vel_lr_hg_sc: ChannelRate,
-        pub channel_vbb1_vel_hr_lg_en: ChannelRate,
-        pub channel_vbb1_vel_hr_lg_sc: ChannelRate,
-        pub channel_vbb1_vel_hr_hg_en: ChannelRate,
-        pub channel_vbb1_vel_hr_hg_sc: ChannelRate,
-        pub channel_vbb1_pos_lr_lg_en: ChannelRate,
-        pub channel_vbb1_pos_lr_lg_sc: ChannelRate,
-        pub channel_vbb1_pos_lr_hg_en: ChannelRate,
-        pub channel_vbb1_pos_lr_hg_sc: ChannelRate,
-        pub channel_vbb1_pos_hr_lg_en: ChannelRate,
-        pub channel_vbb1_pos_hr_lg_sc: ChannelRate,
-        pub channel_vbb1_pos_hr_hg_en: ChannelRate,
-        pub channel_vbb1_pos_hr_hg_sc: ChannelRate,
-        pub channel_vbb1_tmp_lr: ChannelRate,
-        pub channel_vbb1_tmp_hr: ChannelRate,
-        pub channel_vbb2_vel_lr_lg_en: ChannelRate,
-        pub channel_vbb2_vel_lr_lg_sc: ChannelRate,
-        pub channel_vbb2_vel_lr_hg_en: ChannelRate,
-        pub channel_vbb2_vel_lr_hg_sc: ChannelRate,
-        pub channel_vbb2_vel_hr_lg_en: ChannelRate,
-        pub channel_vbb2_vel_hr_lg_sc: ChannelRate,
-        pub channel_vbb2_vel_hr_hg_en: ChannelRate,
-        pub channel_vbb2_vel_hr_hg_sc: ChannelRate,
-        pub channel_vbb2_pos_lr_lg_en: ChannelRate,
-        pub channel_vbb2_pos_lr_lg_sc: ChannelRate,
-        pub channel_vbb2_pos_lr_hg_en: ChannelRate,
-        pub channel_vbb2_pos_lr_hg_sc: ChannelRate,
-        pub channel_vbb2_pos_hr_lg_en: ChannelRate,
-        pub channel_vbb2_pos_hr_lg_sc: ChannelRate,
-        pub channel_vbb2_pos_hr_hg_en: ChannelRate,
-        pub channel_vbb2_pos_hr_hg_sc: ChannelRate,
-        pub channel_vbb2_tmp_lr: ChannelRate,
-        pub channel_vbb2_tmp_hr: ChannelRate,
-        pub channel_vbb3_vel_lr_lg_en: ChannelRate,
-        pub channel_vbb3_vel_lr_lg_sc: ChannelRate,
-        pub channel_vbb3_vel_lr_hg_en: ChannelRate,
-        pub channel_vbb3_vel_lr_hg_sc: ChannelRate,
-        pub channel_vbb3_vel_hr_lg_en: ChannelRate,
-        pub channel_vbb3_vel_hr_lg_sc: ChannelRate,
-        pub channel_vbb3_vel_hr_hg_en: ChannelRate,
-        pub channel_vbb3_vel_hr_hg_sc: ChannelRate,
-        pub channel_vbb3_pos_lr_lg_en: ChannelRate,
-        pub channel_vbb3_pos_lr_lg_sc: ChannelRate,
-        pub channel_vbb3_pos_lr_hg_en: ChannelRate,
-        pub channel_vbb3_pos_lr_hg_sc: ChannelRate,
-        pub channel_vbb3_pos_hr_lg_en: ChannelRate,
-        pub channel_vbb3_pos_hr_lg_sc: ChannelRate,
-        pub channel_vbb3_pos_hr_hg_en: ChannelRate,
-        pub channel_vbb3_pos_hr_hg_sc: ChannelRate,
-        pub channel_vbb3_tmp_lr: ChannelRate,
-        pub channel_vbb3_tmp_hr: ChannelRate,
-        pub channel_sp1_lr_lg: ChannelRate,
-        pub channel_sp1_lr_hg: ChannelRate,
-        pub channel_sp1_hr_lg: ChannelRate,
-        pub channel_sp1_hr_hg: ChannelRate,
-        pub channel_sp2_lr_lg: ChannelRate,
-        pub channel_sp2_lr_hg: ChannelRate,
-        pub channel_sp2_hr_lg: ChannelRate,
-        pub channel_sp2_hr_hg: ChannelRate,
-        pub channel_sp3_lr_lg: ChannelRate,
-        pub channel_sp3_lr_hg: ChannelRate,
-        pub channel_sp3_hr_lg: ChannelRate,
-        pub channel_sp3_hr_hg: ChannelRate,
-        pub channel_scit_hr: ChannelRate,
-        pub channel_scit_lr: ChannelRate,
-        pub device_type_vel_sampling_rate: f64 = 0.0,
-        pub device_type_pos_sampling_rate: f64 = 0.0,
-        pub device_type_temp_sampling_rate: f64 = 0.0,
-        pub device_type_sp_sampling_rate: f64 = 0.0,
-        pub device_type_scit_sampling_rate: f64 = 0.0,
-        pub device_type_vel_gain: Gain = Gain::High,
-        pub device_type_pos_gain: Gain = Gain::High,
-        pub device_type_temp_gain: Gain = Gain::High,
-        pub device_type_sp_gain: Gain = Gain::High,
-        pub device_type_scit_gain: Gain = Gain::High,
+        pub powered_on: bool = false;
+        pub mde_should_be_on: bool = false;
+        pub combined_channel_out_rates: Vec<ChannelOutRateGroup> = Vec::new();
+        pub internal_volume: Linear;
+        pub volume_to_send_to_vc: Linear;
+        pub continuous_data_sent_in: f64 = 0.0;
+        pub transfer_rate: f64 = 1666.66 / 3600.0;
+        pub vbb_mode: VbbMode = VbbMode::Sci;
+        pub vbb1_on: bool = false;
+        pub vbb2_on: bool = false;
+        pub vbb3_on: bool = false;
+        pub sp1_on: bool = false;
+        pub sp2_on: bool = false;
+        pub sp3_on: bool = false;
+        pub scit_on: bool = false;
+        pub channel_vbb1_vel_lr_lg_en: ChannelRate;
+        pub channel_vbb1_vel_lr_lg_sc: ChannelRate;
+        pub channel_vbb1_vel_lr_hg_en: ChannelRate;
+        pub channel_vbb1_vel_lr_hg_sc: ChannelRate;
+        pub channel_vbb1_vel_hr_lg_en: ChannelRate;
+        pub channel_vbb1_vel_hr_lg_sc: ChannelRate;
+        pub channel_vbb1_vel_hr_hg_en: ChannelRate;
+        pub channel_vbb1_vel_hr_hg_sc: ChannelRate;
+        pub channel_vbb1_pos_lr_lg_en: ChannelRate;
+        pub channel_vbb1_pos_lr_lg_sc: ChannelRate;
+        pub channel_vbb1_pos_lr_hg_en: ChannelRate;
+        pub channel_vbb1_pos_lr_hg_sc: ChannelRate;
+        pub channel_vbb1_pos_hr_lg_en: ChannelRate;
+        pub channel_vbb1_pos_hr_lg_sc: ChannelRate;
+        pub channel_vbb1_pos_hr_hg_en: ChannelRate;
+        pub channel_vbb1_pos_hr_hg_sc: ChannelRate;
+        pub channel_vbb1_tmp_lr: ChannelRate;
+        pub channel_vbb1_tmp_hr: ChannelRate;
+        pub channel_vbb2_vel_lr_lg_en: ChannelRate;
+        pub channel_vbb2_vel_lr_lg_sc: ChannelRate;
+        pub channel_vbb2_vel_lr_hg_en: ChannelRate;
+        pub channel_vbb2_vel_lr_hg_sc: ChannelRate;
+        pub channel_vbb2_vel_hr_lg_en: ChannelRate;
+        pub channel_vbb2_vel_hr_lg_sc: ChannelRate;
+        pub channel_vbb2_vel_hr_hg_en: ChannelRate;
+        pub channel_vbb2_vel_hr_hg_sc: ChannelRate;
+        pub channel_vbb2_pos_lr_lg_en: ChannelRate;
+        pub channel_vbb2_pos_lr_lg_sc: ChannelRate;
+        pub channel_vbb2_pos_lr_hg_en: ChannelRate;
+        pub channel_vbb2_pos_lr_hg_sc: ChannelRate;
+        pub channel_vbb2_pos_hr_lg_en: ChannelRate;
+        pub channel_vbb2_pos_hr_lg_sc: ChannelRate;
+        pub channel_vbb2_pos_hr_hg_en: ChannelRate;
+        pub channel_vbb2_pos_hr_hg_sc: ChannelRate;
+        pub channel_vbb2_tmp_lr: ChannelRate;
+        pub channel_vbb2_tmp_hr: ChannelRate;
+        pub channel_vbb3_vel_lr_lg_en: ChannelRate;
+        pub channel_vbb3_vel_lr_lg_sc: ChannelRate;
+        pub channel_vbb3_vel_lr_hg_en: ChannelRate;
+        pub channel_vbb3_vel_lr_hg_sc: ChannelRate;
+        pub channel_vbb3_vel_hr_lg_en: ChannelRate;
+        pub channel_vbb3_vel_hr_lg_sc: ChannelRate;
+        pub channel_vbb3_vel_hr_hg_en: ChannelRate;
+        pub channel_vbb3_vel_hr_hg_sc: ChannelRate;
+        pub channel_vbb3_pos_lr_lg_en: ChannelRate;
+        pub channel_vbb3_pos_lr_lg_sc: ChannelRate;
+        pub channel_vbb3_pos_lr_hg_en: ChannelRate;
+        pub channel_vbb3_pos_lr_hg_sc: ChannelRate;
+        pub channel_vbb3_pos_hr_lg_en: ChannelRate;
+        pub channel_vbb3_pos_hr_lg_sc: ChannelRate;
+        pub channel_vbb3_pos_hr_hg_en: ChannelRate;
+        pub channel_vbb3_pos_hr_hg_sc: ChannelRate;
+        pub channel_vbb3_tmp_lr: ChannelRate;
+        pub channel_vbb3_tmp_hr: ChannelRate;
+        pub channel_sp1_lr_lg: ChannelRate;
+        pub channel_sp1_lr_hg: ChannelRate;
+        pub channel_sp1_hr_lg: ChannelRate;
+        pub channel_sp1_hr_hg: ChannelRate;
+        pub channel_sp2_lr_lg: ChannelRate;
+        pub channel_sp2_lr_hg: ChannelRate;
+        pub channel_sp2_hr_lg: ChannelRate;
+        pub channel_sp2_hr_hg: ChannelRate;
+        pub channel_sp3_lr_lg: ChannelRate;
+        pub channel_sp3_lr_hg: ChannelRate;
+        pub channel_sp3_hr_lg: ChannelRate;
+        pub channel_sp3_hr_hg: ChannelRate;
+        pub channel_scit_hr: ChannelRate;
+        pub channel_scit_lr: ChannelRate;
+        pub device_type_vel_sampling_rate: f64 = 0.0;
+        pub device_type_pos_sampling_rate: f64 = 0.0;
+        pub device_type_temp_sampling_rate: f64 = 0.0;
+        pub device_type_sp_sampling_rate: f64 = 0.0;
+        pub device_type_scit_sampling_rate: f64 = 0.0;
+        pub device_type_vel_gain: Gain = Gain::High;
+        pub device_type_pos_gain: Gain = Gain::High;
+        pub device_type_temp_gain: Gain = Gain::High;
+        pub device_type_sp_gain: Gain = Gain::High;
+        pub device_type_scit_gain: Gain = Gain::High;
     }
 }

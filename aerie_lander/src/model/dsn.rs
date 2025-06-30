@@ -34,24 +34,23 @@ pub struct StationState {
 
 model! {
     pub Dsn {
-        pub current_station: DsnStation = DsnStation::None,
+        pub current_station: DsnStation = DsnStation::None;
         pub canberra: StationState = StationState {
             allocated: Allocated::NotAllocated,
             visible: Visibility::Hidden,
-        },
+        };
         pub madrid: StationState = StationState {
             allocated: Allocated::NotAllocated,
             visible: Visibility::Hidden,
-        },
+        };
         pub goldstone: StationState = StationState {
             allocated: Allocated::NotAllocated,
             visible: Visibility::Hidden,
-        },
-
-        react(canberra) set_active_station::<canberra>(DsnStation::Canberra),
-        react(madrid) set_active_station::<madrid>(DsnStation::Madrid),
-        react(goldstone) set_active_station::<goldstone>(DsnStation::Goldstone),
-   }
+        };
+    }
+    react(canberra) set_active_station::<canberra>(DsnStation::Canberra);
+    react(madrid) set_active_station::<madrid>(DsnStation::Madrid);
+    react(goldstone) set_active_station::<goldstone>(DsnStation::Goldstone);
 }
 
 fn set_active_station<STATION: Resource<Data = StationState>>(mut ops: Ops, station: DsnStation) {

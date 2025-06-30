@@ -106,8 +106,8 @@
 //!     ExampleModel {
 //!         // These are two private resources, only accessible to activities defined
 //!         // in this Rust module.
-//!         sol_counter: u32,
-//!         downlink_buffer: Vec<String>
+//!         sol_counter: u32;
+//!         downlink_buffer: Vec<String>;
 //!     }
 //! }
 //! ```
@@ -121,8 +121,10 @@
 //! # fn main() {}
 //! # use serde::{Serialize, Deserialize};
 //! # use peregrine::anyhow::Result;
-//! # resource!(sol_counter: u32);
-//! # resource!(downlink_buffer: Vec<String>);
+//! # resource! {
+//! #     sol_counter: u32;
+//! #     downlink_buffer: Vec<String>;
+//! # }
 //! use peregrine::*;
 //!
 //! #[derive(Hash, Serialize, Deserialize)]
@@ -173,8 +175,8 @@
 //! # use peregrine::{initial_conditions, model};
 //! # model! {
 //! #     ExampleModel {
-//! #         sol_counter: u32,
-//! #         downlink_buffer: Vec<String> = vec![]
+//! #         sol_counter: u32;
+//! #         downlink_buffer: Vec<String> = vec![];
 //! #     }
 //! # }
 //! # fn main() -> peregrine::anyhow::Result<()> {
@@ -206,8 +208,8 @@
 //! # use anyhow::Result;
 //! # model! {
 //! #     ExampleModel {
-//! #         sol_counter: u32,
-//! #         downlink_buffer: Vec<String> = vec![]
+//! #         sol_counter: u32;
+//! #         downlink_buffer: Vec<String> = vec![];
 //! #     }
 //! # }
 //! # #[derive(Hash, Serialize, Deserialize)]
@@ -364,7 +366,7 @@ pub mod internal;
 pub use anyhow;
 pub use hifitime;
 pub use hifitime::{Duration, Epoch as Time};
-pub use peregrine_macros::{Data, MaybeHash, delay, model, op};
+pub use peregrine_macros::{Data, MaybeHash, delay, model, op, resource};
 pub use public::{
     Model,
     activity::*,

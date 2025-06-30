@@ -11,21 +11,18 @@ use util::{AB, a, b};
 use crate::util::{IncrementA, seconds};
 
 model! {
-    pub ReactTest {
-        ..AB,
-
-        react(a) set::<a, b>(1)
-    }
+    pub ReactTest {}
+    mod AB;
+    react(a) set::<a, b>(1);
 }
 
 model! {
     pub ReactAllTest {
-        x: u32,
-        y: u32,
-        counter: u32,
-
-        react(*) increment_counter()
+        x: u32;
+        y: u32;
+        counter: u32;
     }
+    react(*) increment_counter();
 }
 
 #[derive(Hash, Serialize, Deserialize)]

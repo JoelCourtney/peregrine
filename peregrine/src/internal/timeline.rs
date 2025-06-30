@@ -570,7 +570,12 @@ mod tests {
     use oneshot::channel;
     use rayon::Scope;
 
-    crate::resource!(dummy: u32);
+    #[allow(unused_imports)]
+    use crate as peregrine;
+
+    peregrine::resource! {
+        dummy: u32;
+    }
 
     // Minimal Upstream implementation for testing
     struct DummyUpstream {

@@ -30,15 +30,15 @@ pub struct ComponentModel {
 
 model! {
     pub Apss {
-        pub pae_powered_on: bool = false,
-        pub twins_py: ComponentModel,
-        pub twins_my: ComponentModel,
-        pub p: ComponentModel,
-        pub ifg: ComponentModel,
-        pub apss_bus_v: ComponentModel,
-        pub internal_volume: Linear,
-        pub volume_to_send_to_vc: Linear,
-        pub continuous_data_sent_in: f64 = 0.0,
-        pub transfer_rate: f64 = 751.68 / 3600.0,
+        pub pae_powered_on: bool = false;
+        pub twins_py: ComponentModel;
+        pub twins_my: ComponentModel;
+        pub p: ComponentModel;
+        pub ifg: ComponentModel;
+        pub apss_bus_v: ComponentModel;
+        pub internal_volume: Linear;
+        pub volume_to_send_to_vc: Linear;
+        pub continuous_data_sent_in: f64 = 0.0;
+        pub transfer_rate: f64 = 751.68 / 3600.0;
     }
 }

@@ -7,14 +7,13 @@ fn main() {
 }
 
 peregrine::model! {
-    pub Lander {
-        ..Eng,
-        ..Power,
-        ..Comm,
-        ..Dsn,
-        ..Apss,
-        ..HeatProbe,
-        ..Ids,
-        ..Seis,
-    }
+    pub Lander {}
+    mod Eng;
+    mod Power;
+    mod Comm;
+    mod Dsn;
+    mod Apss;
+    mod HeatProbe;
+    mod Ids;
+    mod Seis;
 }

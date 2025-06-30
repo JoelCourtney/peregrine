@@ -3,7 +3,9 @@ use peregrine::internal::macro_prelude::InitialConditions;
 use peregrine::{Data, MaybeHash, Resource, Session, model, resource};
 use serde::{Deserialize, Serialize};
 
-resource!(pub test_resource: u32 = 42);
+resource! {
+    pub test_resource: u32 = 42;
+}
 
 #[test]
 fn test_resource_default_value() {
@@ -11,7 +13,9 @@ fn test_resource_default_value() {
     assert_eq!(default_val, Some(42));
 }
 
-resource!(pub no_default_resource: u32);
+resource! {
+    pub no_default_resource: u32;
+}
 
 #[test]
 fn test_resource_no_default_returns_none() {
@@ -20,7 +24,9 @@ fn test_resource_no_default_returns_none() {
 }
 
 // Test with complex default expression
-resource!(pub complex_resource: String = "Hello World".to_string());
+resource! {
+    pub complex_resource: String = "Hello World".to_string();
+}
 
 #[test]
 fn test_complex_default_value() {
@@ -35,7 +41,12 @@ pub struct CustomData {
     pub name: String,
 }
 
-resource!(pub custom_resource: CustomData = CustomData { value: 100, name: "test".to_string() });
+resource! {
+    pub custom_resource: CustomData = CustomData {
+        value: 100,
+        name: "test".to_string(),
+    };
+}
 
 #[test]
 fn test_custom_struct_default() {
@@ -47,9 +58,9 @@ fn test_custom_struct_default() {
 // Test model macro with default values
 model! {
     pub TestModel {
-        pub resource_with_inish_condish: u32 = 123,
-        pub resource_with_default: f64,
-        pub resource_without_default: CustomData
+        pub resource_with_inish_condish: u32 = 123;
+        pub resource_with_default: f64;
+        pub resource_without_default: CustomData;
     }
 }
 

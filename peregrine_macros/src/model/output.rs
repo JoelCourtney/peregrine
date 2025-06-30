@@ -14,18 +14,18 @@ impl ToTokens for Model {
         } = self;
 
         let new_resource_entries = new_resources.iter().map(|r| {
-            let vis = &r.0;
-            let name = &r.1;
-            let ty = &r.2;
-            let default = &r.3;
+            let vis = &r.visibility;
+            let name = &r.name;
+            let ty = &r.data_type;
+            let default = &r.default_expr;
 
             match default {
-                Some(expr) => quote! { #vis #name: #ty = #expr },
-                None => quote! { #vis #name: #ty },
+                Some(expr) => quote! { #vis #name: #ty = #expr; },
+                None => quote! { #vis #name: #ty; },
             }
         });
 
-        let new_resource_names = new_resources.iter().map(|r| r.1.clone());
+        let new_resource_names = new_resources.iter().map(|r| r.name.clone());
 
         let resources = imported_resources
             .clone()
@@ -125,7 +125,7 @@ impl ToTokens for Model {
             }
 
             peregrine::resource! {
-                #(#new_resource_entries,)*
+                #(#new_resource_entries)*
             }
         };
 

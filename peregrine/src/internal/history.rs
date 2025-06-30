@@ -177,9 +177,14 @@ mod tests {
     use bincode::config::standard;
     use hifitime::Duration;
 
+    #[allow(unused_imports)]
+    use crate as peregrine;
+
     const TIME: Time = duration_to_epoch(Duration::ZERO);
 
-    crate::resource!(s: String);
+    peregrine::resource! {
+        s: String;
+    }
 
     #[test]
     fn deref_history_valid_across_realloc() {
@@ -199,8 +204,10 @@ mod tests {
         assert_eq!("Hello World!", reference);
     }
 
-    crate::resource!(a: u32);
-    crate::resource!(b: String);
+    peregrine::resource! {
+        a: u32;
+        b: String;
+    }
 
     #[test]
     fn history_serde() -> anyhow::Result<()> {

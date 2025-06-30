@@ -1,104 +1,88 @@
 use crate::model::{Daemon, Model};
 use proc_macro2::Ident;
 use syn::parse::{Parse, ParseStream};
-use syn::{Path, Token, Type, Visibility, braced, parenthesized};
+use syn::{Token, Visibility, braced, parenthesized};
 
-impl Parse for Model {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+impl Model {
+    fn parse_extras(input: ParseStream) -> syn::Result<Self> {
         let mut sub_models = vec![];
-
-        let visibility: Visibility = input.parse()?;
-        let name: Ident = input.parse()?;
-
-        let body;
-        braced!(body in input);
-
-        let mut imported_resources = vec![];
-        let mut new_resources = vec![];
         let mut daemons = vec![];
+        let mut imported_resources = vec![];
 
-        while !body.is_empty() {
-            if body.peek(Token![..]) {
-                // Submodel import
-                let _: Token![..] = body.parse()?;
-                sub_models.push(body.parse()?);
-            } else if body.peek(syn::Ident) {
-                let path: Path = body.parse()?;
-                if path.is_ident("react") {
-                    daemons.push(parse_daemon(&body)?);
-                } else {
-                    // Resource declaration
-                    parse_resource_declaration(
-                        path,
-                        &body,
-                        Visibility::Inherited,
-                        &mut imported_resources,
-                        &mut new_resources,
-                    )?;
-                }
+        // Now parse submodels and daemons outside the model block
+        while !input.is_empty() {
+            if input.peek(Token![mod])
+                || input.peek(Token![use])
+                || (input.peek(syn::Ident)
+                    && input.fork().parse::<Ident>().is_ok_and(|id| id == "react"))
+            {
+                // Continue parsing
             } else {
-                let visibility = body.parse()?;
-                let path: Path = body.parse()?;
-                parse_resource_declaration(
-                    path,
-                    &body,
-                    visibility,
-                    &mut imported_resources,
-                    &mut new_resources,
-                )?;
+                // Stop if we hit something else (like pub PotatoSat)
+                break;
+            }
+            if input.peek(Token![mod]) {
+                let _: Token![mod] = input.parse()?;
+                sub_models.push(input.parse()?);
+            } else if input.peek(Token![use]) {
+                let _: Token![use] = input.parse()?;
+                imported_resources.push(input.parse()?);
+            } else if input.peek(syn::Ident) && input.fork().parse::<Ident>()? == "react" {
+                let daemon = parse_daemon(input)?;
+                daemons.push(daemon);
+            } else {
+                return Err(input.error(
+                    "Expected `use` for submodel import or `react` for daemon declaration.",
+                ));
             }
 
-            if body.peek(Token![,]) {
-                let _: Token![,] = body.parse()?;
-            } else if body.peek(syn::Ident) || body.peek(Token![..]) {
-                return Err(body.error("Expected a comma (,) before next resource or submodel."));
-            }
+            let _: Token![;] = input.parse()?;
         }
-
         Ok(Model {
-            visibility,
-            name,
+            visibility: Visibility::Inherited,
+            name: Ident::new("placeholder", proc_macro2::Span::call_site()),
             imported_resources,
-            new_resources,
+            new_resources: vec![],
             sub_models,
             daemons,
         })
     }
 }
 
-fn parse_resource_declaration(
-    path: Path,
-    input: ParseStream,
-    visibility: Visibility,
-    imported_resources: &mut Vec<Path>,
-    new_resources: &mut Vec<(Visibility, Ident, Type, Option<syn::Expr>)>,
-) -> syn::Result<()> {
-    if input.peek(Token![:]) {
-        let ident = path
-            .get_ident()
-            .ok_or_else(|| input.error("New resource declarations must be only a single ident."))?;
-        let _: Token![:] = input.parse()?;
-        let ty = input.parse()?;
+impl Parse for Model {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut result = Self::parse_extras(input)?;
 
-        // Check for default value
-        let default_expr = if input.peek(Token![=]) {
-            let _: Token![=] = input.parse()?;
-            Some(input.parse()?)
-        } else {
-            None
-        };
+        // Parse the model block
+        result.visibility = input.parse()?;
+        result.name = input.parse()?;
 
-        new_resources.push((visibility, ident.clone(), ty, default_expr));
-    } else {
-        if visibility != Visibility::Inherited {
-            return Err(input.error("Cannot specify visibility on an imported resource."));
+        let body;
+        braced!(body in input);
+
+        while !body.is_empty() {
+            result.new_resources.push(body.parse()?);
         }
-        imported_resources.push(path);
+
+        let post_extras = Self::parse_extras(input)?;
+        result.sub_models.extend(post_extras.sub_models);
+        result.daemons.extend(post_extras.daemons);
+        result
+            .imported_resources
+            .extend(post_extras.imported_resources);
+
+        Ok(result)
     }
-    Ok(())
 }
 
 fn parse_daemon(input: ParseStream) -> syn::Result<Daemon> {
+    let lookahead = input.fork();
+    let ident: Ident = lookahead.parse()?;
+    if ident != "react" {
+        return Err(input.error("Expected 'react' for daemon declaration."));
+    }
+    let _: Ident = input.parse()?; // consume 'react'
+
     let resources_paren;
     parenthesized!(resources_paren in input);
 

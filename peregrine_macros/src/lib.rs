@@ -6,6 +6,7 @@ use crate::maybe_hash::{generate_enum_impl, generate_struct_impl};
 use crate::model::Model;
 use crate::node::Node;
 use crate::operation::Op;
+use crate::resource::MultiResource;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 
@@ -14,6 +15,7 @@ mod maybe_hash;
 mod model;
 mod node;
 mod operation;
+mod resource;
 
 #[cfg(feature = "pregenerated")]
 const MAX_PREGENERATED_ORDER: i32 = 5;
@@ -31,6 +33,12 @@ pub fn op(input: TokenStream) -> TokenStream {
 pub fn model(input: TokenStream) -> TokenStream {
     let model = parse_macro_input!(input as Model);
     model.into_token_stream().into()
+}
+
+#[proc_macro]
+pub fn resource(input: TokenStream) -> TokenStream {
+    let resources = parse_macro_input!(input as MultiResource);
+    resources.into_token_stream().into()
 }
 
 #[proc_macro]
