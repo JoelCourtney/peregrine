@@ -130,7 +130,7 @@ impl VbbMode {
     }
 }
 
-#[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct ChannelRate {
     pub in_rate: f64,
     pub out_rate: f64,
@@ -150,21 +150,21 @@ pub struct DeviceTypeMetrics {
 
 model! {
     pub Seis {
-        pub powered_on: bool,
-        pub mde_should_be_on: bool,
-        pub combined_channel_out_rates: Vec<ChannelOutRateGroup>,
+        pub powered_on: bool = false,
+        pub mde_should_be_on: bool = false,
+        pub combined_channel_out_rates: Vec<ChannelOutRateGroup> = Vec::new(),
         pub internal_volume: Linear,
         pub volume_to_send_to_vc: Linear,
-        pub continuous_data_sent_in: f64,
-        pub transfer_rate: f64,
-        pub vbb_mode: VbbMode,
-        pub vbb1_on: bool,
-        pub vbb2_on: bool,
-        pub vbb3_on: bool,
-        pub sp1_on: bool,
-        pub sp2_on: bool,
-        pub sp3_on: bool,
-        pub scit_on: bool,
+        pub continuous_data_sent_in: f64 = 0.0,
+        pub transfer_rate: f64 = 1666.66 / 3600.0,
+        pub vbb_mode: VbbMode = VbbMode::Sci,
+        pub vbb1_on: bool = false,
+        pub vbb2_on: bool = false,
+        pub vbb3_on: bool = false,
+        pub sp1_on: bool = false,
+        pub sp2_on: bool = false,
+        pub sp3_on: bool = false,
+        pub scit_on: bool = false,
         pub channel_vbb1_vel_lr_lg_en: ChannelRate,
         pub channel_vbb1_vel_lr_lg_sc: ChannelRate,
         pub channel_vbb1_vel_lr_hg_en: ChannelRate,
@@ -233,15 +233,15 @@ model! {
         pub channel_sp3_hr_hg: ChannelRate,
         pub channel_scit_hr: ChannelRate,
         pub channel_scit_lr: ChannelRate,
-        pub device_type_vel_sampling_rate: f64,
-        pub device_type_pos_sampling_rate: f64,
-        pub device_type_temp_sampling_rate: f64,
-        pub device_type_sp_sampling_rate: f64,
-        pub device_type_scit_sampling_rate: f64,
-        pub device_type_vel_gain: Gain,
-        pub device_type_pos_gain: Gain,
-        pub device_type_temp_gain: Gain,
-        pub device_type_sp_gain: Gain,
-        pub device_type_scit_gain: Gain,
+        pub device_type_vel_sampling_rate: f64 = 0.0,
+        pub device_type_pos_sampling_rate: f64 = 0.0,
+        pub device_type_temp_sampling_rate: f64 = 0.0,
+        pub device_type_sp_sampling_rate: f64 = 0.0,
+        pub device_type_scit_sampling_rate: f64 = 0.0,
+        pub device_type_vel_gain: Gain = Gain::High,
+        pub device_type_pos_gain: Gain = Gain::High,
+        pub device_type_temp_gain: Gain = Gain::High,
+        pub device_type_sp_gain: Gain = Gain::High,
+        pub device_type_scit_gain: Gain = Gain::High,
     }
 }

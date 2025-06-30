@@ -2,10 +2,10 @@ use peregrine::model;
 
 model! {
     pub Eng {
-        pub lander_safe: bool,
-        pub apss_safe: bool,
-        pub seis_safe: bool,
-        pub heat_probe_safe: bool,
-        pub ids_safe: bool,
+        pub lander_safe: bool = false,
+        pub apss_safe: bool = false,
+        pub seis_safe: bool = false,
+        pub heat_probe_safe: bool = false,
+        pub ids_safe: bool = false,
     }
 }

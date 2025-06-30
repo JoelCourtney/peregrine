@@ -34,10 +34,19 @@ pub struct StationState {
 
 model! {
     pub Dsn {
-        pub current_station: DsnStation,
-        pub canberra: StationState,
-        pub madrid: StationState,
-        pub goldstone: StationState,
+        pub current_station: DsnStation = DsnStation::None,
+        pub canberra: StationState = StationState {
+            allocated: Allocated::NotAllocated,
+            visible: Visibility::Hidden,
+        },
+        pub madrid: StationState = StationState {
+            allocated: Allocated::NotAllocated,
+            visible: Visibility::Hidden,
+        },
+        pub goldstone: StationState = StationState {
+            allocated: Allocated::NotAllocated,
+            visible: Visibility::Hidden,
+        },
 
         react(canberra) set_active_station::<canberra>(DsnStation::Canberra),
         react(madrid) set_active_station::<madrid>(DsnStation::Madrid),

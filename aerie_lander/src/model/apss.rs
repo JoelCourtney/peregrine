@@ -15,13 +15,13 @@ pub enum Component {
     ApssBusV,
 }
 
-#[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Data, MaybeHash, Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct ComponentRate {
     pub default_rate: f64,
     pub both_booms_on_rate: f64,
 }
 
-#[derive(Data, MaybeHash, Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Data, MaybeHash, Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ComponentModel {
     pub state: bool,
     pub in_rate: ComponentRate,
@@ -30,7 +30,7 @@ pub struct ComponentModel {
 
 model! {
     pub Apss {
-        pub pae_powered_on: bool,
+        pub pae_powered_on: bool = false,
         pub twins_py: ComponentModel,
         pub twins_my: ComponentModel,
         pub p: ComponentModel,
@@ -38,7 +38,7 @@ model! {
         pub apss_bus_v: ComponentModel,
         pub internal_volume: Linear,
         pub volume_to_send_to_vc: Linear,
-        pub continuous_data_sent_in: f64,
-        pub transfer_rate: f64,
+        pub continuous_data_sent_in: f64 = 0.0,
+        pub transfer_rate: f64 = 751.68 / 3600.0,
     }
 }

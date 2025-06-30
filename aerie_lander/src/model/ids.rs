@@ -13,8 +13,8 @@ pub enum IdaMode {
 
 model! {
     pub Ids {
-        pub ida_mode: IdaMode,
-        pub ida_survival_heaters_nominal: bool,
+        pub ida_mode: IdaMode = IdaMode::Idle,
+        pub ida_survival_heaters_nominal: bool = true,
     }
 }
 

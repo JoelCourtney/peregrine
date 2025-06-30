@@ -23,12 +23,12 @@ model! {
     pub Comm {
         pub data_sent: Linear,
 
-        pub active_xband_antenna: XBandAntenna,
+        pub active_xband_antenna: XBandAntenna = XBandAntenna::EastMga,
 
-        pub alternate_uhf_block_in_use_ody: bool,
-        pub alternate_uhf_block_in_use_mro: bool,
-        pub alternate_uhf_block_in_use_tgo: bool,
-        pub alternate_uhf_block_in_use_mvn: bool,
-        pub alternate_uhf_block_in_use_mex: bool,
+        pub alternate_uhf_block_in_use_ody: bool = false,
+        pub alternate_uhf_block_in_use_mro: bool = false,
+        pub alternate_uhf_block_in_use_tgo: bool = false,
+        pub alternate_uhf_block_in_use_mvn: bool = false,
+        pub alternate_uhf_block_in_use_mex: bool = false,
     }
 }
