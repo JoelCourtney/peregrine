@@ -13,19 +13,62 @@ impl ToTokens for Model {
             daemons,
         } = self;
 
-        let new_resource_entries = new_resources.iter().map(|r| {
-            let vis = &r.visibility;
-            let name = &r.name;
-            let ty = &r.data_type;
-            let default = &r.default_expr;
+        let new_resource_entries = new_resources.iter().flat_map(|r| {
+            match r {
+                crate::resource::Resource::Single(single) => {
+                    let vis = &single.visibility;
+                    let name = &single.name;
+                    let ty = &single.data_type;
+                    let default = &single.default_expr;
 
-            match default {
-                Some(expr) => quote! { #vis #name: #ty = #expr; },
-                None => quote! { #vis #name: #ty; },
+                    vec![match default {
+                        Some(expr) => quote! { #vis #name: #ty = #expr; },
+                        None => quote! { #vis #name: #ty; },
+                    }]
+                }
+                crate::resource::Resource::Group(group) => {
+                    group
+                        .members
+                        .iter()
+                        .map(|member| {
+                            let vis = &group.visibility;
+                            let member_name_string =
+                                group.name_pattern.replace('*', &member.to_string());
+                            let member_name = quote::format_ident!("{}", member_name_string);
+                            let ty = &group.data_type;
+
+                            // Determine the default expression for this member
+                            let member_default = if let Some(individual_default) =
+                                group.individual_defaults.get(&member.to_string())
+                            {
+                                Some(individual_default)
+                            } else {
+                                group.default_expr.as_ref()
+                            };
+
+                            match member_default {
+                                Some(expr) => quote! { #vis #member_name: #ty = #expr; },
+                                None => quote! { #vis #member_name: #ty; },
+                            }
+                        })
+                        .collect()
+                }
             }
         });
 
-        let new_resource_names = new_resources.iter().map(|r| r.name.clone());
+        let new_resource_names = new_resources.iter().flat_map(|r| match r {
+            crate::resource::Resource::Single(single) => {
+                vec![single.name.clone()]
+            }
+            crate::resource::Resource::Group(group) => group
+                .members
+                .iter()
+                .map(|member| {
+                    let member_name_string = group.name_pattern.replace('*', &member.to_string());
+                    quote::format_ident!("{}", member_name_string)
+                })
+                .collect(),
+        });
 
         let resources = imported_resources
             .clone()
