@@ -41,7 +41,7 @@ fn main() -> Result<()> {
             int_pieces: pieces!(Linear::constant(-1.0)),
             timer: Stopwatch::new()
         },
-    );
+    )?;
 
     plan.insert(plan_start + 5.seconds(), RechargePotato { amount: 1 })?;
     for i in 1..110 {

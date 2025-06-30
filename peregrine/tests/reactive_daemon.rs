@@ -28,7 +28,8 @@ fn set<READ: Resource<Data = u32>, WRITE: Resource<Data = u32>>(mut ops: Ops, ad
 #[test]
 fn test_react_insertion() -> Result<()> {
     let session = Session::new();
-    let mut plan = session.new_plan::<ReactTest>(seconds(-1), initial_conditions! { a: 0, b: 0 });
+    let mut plan =
+        session.new_plan::<ReactTest>(seconds(-1), initial_conditions! { a: 0, b: 0 })?;
 
     plan.insert(seconds(0), IncrementA)?;
 
@@ -42,7 +43,8 @@ fn test_react_insertion() -> Result<()> {
 #[test]
 fn test_react_removal() -> Result<()> {
     let session = Session::new();
-    let mut plan = session.new_plan::<ReactTest>(seconds(-1), initial_conditions! { a: 0, b: 0 });
+    let mut plan =
+        session.new_plan::<ReactTest>(seconds(-1), initial_conditions! { a: 0, b: 0 })?;
 
     let id = plan.insert(seconds(0), IncrementA)?;
 

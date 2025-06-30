@@ -71,7 +71,7 @@ fn parse_resource_declaration(
     input: ParseStream,
     visibility: Visibility,
     imported_resources: &mut Vec<Path>,
-    new_resources: &mut Vec<(Visibility, Ident, Type)>,
+    new_resources: &mut Vec<(Visibility, Ident, Type, Option<syn::Expr>)>,
 ) -> syn::Result<()> {
     if input.peek(Token![:]) {
         let ident = path
@@ -79,7 +79,16 @@ fn parse_resource_declaration(
             .ok_or_else(|| input.error("New resource declarations must be only a single ident."))?;
         let _: Token![:] = input.parse()?;
         let ty = input.parse()?;
-        new_resources.push((visibility, ident.clone(), ty));
+
+        // Check for default value
+        let default_expr = if input.peek(Token![=]) {
+            let _: Token![=] = input.parse()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        new_resources.push((visibility, ident.clone(), ty, default_expr));
     } else {
         if visibility != Visibility::Inherited {
             return Err(input.error("Cannot specify visibility on an imported resource."));

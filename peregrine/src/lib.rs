@@ -174,9 +174,10 @@
 //! # model! {
 //! #     ExampleModel {
 //! #         sol_counter: u32,
-//! #         downlink_buffer: Vec<String>
+//! #         downlink_buffer: Vec<String> = vec![]
 //! #     }
 //! # }
+//! # fn main() -> peregrine::anyhow::Result<()> {
 //! use hifitime::TimeScale;
 //! use peregrine::{Session, Time};
 //!
@@ -187,9 +188,11 @@
 //!     start_time,
 //!     initial_conditions! {
 //!         sol_counter: 1000,
-//!         downlink_buffer, // Falls back on the default, `vec![]`
+//!         // downlink_buffer already has a default
 //!     },
-//! );
+//! )?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! Now we're ready to add some activities and simulate!
@@ -204,7 +207,7 @@
 //! # model! {
 //! #     ExampleModel {
 //! #         sol_counter: u32,
-//! #         downlink_buffer: Vec<String>
+//! #         downlink_buffer: Vec<String> = vec![]
 //! #     }
 //! # }
 //! # #[derive(Hash, Serialize, Deserialize)]
@@ -244,9 +247,8 @@
 //! #     start_time,
 //! #     initial_conditions! {
 //! #         sol_counter: 1000,
-//! #         downlink_buffer,
 //! #     },
-//! # );
+//! # )?;
 //! use hifitime::TimeUnits;
 //!
 //! plan.insert(start_time + 1.days(), IncrementSol)?;

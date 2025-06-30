@@ -13,9 +13,19 @@ impl ToTokens for Model {
             daemons,
         } = self;
 
-        let new_resource_visibilities = new_resources.iter().map(|r| r.0.clone());
+        let new_resource_entries = new_resources.iter().map(|r| {
+            let vis = &r.0;
+            let name = &r.1;
+            let ty = &r.2;
+            let default = &r.3;
+
+            match default {
+                Some(expr) => quote! { #vis #name: #ty = #expr },
+                None => quote! { #vis #name: #ty },
+            }
+        });
+
         let new_resource_names = new_resources.iter().map(|r| r.1.clone());
-        let new_resource_types = new_resources.iter().map(|r| r.2.clone());
 
         let resources = imported_resources
             .clone()
@@ -58,16 +68,36 @@ impl ToTokens for Model {
                     time: peregrine::Duration,
                     initial_conditions: &mut peregrine::internal::macro_prelude::InitialConditions,
                     timelines: &mut peregrine::internal::macro_prelude::Timelines<'o>
-                ) {
+                ) -> peregrine::anyhow::Result<()> {
                     use peregrine::Resource;
                     #(
                         if !timelines.contains_resource::<#resources>() {
+                            let initial_value = match initial_conditions.take::<#resources>() {
+                                Some(value) => value,
+                                None => if let Some(def) = <#resources as peregrine::Resource>::initial_condition() {
+                                    def
+                                } else {
+                                    let type_default = peregrine::internal::macro_prelude::spez::spez! {
+                                        for #resources::Unit;
+                                        match<T: peregrine::Resource> T where T::Data: Default -> Option<T::Data> {
+                                            Some(T::Data::default())
+                                        }
+                                        match<T> T -> Option<<#resources as peregrine::Resource>::Data> {
+                                            None
+                                        }
+                                    };
+                                    if let Some(td) = type_default {
+                                        td
+                                    } else {
+                                        peregrine::anyhow::bail!("No initial condition provided for resource {}.\nEither implement Default or provide a value to initial_conditions! or resource!/model!.", #resources::LABEL)
+                                    }
+                                }
+                            };
                             timelines.init_for_resource::<#resources>(
                                 time,
                                 peregrine::internal::macro_prelude::InitialConditionOp::new(
                                     time,
-                                    initial_conditions.take::<#resources>()
-                                        .unwrap_or_else(|| panic!("expected to find initial condition for resource {}, but found none", <#resources as peregrine::Resource>::LABEL))
+                                    initial_value
                                 )
                             );
                         }
@@ -80,12 +110,14 @@ impl ToTokens for Model {
                         );
                     )*
 
-                    #(#sub_models::init_timelines(time, initial_conditions, timelines);)*
+                    #(#sub_models::init_timelines(time, initial_conditions, timelines)?;)*
+
+                    Ok(())
                 }
             }
 
             peregrine::resource! {
-                #(#new_resource_visibilities #new_resource_names: #new_resource_types,)*
+                #(#new_resource_entries,)*
             }
         };
 

@@ -19,5 +19,5 @@ pub trait Model<'o>: Sync {
         time: Duration,
         initial_conditions: &mut crate::internal::operation::initial_conditions::InitialConditions,
         timelines: &mut crate::internal::timeline::Timelines<'o>,
-    );
+    ) -> anyhow::Result<()>;
 }

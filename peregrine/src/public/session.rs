@@ -26,7 +26,7 @@ impl Session {
         &'o self,
         time: Time,
         initial_conditions: InitialConditions,
-    ) -> Plan<'o, M>
+    ) -> anyhow::Result<Plan<'o, M>>
     where
         Self: 'o,
     {

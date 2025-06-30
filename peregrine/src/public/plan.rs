@@ -34,12 +34,12 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         session: &'o Session,
         time: Time,
         mut initial_conditions: InitialConditions,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let time = epoch_to_duration(time);
         let mut timelines = Timelines::new(&session.herd);
         init_builtins_timelines(time, &mut timelines);
-        M::init_timelines(time, &mut initial_conditions, &mut timelines);
-        Plan {
+        M::init_timelines(time, &mut initial_conditions, &mut timelines)?;
+        Ok(Plan {
             activities: HashMap::new(),
             timelines,
             id_counter: 0,
@@ -47,7 +47,7 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
             session,
 
             model: PhantomData,
-        }
+        })
     }
 
     /// Reserve memory for a large batch of additional activities.

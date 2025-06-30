@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo:*)",
+      "Bash(fd)"
+    ],
+    "deny": [
+      "Bash(cargo publish:*)"
+    ]
+  }
+}

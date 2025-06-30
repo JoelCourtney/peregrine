@@ -8,7 +8,7 @@ pub struct Model {
     visibility: Visibility,
     name: Ident,
     imported_resources: Vec<Path>,
-    new_resources: Vec<(Visibility, Ident, Type)>,
+    new_resources: Vec<(Visibility, Ident, Type, Option<syn::Expr>)>,
     sub_models: Vec<Path>,
     daemons: Vec<Daemon>,
 }

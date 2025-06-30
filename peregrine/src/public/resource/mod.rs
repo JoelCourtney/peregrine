@@ -23,7 +23,7 @@ use std::hash::Hasher;
 
 #[macro_export]
 macro_rules! resource {
-    ($($(#[$attr:meta])* $vis:vis $name:ident: $ty:ty),* $(,)?) => {
+    ($($(#[$attr:meta])* $vis:vis $name:ident: $ty:ty $(= $default:expr)?),* $(,)?) => {
         $(
             $(#[$attr])*
             #[derive(Copy, Clone)]
@@ -37,6 +37,10 @@ macro_rules! resource {
                 const ID: u64 = $crate::internal::macro_prelude::peregrine_macros::random_u64!();
                 type Data = $ty;
                 const INSTANCE: Self = Self::Unit;
+
+                fn initial_condition() -> Option<Self::Data> {
+                    $crate::resource!(@default_impl $($default)?)
+                }
             }
 
             impl $crate::internal::resource::ResourceHistoryPlugin for $name {
@@ -71,6 +75,14 @@ macro_rules! resource {
 
             $crate::internal::macro_prelude::inventory::submit!(&$name::Unit as &dyn $crate::internal::resource::ResourceHistoryPlugin);
         )*
+    };
+
+    (@default_impl) => {
+        None
+    };
+
+    (@default_impl $default:expr) => {
+        Some($default)
     };
 }
 
@@ -143,6 +155,11 @@ pub trait Resource: 'static + Sync + Copy {
     type Data: for<'h> Data<'h>;
 
     const INSTANCE: Self;
+
+    /// Returns the initial condition for this resource.
+    /// This is used when no explicit initial condition is provided in the model.
+    /// Returns None if no default value was specified in the resource declaration.
+    fn initial_condition() -> Option<Self::Data>;
 }
 
 /// A trait for data that might or might not be hashable.

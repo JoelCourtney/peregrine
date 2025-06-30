@@ -169,7 +169,7 @@ fn test_static_matrix_operations() -> Result<()> {
             vector_3: Vector3::new(1.0, 2.0, 3.0),
             vector_4: Vector4::new(1.0, 2.0, 3.0, 4.0),
         }
-    );
+    )?;
 
     plan.insert(Time::from_tai_seconds(1.0), MatrixOperations)?;
     plan.sample::<vector_4>(Time::from_tai_seconds(2.0))?;
@@ -186,7 +186,7 @@ fn test_dynamic_matrix_operations() -> Result<()> {
             dynamic_matrix: create_test_dynamic_matrix(),
             dynamic_vector: DVector::from_row_slice(&[1.0, 2.0, 3.0]),
         },
-    );
+    )?;
 
     plan.insert(Time::from_tai_seconds(1.0), DynamicMatrixOperations)?;
     plan.sample::<dynamic_vector>(Time::from_tai_seconds(2.0))?;
@@ -203,7 +203,7 @@ fn test_quaternion_operations() -> Result<()> {
             quaternion: create_test_quaternion(),
             unit_quaternion: create_test_unit_quaternion(),
         },
-    );
+    )?;
 
     plan.insert(Time::from_tai_seconds(1.0), QuaternionOperations)?;
     plan.sample::<unit_quaternion>(Time::from_tai_seconds(2.0))?;
@@ -221,7 +221,7 @@ fn test_rotation_operations() -> Result<()> {
             rotation_3d: create_test_rotation_3d(),
             unit_complex: UnitComplex::new(std::f64::consts::FRAC_PI_4),
         },
-    );
+    )?;
 
     plan.insert(Time::from_tai_seconds(1.0), RotationOperations)?;
     plan.sample::<unit_complex>(Time::from_tai_seconds(2.0))?;
