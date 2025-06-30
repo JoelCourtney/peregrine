@@ -133,9 +133,9 @@
 //!     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //!         ops += op! {
 //!             // This is syntactic sugar for a read-write operation on the sol_counter
-//!             // resource. Resources can be accessed as read-only with `ref:`, and write-only
-//!             // with `mut:`.
-//!             ref mut: sol_counter += 1;
+//!             // resource. Resources can be accessed as read-only with `r:`, and write-only
+//!             // with `w:`.
+//!             m: sol_counter += 1;
 //!         };
 //!         // Return statement indicates the activity had zero duration and no errors
 //!         Ok(Duration::ZERO)
@@ -155,9 +155,9 @@
 //!         ops += op! {
 //!             // You can access activity arguments both inside and outside operations.
 //!             if verbose {
-//!                 ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
+//!                 m: downlink_buffer.push(format!("It is currently Sol {}", r:sol_counter));
 //!             } else {
-//!                 ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
+//!                 m: downlink_buffer.push(format!("Sol {}", r:sol_counter));
 //!             }
 //!         };
 //!         Ok(Duration::ZERO)
@@ -216,7 +216,7 @@
 //! # impl Activity for IncrementSol {
 //! #     fn run(&self, mut ops: Ops) -> Result<Duration> {
 //! #         ops += op! {
-//! #             ref mut: sol_counter += 1;
+//! #             m:sol_counter += 1;
 //! #         };
 //! #         Ok(Duration::ZERO)
 //! #     }
@@ -231,9 +231,9 @@
 //! #         let verbose = self.verbose;
 //! #         ops += op! {
 //! #             if verbose {
-//! #                 ref mut: downlink_buffer.push(format!("It is currently Sol {}", ref:sol_counter));
+//! #                 m:downlink_buffer.push(format!("It is currently Sol {}", r:sol_counter));
 //! #             } else {
-//! #                 ref mut: downlink_buffer.push(format!("Sol {}", ref:sol_counter));
+//! #                 m:downlink_buffer.push(format!("Sol {}", r:sol_counter));
 //! #             }
 //! #         };
 //!         Ok(Duration::ZERO)

@@ -10,20 +10,6 @@ use util::{AB, a, b};
 
 use crate::util::{IncrementA, seconds};
 
-#[derive(Hash, Serialize, Deserialize)]
-pub struct IncrementX;
-
-#[typetag::serde]
-impl Activity for IncrementX {
-    fn run(&self, mut ops: Ops) -> Result<Duration> {
-        ops += op! {
-            ref mut: x += 1;
-        };
-
-        Ok(Duration::ZERO)
-    }
-}
-
 model! {
     pub ReactTest {
         ..AB,
@@ -38,24 +24,45 @@ model! {
         y: u32,
         counter: u32,
 
-        react(*) increment_counter::<counter>()
+        react(*) increment_counter()
+    }
+}
+
+#[derive(Hash, Serialize, Deserialize)]
+pub struct IncrementXOrY {
+    which: String,
+}
+
+#[typetag::serde]
+impl Activity for IncrementXOrY {
+    fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
+        let which = &*self.which;
+        ops += op! {
+            if which == "x" {
+                m:x += 1;
+            } else if which == "y" {
+                m:y += 1;
+            }
+        };
+
+        Ok(Duration::ZERO)
     }
 }
 
 fn set<READ: Resource<Data = u32>, WRITE: Resource<Data = u32>>(mut ops: Ops, add: u32) {
     ops.wait(0.0001.seconds());
     ops.wait(delay! {
-        10.seconds() => (ref: READ as i64).seconds()
+        10.seconds() => (r: READ as i64).seconds()
     });
     ops += op! {
-        ref mut: WRITE = ref: READ + add;
+        m: WRITE = r: READ + add;
     };
 }
 
-fn increment_counter<COUNTER: Resource<Data = u32>>(mut ops: Ops) {
+fn increment_counter(mut ops: Ops) {
     ops.wait(0.0001.seconds());
     ops += op! {
-        ref mut: COUNTER += 1;
+        m: counter += 1;
     };
 }
 
@@ -101,13 +108,26 @@ fn test_react_all_insertion() -> Result<()> {
     let mut plan = session
         .new_plan::<ReactAllTest>(seconds(-1), initial_conditions! { x: 0, y: 0, counter: 0 })?;
 
-    plan.insert(seconds(0), IncrementX)?;
+    plan.insert(
+        seconds(0),
+        IncrementXOrY {
+            which: "x".to_string(),
+        },
+    )?;
+    plan.insert(
+        seconds(2),
+        IncrementXOrY {
+            which: "y".to_string(),
+        },
+    )?;
 
-    // IncrementX changes resource 'x', which should trigger react(*)
-    // The reactive daemon increments 'counter' in response to the change in 'x'
     assert_eq!(1, plan.sample::<x>(seconds(1))?);
     assert_eq!(0, plan.sample::<y>(seconds(1))?);
-    assert_eq!(1, plan.sample::<counter>(seconds(1))?); // counter gets incremented once for 'x' change
+    assert_eq!(1, plan.sample::<counter>(seconds(1))?);
+
+    assert_eq!(1, plan.sample::<x>(seconds(3))?);
+    assert_eq!(1, plan.sample::<y>(seconds(3))?);
+    assert_eq!(2, plan.sample::<counter>(seconds(3))?);
 
     Ok(())
 }
@@ -118,7 +138,12 @@ fn test_react_all_removal() -> Result<()> {
     let mut plan = session
         .new_plan::<ReactAllTest>(seconds(-1), initial_conditions! { x: 0, y: 0, counter: 0 })?;
 
-    let id = plan.insert(seconds(0), IncrementX)?;
+    let id = plan.insert(
+        seconds(0),
+        IncrementXOrY {
+            which: "x".to_string(),
+        },
+    )?;
 
     assert_eq!(1, plan.sample::<x>(seconds(1))?);
     assert_eq!(0, plan.sample::<y>(seconds(1))?);

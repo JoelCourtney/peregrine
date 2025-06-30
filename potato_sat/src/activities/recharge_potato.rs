@@ -18,10 +18,10 @@ impl Activity for RechargePotato {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         let duration = 100.seconds();
         ops += op! {
-            println!("The current time is: {}", ref:now);
-            println!("The elapsed time is: {}", ref:elapsed);
-            ref mut: timer.start();
-            mut: int_pieces = pieces!(
+            println!("The current time is: {}", r:now);
+            println!("The elapsed time is: {}", r:elapsed);
+            m:timer.start();
+            w:int_pieces = pieces!(
                 Linear::constant(0.0),
                 (5.seconds(), Linear::new(1.seconds(), 0.0, 1.0)),
                 (10.seconds(), Linear::constant(5.0))
@@ -29,8 +29,8 @@ impl Activity for RechargePotato {
         };
         ops.wait(6.seconds());
         ops += op! {
-            println!("Timer says {:?}", ref:timer);
-            mut: int_pieces = pieces!(Linear::constant(0.0));
+            println!("Timer says {:?}", r:timer);
+            w:int_pieces = pieces!(Linear::constant(0.0));
         };
         Ok(duration)
     }

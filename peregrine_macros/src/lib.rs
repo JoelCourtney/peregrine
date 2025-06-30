@@ -240,7 +240,7 @@ pub fn delay(input: TokenStream) -> TokenStream {
         {
             use peregrine::internal::macro_prelude::{builtins::elapsed, peregrine_grounding};
             move |placement| peregrine::internal::macro_prelude::Delay {
-                node: (op! { mut: peregrine_grounding = ref: elapsed + std::cmp::min(#tt, #expr); })(placement),
+                node: (op! { w: peregrine_grounding = r: elapsed + std::cmp::min(#tt, #expr); })(placement),
                 min: placement.min(),
                 max: placement.max() + #expr,
             }

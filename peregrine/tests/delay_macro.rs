@@ -18,10 +18,10 @@ pub struct StaticDelay;
 impl Activity for StaticDelay {
     fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
         // Increment a, then wait for a dynamic delay, then increment a again
-        ops += op! { ref mut: a += 1; };
+        ops += op! { m: a += 1; };
         // Wait for a delay of 5 seconds, but the actual delay node is dynamic
         ops.wait(delay! { Duration::from_seconds(5.0) => Duration::from_seconds(5.0) });
-        ops += op! { ref mut: a += 1; };
+        ops += op! { m: a += 1; };
         Ok(Duration::ZERO)
     }
 }
@@ -43,8 +43,8 @@ pub struct DoubleDelay;
 #[typetag::serde]
 impl Activity for DoubleDelay {
     fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
-        ops.wait(delay! { Duration::from_seconds(10.0) => ref: elapsed });
-        ops += op! { ref mut: a += 1; };
+        ops.wait(delay! { Duration::from_seconds(10.0) => r: elapsed });
+        ops += op! { m: a += 1; };
         Ok(Duration::ZERO)
     }
 }

@@ -23,13 +23,28 @@ impl Interactions {
         Self(HashMap::new())
     }
 
-    fn insert(&mut self, id: Ident, ty: InteractionType) {
-        if self.contains_key(&id) {
-            let existing = self.get_mut(&id).unwrap();
-            *existing = existing.merge(ty);
+    fn insert(&mut self, id: Ident, ty: InteractionType) -> syn::Result<()> {
+        if let Some(existing) = self.get(&id) {
+            // Check if we're trying to use both read and write tags for the same resource
+            if *existing != ty
+                && *existing != InteractionType::ReadWrite
+                && ty != InteractionType::ReadWrite
+            {
+                return Err(syn::Error::new(
+                    id.span(),
+                    format!(
+                        "Resource '{id}' is used with conflicting tags. \
+                        If you need to read and write to the same resource, use 'm:{id}' instead of 'r:{id}' and 'w:{id}'. \
+                        Only one instance of the resource needs to be tagged. The others can be left untagged if you want."
+                    ),
+                ));
+            }
+            let existing_mut = self.get_mut(&id).unwrap();
+            *existing_mut = existing_mut.merge(ty);
         } else {
             self.0.insert(id, ty);
         }
+        Ok(())
     }
 }
 
@@ -45,23 +60,27 @@ impl Parse for Op {
         let mut interactions = Interactions::new();
 
         let read_regex =
-            Regex::new(r"ref[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)").unwrap();
+            Regex::new(r"[^[:alpha:][:digit:]_]r[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)")
+                .unwrap();
         let write_regex =
-            Regex::new(r"mut[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)").unwrap();
+            Regex::new(r"[^[:alpha:][:digit:]_]w[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)")
+                .unwrap();
         let read_write_regex =
-            Regex::new(r"ref mut[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)").unwrap();
-        let tag_only_regex = Regex::new(r"(ref|mut|ref mut)[[:space:]]*:").unwrap();
+            Regex::new(r"[^[:alpha:][:digit:]_]m[[:space:]]*:[[:space:]]*(?<ident>[a-zA-Z0-9_]+)")
+                .unwrap();
+        let tag_only_regex = Regex::new(r"([^[:alpha:][:digit:]_])(r|w|m)[[:space:]]*:").unwrap();
 
-        let input = input_stream.to_string();
+        let mut input = input_stream.to_string();
+        input.insert(0, ' ');
 
         for cap in read_regex.captures_iter(&input) {
-            interactions.insert(format_ident!("{}", cap["ident"]), Read);
+            interactions.insert(format_ident!("{}", cap["ident"]), Read)?;
         }
         for cap in write_regex.captures_iter(&input) {
-            interactions.insert(format_ident!("{}", cap["ident"]), Write);
+            interactions.insert(format_ident!("{}", cap["ident"]), Write)?;
         }
         for cap in read_write_regex.captures_iter(&input) {
-            interactions.insert(format_ident!("{}", cap["ident"]), ReadWrite);
+            interactions.insert(format_ident!("{}", cap["ident"]), ReadWrite)?;
         }
 
         let mut reads = vec![];
@@ -76,7 +95,7 @@ impl Parse for Op {
             }
         }
 
-        let body = tag_only_regex.replace_all(&input, "").parse()?;
+        let body = tag_only_regex.replace_all(&input, "$1").parse()?;
 
         input_stream.step(|_| Ok(((), Cursor::empty())))?;
 

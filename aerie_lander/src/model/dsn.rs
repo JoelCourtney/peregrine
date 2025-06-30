@@ -56,10 +56,10 @@ model! {
 
 fn set_active_station<STATION: Resource<Data = StationState>>(mut ops: Ops, station: DsnStation) {
     ops += op! {
-        if ref: STATION.allocated == Allocated::Allocated && ref: STATION.visible == Visibility::InView {
-            ref mut: current_station = station;
-        } else if ref: current_station == station {
-            ref mut: current_station = DsnStation::None;
+        if r: STATION.allocated == Allocated::Allocated && r: STATION.visible == Visibility::InView {
+            m: current_station = station;
+        } else if r: current_station == station {
+            m: current_station = DsnStation::None;
         }
     };
 }

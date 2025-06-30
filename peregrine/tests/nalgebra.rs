@@ -57,10 +57,10 @@ impl Activity for MatrixOperations {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         // Test matrix operations
         ops += op! {
-            ref mut: matrix_2x2 = ref:matrix_2x2 * ref:matrix_2x2;
-            ref mut: matrix_3x3 = ref:matrix_3x3 * ref:matrix_3x3;
-            ref mut: vector_2 = ref:matrix_2x2 * ref:vector_2;
-            ref mut: vector_3 = ref:matrix_3x3 * ref:vector_3;
+            m: matrix_2x2 = r:matrix_2x2 * r:matrix_2x2;
+            m: matrix_3x3 = r:matrix_3x3 * r:matrix_3x3;
+            m: vector_2 = r:matrix_2x2 * r:vector_2;
+            m: vector_3 = r:matrix_3x3 * r:vector_3;
         };
 
         Ok(Duration::ZERO)
@@ -75,8 +75,8 @@ impl Activity for DynamicMatrixOperations {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         // Test dynamic matrix operations
         ops += op! {
-            ref mut: dynamic_matrix = &ref:dynamic_matrix * &ref:dynamic_matrix;
-            ref mut: dynamic_vector = &ref:dynamic_matrix * &ref:dynamic_vector;
+            m: dynamic_matrix = &r:dynamic_matrix * &r:dynamic_matrix;
+            m: dynamic_vector = &r:dynamic_matrix * &r:dynamic_vector;
         };
 
         Ok(Duration::ZERO)
@@ -91,8 +91,8 @@ impl Activity for QuaternionOperations {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         // Test quaternion operations
         ops += op! {
-            ref mut: quaternion = ref:quaternion * ref:quaternion;
-            ref mut: unit_quaternion = ref:unit_quaternion * ref:unit_quaternion;
+            m: quaternion = r:quaternion * r:quaternion;
+            m: unit_quaternion = r:unit_quaternion * r:unit_quaternion;
         };
 
         Ok(Duration::ZERO)
@@ -107,9 +107,9 @@ impl Activity for RotationOperations {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         // Test rotation operations
         ops += op! {
-            ref mut: rotation_2d = ref:rotation_2d * ref:rotation_2d;
-            ref mut: rotation_3d = ref:rotation_3d * ref:rotation_3d;
-            ref mut: unit_complex = ref:unit_complex * ref:unit_complex;
+            m: rotation_2d = r:rotation_2d * r:rotation_2d;
+            m: rotation_3d = r:rotation_3d * r:rotation_3d;
+            m: unit_complex = r:unit_complex * r:unit_complex;
         };
 
         Ok(Duration::ZERO)

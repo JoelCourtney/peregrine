@@ -16,7 +16,7 @@ pub struct IncrementA;
 impl Activity for IncrementA {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
-            ref mut: a += 1;
+            m: a += 1;
         };
 
         Ok(Duration::ZERO)
@@ -30,7 +30,7 @@ pub struct IncrementB;
 impl Activity for IncrementB {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
-            ref mut: b += 1;
+            m: b += 1;
         };
 
         Ok(Duration::ZERO)
@@ -44,7 +44,7 @@ pub struct SetBToA;
 impl Activity for SetBToA {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
-            mut:b = ref:a;
+            w:b = r:a;
         };
 
         Ok(Duration::ZERO)
@@ -58,7 +58,7 @@ pub struct SetAToB;
 impl Activity for SetAToB {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
-            mut:a = ref:b;
+            w:a = r:b;
         };
 
         Ok(Duration::ZERO)
@@ -72,7 +72,7 @@ pub struct AddBToA;
 impl Activity for AddBToA {
     fn run(&self, mut ops: Ops) -> Result<Duration> {
         ops += op! {
-            ref mut: a += ref:b;
+            m: a += r:b;
         };
 
         Ok(Duration::ZERO)
@@ -90,7 +90,7 @@ impl Activity for EvalCounter {
     fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> Result<Duration> {
         let counter = &self.0;
         ops += op! {
-            mut:a = ref:a;
+            m:a;
             counter.0.fetch_add(1, Ordering::SeqCst);
         };
 
