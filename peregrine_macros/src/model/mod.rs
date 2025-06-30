@@ -17,4 +17,5 @@ pub struct Model {
 pub struct Daemon {
     pub resources: Vec<Path>,
     pub function_call: syn::ExprCall,
+    pub react_to_all: bool,
 }

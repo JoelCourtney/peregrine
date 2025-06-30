@@ -35,17 +35,25 @@ impl ToTokens for Model {
 
         let daemons = daemons.iter().map(|d| {
             let Daemon {
-                resources,
+                resources: daemon_resources,
                 mut function_call,
+                react_to_all,
             } = d.clone();
 
             function_call
                 .args
                 .insert(0, syn::Expr::Verbatim(quote!(ops)));
 
+            // Use all resources if react_to_all is true, otherwise use the specified resources
+            let resource_ids = if react_to_all {
+                quote! { vec![#(#resources::ID),*] }
+            } else {
+                quote! { vec![#(#daemon_resources::ID),*] }
+            };
+
             quote! {
                 peregrine::internal::macro_prelude::ReactiveDaemon::new(
-                    vec![#(#resources::ID),*],
+                    #resource_ids,
                     Box::new(|placement, member| {
                         let result = std::cell::RefCell::new(vec![]);
                         let ops = peregrine::Ops::new(placement, &member, &result);

@@ -103,11 +103,25 @@ fn parse_daemon(input: ParseStream) -> syn::Result<Daemon> {
     parenthesized!(resources_paren in input);
 
     let mut resources = vec![];
-    while !resources_paren.is_empty() {
-        let resource = resources_paren.parse()?;
-        resources.push(resource);
-        if resources_paren.peek(Token![,]) {
-            let _: Token![,] = resources_paren.parse()?;
+    let mut react_to_all = false;
+
+    // Check if the first token is a star (*)
+    if resources_paren.peek(Token![*]) {
+        let _: Token![*] = resources_paren.parse()?;
+        react_to_all = true;
+
+        // Ensure there's nothing else in the parentheses after the star
+        if !resources_paren.is_empty() {
+            return Err(resources_paren.error("Expected only '*' in react(*) syntax"));
+        }
+    } else {
+        // Parse the list of resources as before
+        while !resources_paren.is_empty() {
+            let resource = resources_paren.parse()?;
+            resources.push(resource);
+            if resources_paren.peek(Token![,]) {
+                let _: Token![,] = resources_paren.parse()?;
+            }
         }
     }
 
@@ -116,5 +130,6 @@ fn parse_daemon(input: ParseStream) -> syn::Result<Daemon> {
     Ok(Daemon {
         resources,
         function_call,
+        react_to_all,
     })
 }
