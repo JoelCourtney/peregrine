@@ -1,3 +1,9 @@
+# Claude context
+
+I am creating a discrete event simulator called Peregrine, which is a successor to Merlin.
+I'm converting the aerie-lander demo model from Java into Rust to use as a demo for Peregrine,
+and I'm adding new features to Peregrine as I go.
+
 ## Bash commands
 
 All are run in the root of the git repo.
@@ -10,7 +16,7 @@ All are run in the root of the git repo.
 - Linter: `cargo clippy --all-targets --workspace -- -D warnings`
   The CI pipeline will deny all lints.
 - Format: `cargo fmt`
-- List all files in repo: `fd`
+- Git: use the `gh` cli
 
 Before making any commits, you MUST make sure that all tests
 pass, there are no lints remaining, and run the formatter.
@@ -30,6 +36,7 @@ The CI pipeline will fail otherwise.
   use my_crate::ImportB;
   ```
   The formatter does not do this automatically.
+- When creating new git branches, name them `claude/...`
 
 ## Workflow
 
