@@ -91,6 +91,10 @@ duplicate = "2.0.0"
 spez = "0.1.2"
 # Used in the core Upstream/Downstream traits to differentiate between multiple reads and writes.
 castaway = "0.2.3"
+# Used to generate struct variants from enums for resource groups.
+variants-struct = "0.2.0"
+# Used to iterate over enum variants for resource groups.
+enum-iterator = "2.1.0"
 
 ## ERROR HANDLING
 # Used to allow modellers to return errors from activities and operations

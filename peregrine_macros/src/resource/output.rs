@@ -2,6 +2,47 @@ use crate::resource::{GroupResource, MultiResource, Resource, SingleResource};
 use quote::{ToTokens, format_ident, quote};
 use syn::Ident;
 
+/// Generate an enum name from a resource group pattern
+/// e.g., "heater_*_active" -> "HeaterActive"
+/// e.g., "*_pump_enabled" -> "PumpEnabled"
+/// e.g., "thruster_*" -> "Thruster"
+fn generate_enum_name(pattern: &str) -> String {
+    // Remove the asterisk
+    let without_asterisk = pattern.replace('*', "");
+
+    // Clean up multiple consecutive underscores
+    let cleaned = without_asterisk
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+
+    // Convert to PascalCase
+    cleaned
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                }
+            }
+        })
+        .collect()
+}
+
+/// Convert a member name to PascalCase for enum variants
+/// e.g., "main" -> "Main", "a" -> "A"
+fn generate_variant_name(member: &str) -> String {
+    let mut chars = member.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+    }
+}
+
 /// Generate a single resource definition with the given name, data type, attributes, visibility, and default
 fn generate_single_resource_definition(
     resource_name: &Ident,
@@ -84,6 +125,43 @@ impl ToTokens for SingleResource {
 
 impl ToTokens for GroupResource {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        // Generate the group enum first
+        let enum_name_string = generate_enum_name(&self.name_pattern);
+        let enum_name = format_ident!("{}", enum_name_string);
+        let visibility = &self.visibility;
+
+        // Generate enum variants from member names
+        let variants: Vec<_> = self
+            .members
+            .iter()
+            .map(|member| {
+                let variant_name = generate_variant_name(&member.to_string());
+                format_ident!("{}", variant_name)
+            })
+            .collect();
+
+        // Generate the enum definition
+        let enum_def = quote! {
+            #[derive(
+                peregrine::internal::macro_prelude::variants_struct::VariantsStruct,
+                Copy,
+                Clone,
+                Eq,
+                PartialEq,
+                Debug,
+                peregrine::internal::macro_prelude::enum_iterator::Sequence
+            )]
+            #[struct_derive(Clone, Debug, peregrine::Data, peregrine::MaybeHash, peregrine::internal::macro_prelude::serde::Serialize, peregrine::internal::macro_prelude::serde::Deserialize)]
+            #[struct_bounds(peregrine::MaybeHash + for<'his> peregrine::Data<'his>)]
+            #[struct_attr(serde(bound(serialize = "T: for<'his> peregrine::Data<'his>")))]
+            #[struct_attr(serde(bound(deserialize = "T: for<'his> peregrine::Data<'his>")))]
+            #visibility enum #enum_name {
+                #(#variants,)*
+            }
+        };
+
+        tokens.extend(enum_def);
+
         // Expand resource group into individual resources
         for member in &self.members {
             let member_name_string = self.name_pattern.replace('*', &member.to_string());

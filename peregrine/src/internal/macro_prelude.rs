@@ -20,6 +20,7 @@ pub use crate::public::resource::builtins;
 
 pub use bumpalo_herd;
 pub use castaway;
+pub use enum_iterator;
 pub use inventory;
 pub use parking_lot;
 pub use peregrine_macros;
@@ -30,3 +31,4 @@ pub use smallvec;
 pub use spez;
 pub use type_map;
 pub use type_reg;
+pub use variants_struct;
