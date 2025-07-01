@@ -1,12 +1,23 @@
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Fields, Ident, Variant};
+use syn::{DeriveInput, Fields, Generics, Ident, Variant};
 
 /// Main entry point for the Data derive macro implementation
 pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
     let name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let mut modified_generics = input.generics.clone();
+    modified_generics
+        .params
+        .push(syn::GenericParam::Lifetime(syn::LifetimeParam {
+            lifetime: syn::Lifetime::new("'h", Span::call_site()),
+            colon_token: None,
+            bounds: syn::punctuated::Punctuated::new(),
+            attrs: vec![],
+        }));
+    let (modified_impl_generics, modified_ty_generics, _) = modified_generics.split_for_impl();
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+
     let sample_type = parse_sample_attribute(&input);
 
     // Check if the type has fields
@@ -25,7 +36,7 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
 
     if !has_fields {
         let expanded = quote! {
-            impl<'h> #impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
+            impl #modified_impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
                 type Read = Self;
                 type Sample = Self;
 
@@ -57,16 +68,22 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
                 &read_type_name,
                 fields,
                 visibility,
-                quote! { #[derive(Copy, Clone)] },
+                quote! { #[derive(Clone)] },
                 quote! { Read },
+                &modified_generics,
+                where_clause,
+                true,
             )
         } else {
             generate_enum_type(
                 &read_type_name,
                 &variants,
                 visibility,
-                quote! { #[derive(Copy, Clone)] },
+                quote! { #[derive(Clone)] },
                 quote! { Read },
+                &modified_generics,
+                where_clause,
+                true,
             )
         };
         let sample_body = quote! { Self::from_read(read, now) };
@@ -81,8 +98,8 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
         return quote! {
             #read_type
 
-            impl<'h> #impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
-                type Read = #read_type_name<'h>;
+            impl #modified_impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
+                type Read = #read_type_name #modified_ty_generics;
                 type Sample = Self;
 
                 #data_impl
@@ -101,33 +118,45 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
             &read_type_name,
             fields,
             visibility,
-            quote! { #[derive(Copy, Clone)] },
+            quote! { #[derive(Clone)] },
             quote! { Read },
+            &modified_generics,
+            where_clause,
+            true,
         );
-        let sample_def = generate_struct_type(
+        let sample_type = generate_struct_type(
             &sample_type_name,
             fields,
             visibility,
-            quote! { #[derive(Copy, Clone, MaybeHash)] },
+            quote! { #[derive(MaybeHash)] },
             quote! { Sample },
+            &modified_generics,
+            where_clause,
+            false,
         );
-        (read_type, sample_def)
+        (read_type, sample_type)
     } else {
         let read_type = generate_enum_type(
             &read_type_name,
             &variants,
             visibility,
-            quote! { #[derive(Copy, Clone)] },
+            quote! { #[derive(Clone)] },
             quote! { Read },
+            &modified_generics,
+            where_clause,
+            true,
         );
-        let sample_def = generate_enum_type(
+        let sample_type = generate_enum_type(
             &sample_type_name,
             &variants,
             visibility,
-            quote! { #[derive(Copy, Clone, MaybeHash)] },
+            quote! { #[derive(MaybeHash)] },
             quote! { Sample },
+            &modified_generics,
+            where_clause,
+            false,
         );
-        (read_type, sample_def)
+        (read_type, sample_type)
     };
 
     let sample_body = if is_struct {
@@ -160,9 +189,9 @@ pub fn generate_data_impl(input: DeriveInput) -> TokenStream {
         #read_type
         #sample_type_def
 
-        impl<'h> #impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
-            type Read = #read_type_name<'h>;
-            type Sample = #sample_type_name<'h>;
+        impl #modified_impl_generics peregrine::Data<'h> for #name #ty_generics #where_clause {
+            type Read = #read_type_name #modified_ty_generics;
+            type Sample = #sample_type_name #modified_ty_generics;
 
             #data_impl
         }
@@ -175,8 +204,8 @@ fn parse_sample_attribute(input: &DeriveInput) -> Option<String> {
     for attr in &input.attrs {
         if attr.path().is_ident("sample") {
             if let Ok(syn::Expr::Lit(expr_lit)) = attr.parse_args() {
-                if let syn::Lit::Str(litstr) = expr_lit.lit {
-                    return Some(litstr.value());
+                if let syn::Lit::Str(lit_str) = expr_lit.lit {
+                    return Some(lit_str.value());
                 }
             }
         }
@@ -184,65 +213,93 @@ fn parse_sample_attribute(input: &DeriveInput) -> Option<String> {
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Generate type definitions for structs
 fn generate_struct_type(
     type_name: &Ident,
     fields: &Fields,
     visibility: &syn::Visibility,
     derive: TokenStream2,
-    trait_bound: TokenStream2,
+    associated_type: TokenStream2,
+    ty_generics: &Generics,
+    where_clause: Option<&syn::WhereClause>,
+    generate_copy: bool,
 ) -> TokenStream2 {
-    let field_tokens = generate_field_types(fields, trait_bound);
+    let field_tokens = generate_field_types(fields, associated_type);
+    let copy = if generate_copy {
+        let (impl_generics, type_generics, where_clause) = ty_generics.split_for_impl();
+        quote! {
+            impl #impl_generics Copy for #type_name #type_generics #where_clause {}
+        }
+    } else {
+        quote! {}
+    };
     match fields {
         Fields::Named(_) => quote! {
             #derive
-            #visibility struct #type_name<'h> {
+            #visibility struct #type_name #ty_generics #where_clause {
                 #field_tokens
             }
+            #copy
         },
         Fields::Unnamed(_) => quote! {
             #derive
-            #visibility struct #type_name<'h>(#field_tokens);
+            #visibility struct #type_name #ty_generics #where_clause(#field_tokens);
+            #copy
         },
         Fields::Unit => quote! {
             #derive
-            #visibility struct #type_name<'h>;
+            #visibility struct #type_name #ty_generics #where_clause;
+            #copy
         },
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Generate type definitions for enums
 fn generate_enum_type(
     type_name: &Ident,
     variants: &[Variant],
     visibility: &syn::Visibility,
     derive: TokenStream2,
-    trait_bound: TokenStream2,
+    associated_type: TokenStream2,
+    ty_generics: &Generics,
+    where_clause: Option<&syn::WhereClause>,
+    generate_copy: bool,
 ) -> TokenStream2 {
-    let variant_defs = generate_enum_variants(variants, trait_bound);
+    let variant_defs = generate_enum_variants(variants, associated_type);
+    let copy = if generate_copy {
+        let (impl_generics, type_generics, where_clause) = ty_generics.split_for_impl();
+        quote! {
+            impl #impl_generics Copy for #type_name #type_generics #where_clause {}
+        }
+    } else {
+        quote! {}
+    };
     quote! {
         #derive
-        #visibility enum #type_name<'h> {
+        #visibility enum #type_name #ty_generics #where_clause {
             #variant_defs
         }
+        #copy
     }
 }
 
 /// Generate field type definitions
-fn generate_field_types(fields: &Fields, trait_bound: TokenStream2) -> TokenStream2 {
+fn generate_field_types(fields: &Fields, associated_type: TokenStream2) -> TokenStream2 {
     match fields {
         Fields::Named(named_fields) => {
             let defs = named_fields.named.iter().map(|f| {
                 let name = f.ident.as_ref().unwrap();
                 let ty = &f.ty;
-                quote! { pub #name: <#ty as peregrine::Data<'h>>::#trait_bound }
+                quote! { pub #name: <#ty as peregrine::Data<'h>>::#associated_type }
             });
             quote! { #(#defs),* }
         }
         Fields::Unnamed(unnamed_fields) => {
             let defs = unnamed_fields.unnamed.iter().map(|f| {
                 let ty = &f.ty;
-                quote! { <#ty as peregrine::Data<'h>>::#trait_bound }
+                quote! { <#ty as peregrine::Data<'h>>::#associated_type }
             });
             quote! { #(#defs),* }
         }
@@ -251,7 +308,7 @@ fn generate_field_types(fields: &Fields, trait_bound: TokenStream2) -> TokenStre
 }
 
 /// Generate enum variant definitions
-fn generate_enum_variants(variants: &[Variant], trait_bound: TokenStream2) -> TokenStream2 {
+fn generate_enum_variants(variants: &[Variant], associated_type: TokenStream2) -> TokenStream2 {
     let variant_defs: Vec<_> = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
         match &variant.fields {
@@ -259,14 +316,14 @@ fn generate_enum_variants(variants: &[Variant], trait_bound: TokenStream2) -> To
                 let field_defs: Vec<_> = named_fields.named.iter().map(|field| {
                     let field_name = field.ident.as_ref().expect("Named field should have an identifier");
                     let field_type = &field.ty;
-                    quote! { #field_name: <#field_type as peregrine::Data<'h>>::#trait_bound }
+                    quote! { #field_name: <#field_type as peregrine::Data<'h>>::#associated_type }
                 }).collect();
                 quote! { #variant_name { #(#field_defs),* } }
             }
             Fields::Unnamed(unnamed_fields) => {
                 let field_defs: Vec<_> = unnamed_fields.unnamed.iter().map(|field| {
                     let field_type = &field.ty;
-                    quote! { <#field_type as peregrine::Data<'h>>::#trait_bound }
+                    quote! { <#field_type as peregrine::Data<'h>>::#associated_type }
                 }).collect();
                 quote! { #variant_name(#(#field_defs),*) }
             }

@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 
 // Test basic struct with evolution
 #[derive(Data, MaybeHash, Clone, Serialize, Deserialize)]
+#[serde(bound(deserialize = "T: for<'a> Data<'a>"))]
+#[serde(bound(serialize = "T: for<'a> Data<'a>"))]
+struct GenericTestStruct<T: for<'a> Data<'a>> {
+    value: T,
+}
+
+// Test basic struct with evolution
+#[derive(Data, MaybeHash, Clone, Serialize, Deserialize)]
 struct TestStruct {
     value: Linear,
     count: u32,
