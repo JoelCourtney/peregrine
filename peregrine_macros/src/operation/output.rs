@@ -17,11 +17,17 @@ impl Op {
 
         let body = &self.body;
 
+        let (crate_name, fn_name) = if self.internal {
+            (quote! { crate }, quote! { FnInternal })
+        } else {
+            (quote! { peregrine }, quote! { Fn })
+        };
+
         quote! {
-            peregrine::internal::macro_prelude::serde_closure::Fn!(move |#(#read_onlys: <<#read_onlys as peregrine::Resource>::Data as peregrine::Data>::Sample,)*
-            #(mut #read_writes: <#read_writes as peregrine::Resource>::Data,)*|
-            -> peregrine::anyhow::Result<(#(<#all_writes as peregrine::Resource>::Data,)*)> {
-                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as peregrine::Resource>::Data;)*
+            #crate_name::internal::macro_prelude::serde_closure::#fn_name!(move |#(#read_onlys: <<#read_onlys as #crate_name::Resource>::Data as #crate_name::Data>::Sample,)*
+            #(mut #read_writes: <#read_writes as #crate_name::Resource>::Data,)*|
+            -> #crate_name::anyhow::Result<(#(<#all_writes as #crate_name::Resource>::Data,)*)> {
+                #(#[allow(unused_mut)] let mut #write_onlys: <#write_onlys as #crate_name::Resource>::Data;)*
                 #body
                 Ok((#(#all_writes,)*))
             })
@@ -83,10 +89,16 @@ impl ToTokens for Op {
             empty_declaration = false;
         }
 
+        let crate_name = if self.internal {
+            quote! { crate }
+        } else {
+            quote! { peregrine }
+        };
+
         let mod_name = if !empty_declaration {
             quote! { local_module:: }
         } else {
-            quote! { peregrine::internal::macro_prelude:: }
+            quote! { #crate_name::internal::macro_prelude:: }
         };
 
         let instantiation = result(&idents, self.body_function(), mod_name);
@@ -94,6 +106,7 @@ impl ToTokens for Op {
         let result = quote! {
             {
                 mod local_module {
+                    use #crate_name as peregrine;
                     use peregrine::*;
                     use peregrine::internal::macro_prelude::*;
                     #declarations

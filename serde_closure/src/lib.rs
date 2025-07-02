@@ -203,6 +203,9 @@ pub use serde_closure_derive::FnMut;
 /// See the [readme](self) for examples.
 pub use serde_closure_derive::Fn;
 
+#[doc(hidden)]
+pub use serde_closure_derive::FnInternal;
+
 /// Attribute macro that can be applied to items to desugar trait bounds
 /// `FnOnce(…) -> …`, `FnMut(…) -> …` and `Fn(…) -> …` to `FnOnce<(…), Output = …>`,
 /// `FnMut<(…), Output = …>` and `Fn<(…), Output = …>`. This is just a

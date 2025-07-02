@@ -1,5 +1,5 @@
 mod input;
-mod output;
+pub mod output;
 
 use std::collections::HashMap;
 use syn::{Ident, Type, Visibility};

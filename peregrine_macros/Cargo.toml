@@ -16,3 +16,4 @@ quote = "1.0.38"
 derive_more = { version = "2.0.1", features = ["deref", "deref_mut"] }
 regex = "1.11.1"
 rand = "0.9.0"
+heck = "0.5.0"

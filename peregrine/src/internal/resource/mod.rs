@@ -8,6 +8,7 @@ mod bigdecimal;
 mod nalgebra;
 
 mod basic;
+pub mod group;
 mod num;
 
 use type_map::concurrent::TypeMap;

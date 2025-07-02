@@ -9,4 +9,5 @@ pub struct Op {
     pub writes: Vec<Ident>,
     pub read_writes: Vec<Ident>,
     pub body: TokenStream,
+    pub internal: bool,
 }

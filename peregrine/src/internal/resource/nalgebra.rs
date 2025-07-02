@@ -130,12 +130,6 @@ where
     Self: std::fmt::Debug,
 {
     fn is_hashable(&self) -> bool {
-        println!("hi");
-        dbg!(&self);
-        dbg!(&self.coords[0].is_hashable());
-        dbg!(&self.coords[1].is_hashable());
-        dbg!(&self.coords[2].is_hashable());
-        dbg!(&self.coords[3].is_hashable());
         self.coords[0].is_hashable()
             && self.coords[1].is_hashable()
             && self.coords[2].is_hashable()

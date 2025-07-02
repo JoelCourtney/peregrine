@@ -104,7 +104,8 @@ impl<'o> Timelines<'o> {
                 if trigger.triggers.contains(&R::ID) {
                     let mut record = trigger.record.lock();
                     if !record.contains_key(&times) {
-                        let nodes = (trigger.trigger_fn)(placement, self.herd.get());
+                        let nodes =
+                            (trigger.trigger_fn)(placement + Duration::EPSILON, self.herd.get());
                         for node in nodes {
                             record.insert(times, node);
                             node.insert_self(self, true)

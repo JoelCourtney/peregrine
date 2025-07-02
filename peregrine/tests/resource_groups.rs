@@ -1,8 +1,19 @@
-use peregrine::{Resource, resource};
+use crate::util::seconds;
+use hifitime::{Duration, TimeUnits};
+use peregrine::{
+    Activity, Data, Ops, OpsReceiver, Resource, Session, initial_conditions, resource,
+};
+use peregrine_macros::{model, op};
+use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
+
+mod util;
 
 // Test basic resource group with shared default
-resource! {
-    pub heater_*_active: bool = false; {a, b, c}
+model! {
+    MyModel {
+        pub heater_*_active: bool = false; {a, b, c}
+    }
 }
 
 #[test]
@@ -174,4 +185,74 @@ fn test_multiple_groups_in_one_call() {
     assert_ne!(light_red_brightness::ID, light_green_brightness::ID);
     assert_ne!(light_green_brightness::ID, light_blue_brightness::ID);
     assert_ne!(light_red_brightness::ID, light_blue_brightness::ID);
+}
+
+model! {
+    SyncTest {
+        my_resource_*: bool = false; {a, b}
+    }
+}
+
+#[derive(Hash, Serialize, Deserialize)]
+pub struct SyncActivity;
+
+#[typetag::serde]
+impl Activity for SyncActivity {
+    fn run<'o>(&'o self, mut ops: Ops<'_, 'o>) -> anyhow::Result<Duration> {
+        ops += op! {
+            w:my_resource_a = true;
+        };
+        ops.wait(5.0.seconds());
+        ops += op! {
+            w:my_resource_b = r:my_resource.a;
+        };
+        ops.wait(5.0.seconds());
+        ops += op! {
+            m:my_resource.a = false;
+        };
+        ops.wait(5.0.seconds());
+        ops += op! {
+            m:my_resource[MyResource::B] = r:my_resource_a;
+        };
+
+        Ok(Duration::ZERO)
+    }
+}
+
+impl<'h, T: for<'a> Data<'a>> PartialEq for MyResourceStructSample<'h, T>
+where
+    <T as Data<'h>>::Sample: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.a == other.a && self.b == other.b
+    }
+}
+
+impl<'h, T: for<'a> Data<'a>> Debug for MyResourceStructSample<'h, T>
+where
+    <T as Data<'h>>::Sample: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{a: {:?}, b: {:?}}}", self.a, self.b)
+    }
+}
+
+#[test]
+fn test_group_synchronization() -> anyhow::Result<()> {
+    let session = Session::new();
+    let mut plan = session.new_plan::<SyncTest>(seconds(-1), initial_conditions! {})?;
+    plan.insert(seconds(0), SyncActivity)?;
+
+    assert_eq!(
+        MyResourceStructSample { a: true, b: false },
+        plan.sample::<my_resource>(seconds(1))?
+    );
+    assert_eq!(
+        MyResourceStructSample { a: true, b: true },
+        plan.sample::<my_resource>(seconds(6))?
+    );
+    assert!(!plan.sample::<my_resource_a>(seconds(11))?);
+    assert!(!plan.sample::<my_resource_b>(seconds(16))?);
+
+    Ok(())
 }

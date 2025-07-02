@@ -10,7 +10,7 @@ use hifitime::Duration;
 use operation::grounding::{Delay, GroundingContinuation};
 use rayon::Scope;
 use std::hash::Hash;
-use std::ops::AddAssign;
+use std::ops::{Add, AddAssign};
 
 pub trait StaticActivity: Hash {
     const LABEL: &'static str;
@@ -78,6 +78,20 @@ impl<'o> Placement<'o> {
                 timelines,
                 env,
             ),
+        }
+    }
+}
+
+impl<'o> Add<Duration> for Placement<'o> {
+    type Output = Self;
+    fn add(self, rhs: Duration) -> Self::Output {
+        match self {
+            Placement::Static(start) => Placement::Static(start + rhs),
+            Placement::Dynamic { min, max, node } => Placement::Dynamic {
+                min: min + rhs,
+                max: min + max,
+                node,
+            },
         }
     }
 }

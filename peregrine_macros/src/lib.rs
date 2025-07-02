@@ -30,6 +30,13 @@ pub fn op(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+pub fn internal_op(input: TokenStream) -> TokenStream {
+    let mut op = parse_macro_input!(input as Op);
+    op.internal = true;
+    op.into_token_stream().into()
+}
+
+#[proc_macro]
 pub fn model(input: TokenStream) -> TokenStream {
     let model = parse_macro_input!(input as Model);
     model.into_token_stream().into()

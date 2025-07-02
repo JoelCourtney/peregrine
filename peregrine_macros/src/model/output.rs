@@ -1,6 +1,13 @@
-use crate::model::{Daemon, Model};
+use crate::resource::Resource::Group;
+use crate::resource::output::{
+    generate_enum_name, generate_group_name, generate_member_resource_ident, generate_variant_name,
+};
+use crate::{
+    model::{Daemon, Model},
+    resource::GroupResource,
+};
 use proc_macro2::TokenStream;
-use quote::{ToTokens, TokenStreamExt, quote};
+use quote::{ToTokens, TokenStreamExt, format_ident, quote};
 
 impl ToTokens for Model {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -13,49 +20,6 @@ impl ToTokens for Model {
             daemons,
         } = self;
 
-        let new_resource_entries = new_resources.iter().flat_map(|r| {
-            match r {
-                crate::resource::Resource::Single(single) => {
-                    let vis = &single.visibility;
-                    let name = &single.name;
-                    let ty = &single.data_type;
-                    let default = &single.default_expr;
-
-                    vec![match default {
-                        Some(expr) => quote! { #vis #name: #ty = #expr; },
-                        None => quote! { #vis #name: #ty; },
-                    }]
-                }
-                crate::resource::Resource::Group(group) => {
-                    group
-                        .members
-                        .iter()
-                        .map(|member| {
-                            let vis = &group.visibility;
-                            let member_name_string =
-                                group.name_pattern.replace('*', &member.to_string());
-                            let member_name = quote::format_ident!("{}", member_name_string);
-                            let ty = &group.data_type;
-
-                            // Determine the default expression for this member
-                            let member_default = if let Some(individual_default) =
-                                group.individual_defaults.get(&member.to_string())
-                            {
-                                Some(individual_default)
-                            } else {
-                                group.default_expr.as_ref()
-                            };
-
-                            match member_default {
-                                Some(expr) => quote! { #vis #member_name: #ty = #expr; },
-                                None => quote! { #vis #member_name: #ty; },
-                            }
-                        })
-                        .collect()
-                }
-            }
-        });
-
         let new_resource_names = new_resources.iter().flat_map(|r| match r {
             crate::resource::Resource::Single(single) => {
                 vec![single.name.clone()]
@@ -67,6 +31,10 @@ impl ToTokens for Model {
                     let member_name_string = group.name_pattern.replace('*', &member.to_string());
                     quote::format_ident!("{}", member_name_string)
                 })
+                .chain(Some(format_ident!(
+                    "{}",
+                    generate_group_name(&group.name_pattern)
+                )))
                 .collect(),
         });
 
@@ -75,6 +43,36 @@ impl ToTokens for Model {
             .into_iter()
             .chain(new_resource_names.clone().map(|id| id.into()))
             .collect::<Vec<_>>();
+
+        let mut daemons = daemons.clone();
+        daemons.extend(new_resources.iter().flat_map(|r| match r {
+            Group(GroupResource { name_pattern, members, ..}) => {
+                let member_resources = members.iter().map(|m| generate_member_resource_ident(name_pattern, &m.to_string())).collect::<Vec<_>>();
+                let group_ident = format_ident!("{}", crate::resource::output::generate_group_name(name_pattern));
+                let enum_ident = format_ident!("{}", generate_enum_name(name_pattern));
+                let mut result = member_resources.iter().zip(members).map(|(member_resource,member_variant) | {
+                    let enum_variant = format_ident!("{}", generate_variant_name(&member_variant.to_string()));
+                    Daemon {
+                        resources: vec![syn::parse(member_resource.into_token_stream().into()).unwrap()],
+                        function_call: syn::parse(quote! {peregrine::internal::resource::group::sync_single_to_group::<#group_ident,#member_resource,#enum_ident>(#enum_ident::#enum_variant)}.into()).expect("Could not generate single-to-group sync call"),
+                        react_to_all: false,
+                    }
+                }).collect::<Vec<_>>();
+                result.push(Daemon {
+                    resources:  vec![syn::parse(group_ident.to_token_stream().into()).unwrap()],
+                    function_call: syn::parse(quote! {
+                        (|mut ops| {
+                            ops += peregrine::op! {
+                                #(m:#member_resources = m:#group_ident.#members;)*
+                            }
+                        })()
+                    }.into()).unwrap(),
+                    react_to_all: false
+                });
+                result
+            }
+            _ => vec![]
+        }));
 
         let daemons = daemons.iter().map(|d| {
             let Daemon {
@@ -167,9 +165,7 @@ impl ToTokens for Model {
                 }
             }
 
-            peregrine::resource! {
-                #(#new_resource_entries)*
-            }
+            #(#new_resources)*
         };
 
         tokens.append_all(result);
