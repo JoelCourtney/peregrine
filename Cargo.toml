@@ -1,10 +1,11 @@
 [workspace]
 members = [
     "peregrine",
-    "potato_sat",
     "peregrine_macros",
-    "serde_closure"
-, "aerie_lander"]
+    "potato_sat",
+    "serde_closure",
+    "aerie_lander",
+]
 exclude = [
     "perf",
     "perf/perf_macros"

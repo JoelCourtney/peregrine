@@ -1,11 +1,13 @@
 use crate::internal::operation::Node;
-use crate::internal::placement::Placement;
+use crate::internal::placement::{DenseTime, Placement};
 use crate::internal::timeline::epoch_to_duration;
 use bumpalo_herd::Member;
 use hifitime::{Duration, Epoch as Time};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::ops::AddAssign;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub trait OpsReceiver<'v, 'o: 'v> {
     /// Add an operation at the current time.
@@ -45,7 +47,7 @@ pub trait OpsReceiver<'v, 'o: 'v> {
 /// Alternatively, if you want to decide the mutability at the call site instead of the
 /// function declaration, the function can accept `impl OpsReceiver<'o>`. Both `Ops` and
 /// `&mut Ops` implement [OpsReceiver], and so the function caller can decide which to pass.
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Ops<'v, 'o: 'v> {
     /// The current placement time that operations will be inserted at.
     pub(crate) placement: Placement<'o>,
@@ -54,6 +56,7 @@ pub struct Ops<'v, 'o: 'v> {
     /// The aggregator for operation references. The underlying [Vec]
     /// is unwrapped by the [Plan][crate::Plan] after the activity is done.
     pub(crate) operations: &'v RefCell<Vec<&'o dyn Node<'o>>>,
+    pub(crate) order: Arc<AtomicU64>,
 }
 
 impl<'v, 'o: 'v> Ops<'v, 'o> {
@@ -62,11 +65,13 @@ impl<'v, 'o: 'v> Ops<'v, 'o> {
         placement: Placement<'o>,
         bump: &'v Member<'o>,
         operations: &'v RefCell<Vec<&'o dyn Node<'o>>>,
+        order: Arc<AtomicU64>,
     ) -> Self {
         Self {
             placement,
             bump,
             operations,
+            order,
         }
     }
 }
@@ -74,6 +79,8 @@ impl<'v, 'o: 'v> Ops<'v, 'o> {
 impl<'v, 'o: 'v> OpsReceiver<'v, 'o> for Ops<'v, 'o> {
     #[inline]
     fn push<N: Node<'o> + 'o>(&mut self, op_ctor: impl FnOnce(Placement<'o>) -> N) {
+        self.placement
+            .set_order(self.order.fetch_add(1, Ordering::SeqCst));
         let op = self.bump.alloc(op_ctor(self.placement));
         self.operations.borrow_mut().push(op);
     }
@@ -90,7 +97,10 @@ impl<'v, 'o: 'v> OpsReceiver<'v, 'o> for Ops<'v, 'o> {
     }
 
     fn goto(&mut self, time: Time) {
-        self.placement = Placement::Static(epoch_to_duration(time));
+        self.placement = Placement::Static(DenseTime {
+            when: epoch_to_duration(time),
+            order: 0,
+        });
     }
 }
 

@@ -86,7 +86,7 @@ impl Node {
 
                 body: B,
                 reads: UnsafeSyncCell<#reads_name<'o, #(#read_types,)*>>,
-                grounding_result: UnsafeSyncCell<Option<InternalResult<Duration>>>
+                grounding_result: UnsafeSyncCell<Option<InternalResult<DenseTime>>>
             }
 
             #[allow(clippy::unused_unit)]
@@ -101,6 +101,7 @@ impl Node {
                     }
                 }
                 fn run_continuations(&self, mut state: parking_lot::MutexGuard<OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o>, env: ExecEnvironment<'s, 'o>) {
+                    let order = self.placement.get_order();
                     let mut swapped_continuations = smallvec::SmallVec::new();
                     std::mem::swap(&mut state.continuations, &mut swapped_continuations);
                     let output = state.status.unwrap_done();
@@ -108,14 +109,10 @@ impl Node {
 
                     let start_index = if env.stack_counter < STACK_LIMIT { 1 } else { 0 };
 
-                    let time = unsafe {
-                        (*self.grounding_result.get()).expect("expected grounding result to be present")
-                    };
-
                     for c in swapped_continuations.drain(start_index..) {
                         match c {
                             #(#continuations_name::#writes(c) => {
-                                scope.spawn(move |s| c.run(output.map(|r| (r.0, r.1.#writes)), s, timelines, env.reset()));
+                                scope.spawn(move |s| c.run(output.map(|r| (r.0, r.1.#writes)), order, s, timelines, env.reset()));
                             })*
                         }
                     }
@@ -123,13 +120,13 @@ impl Node {
                     if env.stack_counter < STACK_LIMIT {
                         match swapped_continuations.remove(0) {
                             #(#continuations_name::#writes(c) => {
-                                c.run(output.map(|r| (r.0, r.1.#writes)), scope, timelines, env.increment());
+                                c.run(output.map(|r| (r.0, r.1.#writes)), order, scope, timelines, env.increment());
                             })*
                         }
                     }
                 }
 
-                fn send_requests(&'o self, mut state: parking_lot::MutexGuard<OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, time: Duration, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o>, env: ExecEnvironment<'s, 'o>) {
+                fn send_requests(&'o self, mut state: parking_lot::MutexGuard<OperationState<(u64, #writes_name<'o, #(#write_types,)*>), #continuations_name<'o, #(#write_types,)*>, #downstreams_name<'o, #(#write_types,)*>>>, time: DenseTime, scope: &rayon::Scope<'s>, timelines: &'s Timelines<'o>, env: ExecEnvironment<'s, 'o>) {
                     let reads = self.reads.get();
                     let (#(#read_responses,)*) = unsafe {
                         (#((*reads).#read_responses,)*)
@@ -172,7 +169,7 @@ impl Node {
                     let time_as_epoch = duration_to_epoch(
                         unsafe {
                             (*self.grounding_result.get()).expect("expected grounding result to be present").expect("expected grounding result to be ok")
-                        }
+                        }.when
                     );
 
                     let (#(#read_write_responses,)*) = (#(<#read_write_types as Resource>::Data::from_read(#read_write_responses, time_as_epoch),)*);
@@ -330,7 +327,7 @@ impl Node {
                     self.clear_cached_downstreams();
                 }
 
-                fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool {
+                fn clear_upstream(&self, time_of_change: Option<DenseTime>) -> bool {
                     let (clear, retain) = if let Some(time_of_change) = time_of_change {
                         unsafe {
                             match *self.grounding_result.get() {
@@ -366,7 +363,7 @@ impl Node {
             impl<'o, B: #body_function_bound, #resources_generics_decl> GroundingDownstream<'o> for #name<'o, B, #resources_generics_usage> {
                 fn respond_grounding<'s>(
                     &'o self,
-                    value: InternalResult<(usize, Duration)>,
+                    value: InternalResult<(usize, DenseTime)>,
                     scope: &rayon::Scope<'s>,
                     timelines: &'s Timelines<'o>,
                     env: ExecEnvironment<'s, 'o>
@@ -480,9 +477,6 @@ impl Node {
                         OperationStatus::Done(r) => {
                             drop(state);
                             let send = r.map(|o| {
-                                let time = unsafe {
-                                    (*self.grounding_result.get()).expect("expected grounding result to be present").expect("expected grounding result to be ok")
-                                };
                                 let value = castaway::match_type!(R::INSTANCE, {
                                     #(
                                         #write_types as _ => {
@@ -493,7 +487,7 @@ impl Node {
                                 });
                                 (o.0, value)
                             });
-                            continuation.run(send, scope, timelines, env.increment());
+                            continuation.run(send, self.placement.get_order(), scope, timelines, env.increment());
                         }
                         OperationStatus::Working => {
                             castaway::match_type!(R::INSTANCE, {
@@ -510,7 +504,7 @@ impl Node {
                     }
                 }
 
-                fn notify_downstreams(&self, time_of_change: Duration) {
+                fn notify_downstreams(&self, time_of_change: DenseTime) {
                     let mut state = self.state.lock();
 
                     state.downstreams.retain(|downstream| {

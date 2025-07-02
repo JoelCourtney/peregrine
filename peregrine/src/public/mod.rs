@@ -3,6 +3,8 @@
 //! This module contains all user-facing types, traits, and functions.
 
 use hifitime::Duration;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 pub mod activity;
 pub mod initial_conditions;
@@ -19,5 +21,6 @@ pub trait Model<'o>: Sync {
         time: Duration,
         initial_conditions: &mut crate::internal::operation::initial_conditions::InitialConditions,
         timelines: &mut crate::internal::timeline::Timelines<'o>,
+        order: Arc<AtomicU64>,
     ) -> anyhow::Result<()>;
 }

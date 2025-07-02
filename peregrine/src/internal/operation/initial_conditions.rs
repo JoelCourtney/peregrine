@@ -1,5 +1,6 @@
 use crate::internal::exec::ExecEnvironment;
 use crate::internal::history::PeregrineDefaultHashBuilder;
+use crate::internal::macro_prelude::DenseTime;
 use crate::internal::operation::{
     Continuation, Downstream, Node, OperationState, OperationStatus, Upstream,
 };
@@ -111,10 +112,10 @@ impl<'o, R: Resource + 'o> Upstream<'o, R> for InitialConditionOp<'o, R> {
 
         drop(state);
 
-        continuation.run(Ok(result), scope, timelines, env.increment());
+        continuation.run(Ok(result), 0, scope, timelines, env.increment());
     }
 
-    fn notify_downstreams(&self, time_of_change: Duration) {
+    fn notify_downstreams(&self, time_of_change: DenseTime) {
         let mut state = self.state.lock();
 
         state
@@ -136,6 +137,11 @@ impl<'o, R: Resource + 'o> Upstream<'o, R> for InitialConditionOp<'o, R> {
     ) where
         'o: 's,
     {
-        continuation.run(Ok(self.time), scope, timelines, env.increment());
+        continuation.run(
+            Ok(DenseTime::first_at(self.time)),
+            scope,
+            timelines,
+            env.increment(),
+        );
     }
 }

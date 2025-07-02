@@ -95,9 +95,9 @@ impl ToTokens for Model {
             quote! {
                 peregrine::internal::macro_prelude::ReactiveDaemon::new(
                     #resource_ids,
-                    Box::new(|placement, member| {
+                    Box::new(move |placement, member| {
                         let result = std::cell::RefCell::new(vec![]);
-                        let ops = peregrine::Ops::new(placement, &member, &result);
+                        let ops = peregrine::Ops::new(placement, &member, &result, new_order.clone());
                         #function_call;
                         result.into_inner()
                     })
@@ -116,7 +116,8 @@ impl ToTokens for Model {
                 fn init_timelines(
                     time: peregrine::Duration,
                     initial_conditions: &mut peregrine::internal::macro_prelude::InitialConditions,
-                    timelines: &mut peregrine::internal::macro_prelude::Timelines<'o>
+                    timelines: &mut peregrine::internal::macro_prelude::Timelines<'o>,
+                    order: std::sync::Arc<std::sync::atomic::AtomicU64>
                 ) -> peregrine::anyhow::Result<()> {
                     use peregrine::Resource;
                     #(
@@ -153,13 +154,14 @@ impl ToTokens for Model {
                     )*
 
                     #(
+                        let new_order = order.clone();
                         timelines.add_reactive_daemon(
                             peregrine::internal::macro_prelude::peregrine_macros::random_u64!(),
                             #daemons
                         );
                     )*
 
-                    #(#sub_models::init_timelines(time, initial_conditions, timelines)?;)*
+                    #(#sub_models::init_timelines(time, initial_conditions, timelines, order.clone())?;)*
 
                     Ok(())
                 }

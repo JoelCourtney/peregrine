@@ -3,7 +3,7 @@
 - [x] Compare the existing submodels that I've already converted with the originals. Until recently I didn't have the ability to specify resource value defaults at the model level. Find resources that have non-trivial defaults in the Java version and make sure they have the same default in the Rust version.
 - [x] A functionality to the model! macro so that when declaring a reactive daemon, you can use `react(*) ...` instead of `react(list, of, resources) ...` to make the daemon react to all resources in the model.
 - [x] Convert the resource! macro from macro_rules to a procedural macro in the peregrine_macros crate. Follow the same mod.rs/input.rs/output.rs structure that the model and operation macros use. When converting, use `peregrine::` in place of `$crate::`. After all tests pass, simplify the part of the model macro that parses and outputs resources by reusing the new parsing you just implemented. The model macro should parse a Resource object from the tokenstream, then put it in the output. We will need to be able to inspect the fields of the Resource object inside the model macro during a later step.
-- [ ] Implement a feature called resources groups. These are sets of resources with the same associated data type that share a prefix. Example syntax:
+- [x] Implement a feature called resources groups. These are sets of resources with the same associated data type that share a prefix. Example syntax:
   ```
   resource! {
     pub heater_*_active: bool = false; {a, b}
@@ -26,7 +26,7 @@
   }
   ```
   If an initial condition is supplied at the top level, it shouldn't be accepted for individual. Include these options in the tests.
-- [ ] You just implemented resource group parsing in the resource! macro. Now generate an enum for the whole group of resources. Using the previous example, 
+- [x] You just implemented resource group parsing in the resource! macro. Now generate an enum for the whole group of resources. Using the previous example, 
   ```
   resource! {
     pub heater_*_active: bool = false; {a, b}

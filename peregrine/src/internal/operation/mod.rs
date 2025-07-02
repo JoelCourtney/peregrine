@@ -4,7 +4,9 @@ pub mod grounding;
 pub mod initial_conditions;
 pub mod node_impls;
 
+use crate::Duration;
 use crate::internal::exec::ExecEnvironment;
+use crate::internal::macro_prelude::DenseTime;
 use crate::internal::timeline::Timelines;
 use crate::public::resource::Data;
 use crate::public::resource::Resource;
@@ -12,7 +14,6 @@ use anyhow::Result;
 use derive_more::with_trait::Error as DeriveError;
 use grounding::GroundingContinuation;
 use grounding::peregrine_grounding;
-use hifitime::Duration;
 use rayon::Scope;
 use smallvec::SmallVec;
 use std::fmt::{Debug, Display, Formatter};
@@ -39,13 +40,13 @@ pub trait Downstream<'o, R: Resource>: Sync + GroundingDownstream<'o> {
         'o: 's;
 
     fn clear_cache(&self);
-    fn clear_upstream(&self, time_of_change: Option<Duration>) -> bool;
+    fn clear_upstream(&self, time_of_change: Option<DenseTime>) -> bool;
 }
 
 pub trait GroundingDownstream<'o>: Sync {
     fn respond_grounding<'s>(
         &'o self,
-        value: InternalResult<(usize, Duration)>,
+        value: InternalResult<(usize, DenseTime)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
@@ -66,7 +67,7 @@ pub trait Upstream<'o, R: Resource>: Sync {
     ) where
         'o: 's;
 
-    fn notify_downstreams(&self, time_of_change: Duration);
+    fn notify_downstreams(&self, time_of_change: DenseTime);
     fn register_downstream_early(&self, downstream: &'o dyn Downstream<'o, R>);
 
     fn request_grounding<'s>(
@@ -90,6 +91,7 @@ impl<'o, R: Resource> Continuation<'o, R> {
     pub fn run<'s>(
         self,
         value: InternalResult<(u64, <R::Data as Data<'o>>::Read)>,
+        order: u64,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
@@ -102,12 +104,17 @@ impl<'o, R: Resource> Continuation<'o, R> {
             Continuation::GroundingWrapper(c) => {
                 if castaway::cast!(R::INSTANCE, peregrine_grounding).is_ok() {
                     assert_eq!(
-                        std::mem::size_of::<InternalResult<(u64, Duration)>>(),
-                        std::mem::size_of::<InternalResult<(u64, <R::Data as Data<'o>>::Read)>>()
+                        size_of::<InternalResult<(u64, Duration)>>(),
+                        size_of::<InternalResult<(u64, <R::Data as Data<'o>>::Read)>>()
                     );
                     let v: InternalResult<(u64, Duration)> =
                         unsafe { std::mem::transmute_copy(&value) };
-                    c.run(v.map(|(_, d)| d), scope, timelines, env);
+                    c.run(
+                        v.map(|(_, d)| DenseTime { when: d, order }),
+                        scope,
+                        timelines,
+                        env,
+                    );
                 } else {
                     unreachable!()
                 }

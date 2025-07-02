@@ -3,12 +3,11 @@ use crate::internal::history::History;
 use crate::internal::macro_prelude::GroundingContinuation;
 use crate::internal::operation::initial_conditions::InitialConditions;
 use crate::internal::operation::{Continuation, InternalResult};
-use crate::internal::placement::{DecomposedActivity, Placement};
-use crate::internal::timeline::{MaybeGrounded, Timelines, epoch_to_duration};
+use crate::internal::placement::{DecomposedActivity, DenseTime, Placement};
+use crate::internal::timeline::{MaybeGrounded, Timelines, duration_to_epoch, epoch_to_duration};
 use crate::public::resource::init_builtins_timelines;
 use crate::{Activity, ActivityId, Data, Model, Ops, Resource, Session, Time};
 use anyhow::anyhow;
-use hifitime::Duration;
 use oneshot::Receiver;
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
@@ -16,11 +15,14 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
 use std::ops::RangeBounds;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 /// A plan instance for iterative editing and simulating.
 pub struct Plan<'o, M: Model<'o>> {
     activities: HashMap<ActivityId, DecomposedActivity<'o>>,
     id_counter: u32,
+    order: Arc<AtomicU64>,
     timelines: Timelines<'o>,
 
     session: &'o Session,
@@ -38,11 +40,13 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let time = epoch_to_duration(time);
         let mut timelines = Timelines::new(&session.herd);
         init_builtins_timelines(time, &mut timelines);
-        M::init_timelines(time, &mut initial_conditions, &mut timelines)?;
+        let order = Arc::new(AtomicU64::new(1));
+        M::init_timelines(time, &mut initial_conditions, &mut timelines, order.clone())?;
         Ok(Plan {
             activities: HashMap::new(),
             timelines,
             id_counter: 0,
+            order,
 
             session,
 
@@ -70,11 +74,12 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         let activity_pointer = activity as *mut dyn Activity;
 
         let operations = RefCell::new(vec![]);
-        let placement = Placement::Static(epoch_to_duration(time));
+        let placement = Placement::Static(DenseTime::first_at(epoch_to_duration(time)));
         let ops_consumer = Ops {
             placement,
             bump: &bump,
             operations: &operations,
+            order: self.order.clone(),
         };
 
         let _duration = activity.run(ops_consumer)?;
@@ -86,7 +91,6 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         self.activities.insert(
             id,
             DecomposedActivity {
-                _time: time,
                 activity: activity_pointer,
                 operations: operations.into_inner(),
             },
@@ -115,8 +119,12 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
         bounds: impl RangeBounds<Time>,
     ) -> anyhow::Result<Vec<(Time, <R::Data as Data<'o>>::Read)>> {
         let mut nodes: Vec<MaybeGrounded<'o, R>> = self.timelines.range((
-            bounds.start_bound().map(|t| epoch_to_duration(*t)),
-            bounds.end_bound().map(|t| epoch_to_duration(*t)),
+            bounds
+                .start_bound()
+                .map(|t| DenseTime::first_at(epoch_to_duration(*t))),
+            bounds
+                .end_bound()
+                .map(|t| DenseTime::last_at(epoch_to_duration(*t))),
         ));
 
         let mut receivers: Vec<MaybeGroundedResult<R>> = Vec::with_capacity(nodes.len());
@@ -124,11 +132,11 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
 
         enum MaybeGroundedResult<'h, R: Resource> {
             Grounded(
-                Duration,
+                DenseTime,
                 Receiver<InternalResult<<R::Data as Data<'h>>::Read>>,
             ),
             Ungrounded(
-                Receiver<InternalResult<Duration>>,
+                Receiver<InternalResult<DenseTime>>,
                 Receiver<InternalResult<<R::Data as Data<'h>>::Read>>,
             ),
         }
@@ -182,14 +190,14 @@ impl<'o, M: Model<'o> + 'o> Plan<'o, M> {
             match receiver {
                 MaybeGroundedResult::Grounded(time, receiver) => {
                     if let Ok(read) = receiver.recv()? {
-                        result.push((duration_to_epoch(time), read))
+                        result.push((duration_to_epoch(time.when), read))
                     }
                 }
                 MaybeGroundedResult::Ungrounded(grounding_receiver, receiver) => {
                     if let (Ok(grounding_time), Ok(read)) =
                         (grounding_receiver.recv()?, receiver.recv()?)
                     {
-                        result.push((duration_to_epoch(grounding_time), read))
+                        result.push((duration_to_epoch(grounding_time.when), read))
                     }
                 }
             }
@@ -235,8 +243,4 @@ impl<'o, M: Model<'o>> Serialize for Plan<'o, M> {
         }
         seq.end()
     }
-}
-
-fn duration_to_epoch(duration: Duration) -> Time {
-    crate::internal::timeline::duration_to_epoch(duration)
 }

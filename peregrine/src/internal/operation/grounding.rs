@@ -12,6 +12,7 @@ use smallvec::SmallVec;
 
 #[allow(unused_imports)]
 use crate as peregrine;
+use crate::internal::macro_prelude::DenseTime;
 
 pub struct Delay<U> {
     pub min: Duration,
@@ -19,17 +20,19 @@ pub struct Delay<U> {
     pub node: U,
 }
 
+// Delay nodes only emit a plain duration, not a DenseTime.
+// The order is added at the boundary between Continuation and GroundingContinuation.
 peregrine::resource!(pub peregrine_grounding: Duration;);
 
 pub enum GroundingContinuation<'o> {
     Node(usize, &'o dyn GroundingDownstream<'o>),
-    Root(oneshot::Sender<InternalResult<Duration>>),
+    Root(oneshot::Sender<InternalResult<DenseTime>>),
 }
 
 impl<'o> GroundingContinuation<'o> {
     pub fn run<'s>(
         self,
-        value: InternalResult<Duration>,
+        value: InternalResult<DenseTime>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
@@ -46,21 +49,21 @@ impl<'o> GroundingContinuation<'o> {
 }
 
 pub struct UngroundedUpstreamResolver<'o, R: Resource> {
-    time: Duration,
-    grounded_upstream: Option<(Duration, &'o dyn Upstream<'o, R>)>,
+    time: DenseTime,
+    grounded_upstream: Option<(DenseTime, &'o dyn Upstream<'o, R>)>,
     ungrounded_upstreams: UpstreamVec<'o, R>,
-    grounding_responses: Mutex<SmallVec<InternalResult<(usize, Duration)>, 1>>,
+    grounding_responses: Mutex<SmallVec<InternalResult<(usize, DenseTime)>, 1>>,
     continuation: Mutex<Option<Continuation<'o, R>>>,
     downstream: Mutex<Option<&'o dyn Downstream<'o, R>>>,
 
     #[allow(clippy::type_complexity)]
-    cached_decision: Mutex<Option<InternalResult<(Duration, &'o dyn Upstream<'o, R>)>>>,
+    cached_decision: Mutex<Option<InternalResult<(DenseTime, &'o dyn Upstream<'o, R>)>>>,
 }
 
 impl<'o, R: Resource> UngroundedUpstreamResolver<'o, R> {
     pub(crate) fn new(
-        time: Duration,
-        grounded: Option<(Duration, &'o dyn Upstream<'o, R>)>,
+        time: DenseTime,
+        grounded: Option<(DenseTime, &'o dyn Upstream<'o, R>)>,
         ungrounded: UpstreamVec<'o, R>,
     ) -> Self {
         Self {
@@ -90,9 +93,13 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
         if let Some(r) = *decision {
             match r {
                 Ok((_, u)) => u.request(continuation, false, scope, timelines, env.increment()),
-                Err(_) => {
-                    continuation.run(Err(ObservedErrorOutput), scope, timelines, env.increment())
-                }
+                Err(_) => continuation.run(
+                    Err(ObservedErrorOutput),
+                    0,
+                    scope,
+                    timelines,
+                    env.increment(),
+                ),
             }
             return;
         }
@@ -132,7 +139,7 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
         );
     }
 
-    fn notify_downstreams(&self, time_of_change: Duration) {
+    fn notify_downstreams(&self, time_of_change: DenseTime) {
         let mut downstream = self.downstream.lock();
         let retain = if let Some(d) = &*downstream {
             d.clear_upstream(Some(time_of_change))
@@ -165,7 +172,7 @@ impl<'o, R: Resource> Upstream<'o, R> for UngroundedUpstreamResolver<'o, R> {
 impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o, R> {
     fn respond_grounding<'s>(
         &self,
-        value: InternalResult<(usize, Duration)>,
+        value: InternalResult<(usize, DenseTime)>,
         scope: &Scope<'s>,
         timelines: &'s Timelines<'o>,
         env: ExecEnvironment<'s, 'o>,
@@ -184,7 +191,13 @@ impl<'o, R: Resource> GroundingDownstream<'o> for UngroundedUpstreamResolver<'o,
             match folded_result {
                 Err(_) => {
                     *decision = Some(Err(ObservedErrorOutput));
-                    continuation.run(Err(ObservedErrorOutput), scope, timelines, env.increment());
+                    continuation.run(
+                        Err(ObservedErrorOutput),
+                        0,
+                        scope,
+                        timelines,
+                        env.increment(),
+                    );
                 }
                 Ok(vec) => {
                     let earliest_ungrounded = vec
