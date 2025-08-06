@@ -1,17 +1,11 @@
 [workspace]
 members = [
     "peregrine",
-    "peregrine_macros",
-    "potato_sat",
     "serde_closure",
-    "aerie_lander",
 ]
-exclude = [
-    "perf",
-    "perf/perf_macros"
-]
+exclude = []
 default-members = [
-    "peregrine", "potato_sat", "aerie_lander"
+    "peregrine"
 ]
 
 resolver = "2"

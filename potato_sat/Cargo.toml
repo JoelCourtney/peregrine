@@ -1,9 +1,0 @@
-[package]
-name = "potato_sat"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-peregrine = { path = "../peregrine", features = ["serde"] }
-serde = { version = "1.0.217", features = ["derive"] }
-typetag = "0.2.20"
