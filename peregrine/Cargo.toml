@@ -17,6 +17,9 @@ categories = ["aerospace::simulation", "simulation"]
 [dependencies]
 smol = "2.0"
 async-trait = "0.1"
-
+type-map = "0.5"
+ahash = "0.8"
+dashmap = "6.1"
+derive_more = { version = "2.0", features = ["deref"] }
 
 [dev-dependencies]

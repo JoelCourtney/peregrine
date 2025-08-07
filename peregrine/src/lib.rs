@@ -1,3 +1,5 @@
+pub mod memo;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,14 +10,13 @@ pub trait Node {
     type System;
     type Output;
 
-    async fn run<'s>(&self, sys: &'s Self::System, env: Exec<'s>) -> Self::Output;
+    async fn run<'s>(&self, sys: &'s Self::System, ex: Exec<'s>) -> Self::Output;
 }
 
 #[derive(Clone)]
 pub struct Exec<'s> {
     executor: Arc<Executor<'s>>,
     stack_counter: usize,
-    _history: (),
 }
 
 impl<'s> Exec<'s> {
@@ -23,7 +24,6 @@ impl<'s> Exec<'s> {
         Exec {
             executor: Arc::new(Executor::new()),
             stack_counter: 0,
-            _history: (),
         }
     }
 
@@ -36,15 +36,14 @@ impl<'s> Exec<'s> {
     }
 
     pub fn run_blocking<S, O: Send + 's>(sys: &S, node: &impl Node<System = S, Output = O>) -> O {
-        let exec = Exec::new();
-        smol::block_on(exec.executor.run(node.run(sys, exec.increment())))
+        let ex = Exec::new();
+        smol::block_on(ex.executor.run(node.run(sys, ex.increment())))
     }
 
     fn increment(&self) -> Self {
         Exec {
             executor: self.executor.clone(),
             stack_counter: self.stack_counter + 1,
-            _history: (),
         }
     }
 }
@@ -78,9 +77,9 @@ mod tests {
             type System = Arc<A>;
             type Output = String;
 
-            async fn run<'s>(&self, sys: &'s Arc<A>, env: Exec<'s>) -> String {
+            async fn run<'s>(&self, sys: &'s Arc<A>, ex: Exec<'s>) -> String {
                 *(self.0.lock().await) = Some(Arc::downgrade(sys));
-                format!("Hello, {}", env.run(&(), &**sys).await)
+                format!("Hello, {}", ex.run(&(), &**sys).await)
             }
         }
 
@@ -100,12 +99,12 @@ mod tests {
             type System = Vec<A>;
             type Output = u32;
 
-            async fn run<'s>(&self, sys: &'s Vec<A>, env: Exec<'s>) -> u32 {
+            async fn run<'s>(&self, sys: &'s Vec<A>, ex: Exec<'s>) -> u32 {
                 if self.index == 0 {
                     self.value
                 } else {
                     let upstream = &sys[self.index - 1];
-                    self.value + env.run(sys, upstream).await
+                    self.value + ex.run(sys, upstream).await
                 }
             }
         }
