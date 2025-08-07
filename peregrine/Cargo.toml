@@ -15,5 +15,8 @@ categories = ["aerospace::simulation", "simulation"]
 
 
 [dependencies]
+smol = "2.0"
+async-trait = "0.1"
+
 
 [dev-dependencies]
