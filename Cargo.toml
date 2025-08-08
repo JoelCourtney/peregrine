@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "peregrine",
-    "serde_closure",
 ]
 exclude = []
 default-members = [

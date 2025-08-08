@@ -1,4 +1,6 @@
+pub mod cache;
 pub mod memo;
+pub mod read;
 
 use std::sync::Arc;
 
@@ -6,11 +8,11 @@ use async_trait::async_trait;
 use smol::Executor;
 
 #[async_trait]
-pub trait Node {
-    type System;
-    type Output;
+pub trait Node: Send + Sync {
+    type Context: Send + Sync;
+    type Output: Send;
 
-    async fn run<'s>(&self, sys: &'s Self::System, ex: Exec<'s>) -> Self::Output;
+    async fn run<'s>(&self, ctx: &'s Self::Context, ex: Exec<'s>) -> Self::Output;
 }
 
 #[derive(Clone)]
@@ -27,17 +29,17 @@ impl<'s> Exec<'s> {
         }
     }
 
-    pub async fn run<S, O: Send + 's>(
+    pub async fn run<C, O: Send + 's>(
         &self,
-        sys: &'s S,
-        node: &'s impl Node<System = S, Output = O>,
+        ctx: &'s C,
+        node: &'s impl Node<Context = C, Output = O>,
     ) -> O {
-        self.executor.spawn(node.run(sys, self.increment())).await
+        self.executor.spawn(node.run(ctx, self.increment())).await
     }
 
-    pub fn run_blocking<S, O: Send + 's>(sys: &S, node: &impl Node<System = S, Output = O>) -> O {
+    pub fn run_blocking<C, O: Send + 's>(ctx: &C, node: &impl Node<Context = C, Output = O>) -> O {
         let ex = Exec::new();
-        smol::block_on(ex.executor.run(node.run(sys, ex.increment())))
+        smol::block_on(ex.executor.run(node.run(ctx, ex.increment())))
     }
 
     fn increment(&self) -> Self {
@@ -62,10 +64,10 @@ mod tests {
 
         #[async_trait]
         impl Node for A {
-            type System = ();
+            type Context = ();
             type Output = usize;
 
-            async fn run<'s>(&self, _sys: &'s (), _env: Exec<'s>) -> usize {
+            async fn run<'s>(&self, _ctx: &'s (), _env: Exec<'s>) -> usize {
                 5
             }
         }
@@ -74,12 +76,12 @@ mod tests {
 
         #[async_trait]
         impl Node for B {
-            type System = Arc<A>;
+            type Context = Arc<A>;
             type Output = String;
 
-            async fn run<'s>(&self, sys: &'s Arc<A>, ex: Exec<'s>) -> String {
-                *(self.0.lock().await) = Some(Arc::downgrade(sys));
-                format!("Hello, {}", ex.run(&(), &**sys).await)
+            async fn run<'s>(&self, ctx: &'s Arc<A>, ex: Exec<'s>) -> String {
+                *(self.0.lock().await) = Some(Arc::downgrade(ctx));
+                format!("Hello, {}", ex.run(&(), &**ctx).await)
             }
         }
 
@@ -96,15 +98,15 @@ mod tests {
 
         #[async_trait]
         impl Node for A {
-            type System = Vec<A>;
+            type Context = Vec<A>;
             type Output = u32;
 
-            async fn run<'s>(&self, sys: &'s Vec<A>, ex: Exec<'s>) -> u32 {
+            async fn run<'s>(&self, ctx: &'s Vec<A>, ex: Exec<'s>) -> u32 {
                 if self.index == 0 {
                     self.value
                 } else {
-                    let upstream = &sys[self.index - 1];
-                    self.value + ex.run(sys, upstream).await
+                    let upstream = &ctx[self.index - 1];
+                    self.value + ex.run(ctx, upstream).await
                 }
             }
         }

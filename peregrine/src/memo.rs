@@ -1,5 +1,6 @@
 #![doc(hidden)]
 
+use crate::{Exec, Node, read::Readable};
 use ahash::AHasher;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -10,16 +11,13 @@ use std::{
 };
 use type_map::concurrent::TypeMap;
 
-use crate::{Exec, Node};
-
 #[async_trait]
 pub trait Memoized {
-    type System: Sync;
+    type Context: Send + Sync;
     type Input: Hash + Send;
-    type Output: for<'h> Memo<'h>;
-    const ID: u64;
+    type Output: Readable;
 
-    fn input(&self, sys: &Self::System) -> Self::Input;
+    fn input(&self, ctx: &Self::Context) -> Self::Input;
     async fn run<'s>(&self, input: &Self::Input, env: Exec<'s>) -> Self::Output;
 }
 
@@ -27,21 +25,20 @@ pub trait Memoized {
 pub struct MemoizedNode<'h, M: Memoized> {
     #[deref]
     node: M,
-    memos: &'h InnerMemos<M::Output>,
+    memos: &'h InnerMemos<M>,
 }
 
 #[async_trait]
 impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
-    type System = M::System;
-    type Output = <M::Output as Memo<'h>>::Read;
+    type Context = M::Context;
+    type Output = <M::Output as Readable>::Read;
 
-    async fn run<'s>(&self, sys: &'s Self::System, env: Exec<'s>) -> Self::Output {
+    async fn run<'s>(&self, ctx: &'s Self::Context, env: Exec<'s>) -> Self::Output {
         use std::hash::Hasher;
 
-        let input = self.node.input(sys);
+        let input = self.node.input(ctx);
         let mut hasher = PeregrineDefaultHashBuilder::default();
         input.hash(&mut hasher);
-        M::ID.hash(&mut hasher);
         let hash = hasher.finish();
 
         if let Some(o) = self.memos.get(hash) {
@@ -51,12 +48,6 @@ impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
             self.memos.insert(hash, output)
         }
     }
-}
-
-pub trait Memo<'h>: Send + Sync + 'static {
-    type Read;
-
-    fn read(&self) -> Self::Read;
 }
 
 pub type PeregrineDefaultHashBuilder = AHasher;
@@ -69,11 +60,10 @@ impl Memos {
     pub fn new() -> Self {
         Memos(RefCell::new(TypeMap::new()))
     }
-    pub fn memoize<M: Memoized>(&self, node: M) -> MemoizedNode<'_, M> {
+    pub fn memoize<M: Memoized + 'static>(&self, node: M) -> MemoizedNode<'_, M> {
         let mut map = self.0.borrow_mut();
-        let inner: &InnerMemos<M::Output> = map.entry().or_insert_with(InnerMemos::default);
-        let transmuted =
-            unsafe { std::mem::transmute::<&InnerMemos<M::Output>, &InnerMemos<M::Output>>(inner) };
+        let inner: &InnerMemos<M> = map.entry().or_insert_with(InnerMemos::default);
+        let transmuted = unsafe { std::mem::transmute::<&InnerMemos<M>, &InnerMemos<M>>(inner) };
         MemoizedNode {
             node,
             memos: transmuted,
@@ -88,21 +78,21 @@ impl From<TypeMap> for Memos {
 }
 
 /// See [Resource].
-struct InnerMemos<T: for<'h> Memo<'h>>(DashMap<u64, T, PassThroughHashBuilder>);
+struct InnerMemos<M: Memoized>(DashMap<u64, M::Output, PassThroughHashBuilder>);
 
-impl<T: for<'h> Memo<'h>> Default for InnerMemos<T> {
+impl<M: Memoized> Default for InnerMemos<M> {
     fn default() -> Self {
         InnerMemos(DashMap::with_hasher(PassThroughHashBuilder))
     }
 }
 
-impl<T: for<'h> Memo<'h>> InnerMemos<T> {
-    fn insert<'h>(&self, hash: u64, value: T) -> <T as Memo<'h>>::Read {
+impl<M: Memoized> InnerMemos<M> {
+    fn insert(&self, hash: u64, value: M::Output) -> <M::Output as Readable>::Read {
         let inserted = self.0.entry(hash).or_insert(value);
         inserted.read()
     }
 
-    fn get<'h>(&self, hash: u64) -> Option<<T as Memo<'h>>::Read> {
+    fn get(&self, hash: u64) -> Option<<M::Output as Readable>::Read> {
         self.0.get(&hash).map(move |r| r.value().read())
     }
 }
@@ -148,7 +138,7 @@ impl BuildHasher for PassThroughHashBuilder {
     }
 }
 
-impl Memo<'_> for usize {
+impl Readable for usize {
     type Read = Self;
 
     fn read(&self) -> Self::Read {
@@ -158,14 +148,12 @@ impl Memo<'_> for usize {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicU32;
-
-    use async_trait::async_trait;
-
     use crate::{
         Exec,
         memo::{Memoized, Memos},
     };
+    use async_trait::async_trait;
+    use std::sync::atomic::AtomicU32;
 
     #[test]
     fn memo() {
@@ -173,12 +161,11 @@ mod tests {
 
         #[async_trait]
         impl Memoized for A {
-            type System = ();
+            type Context = ();
             type Input = usize;
             type Output = usize;
-            const ID: u64 = 1;
 
-            fn input(&self, _sys: &Self::System) -> Self::Input {
+            fn input(&self, _ctx: &Self::Context) -> Self::Input {
                 5
             }
 
