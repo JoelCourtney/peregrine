@@ -13,11 +13,10 @@ use type_map::concurrent::TypeMap;
 
 #[async_trait]
 pub trait Memoized {
-    type Context: Send + Sync;
     type Input: Hash + Send;
     type Output: Readable;
 
-    fn input(&self, ctx: &Self::Context) -> Self::Input;
+    fn input(&self) -> Self::Input;
     async fn run<'s>(&self, input: &Self::Input, env: Exec<'s>) -> Self::Output;
 }
 
@@ -30,13 +29,12 @@ pub struct MemoizedNode<'h, M: Memoized> {
 
 #[async_trait]
 impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
-    type Context = M::Context;
     type Output = <M::Output as Readable>::Read;
 
-    async fn run<'s>(&self, ctx: &'s Self::Context, env: Exec<'s>) -> Self::Output {
+    async fn run<'s>(&self, env: Exec<'s>) -> Self::Output {
         use std::hash::Hasher;
 
-        let input = self.node.input(ctx);
+        let input = self.node.input();
         let mut hasher = PeregrineDefaultHashBuilder::default();
         input.hash(&mut hasher);
         let hash = hasher.finish();
@@ -161,11 +159,10 @@ mod tests {
 
         #[async_trait]
         impl Memoized for A {
-            type Context = ();
             type Input = usize;
             type Output = usize;
 
-            fn input(&self, _ctx: &Self::Context) -> Self::Input {
+            fn input(&self) -> Self::Input {
                 5
             }
 
@@ -182,14 +179,14 @@ mod tests {
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
 
-        assert_eq!(Exec::run_blocking(&(), &a1), 6);
-        assert_eq!(Exec::run_blocking(&(), &a2), 6);
+        assert_eq!(Exec::run_blocking(&a1), 6);
+        assert_eq!(Exec::run_blocking(&a2), 6);
 
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
 
-        assert_eq!(Exec::run_blocking(&(), &a1), 6);
-        assert_eq!(Exec::run_blocking(&(), &a2), 6);
+        assert_eq!(Exec::run_blocking(&a1), 6);
+        assert_eq!(Exec::run_blocking(&a2), 6);
 
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);

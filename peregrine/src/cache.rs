@@ -48,15 +48,14 @@ impl<N: Node> Node for Cached<N>
 where
     N::Output: Readable,
 {
-    type Context = N::Context;
     type Output = <N::Output as Readable>::Read;
 
-    async fn run<'s>(&self, system: &'s N::Context, ex: Exec<'s>) -> Self::Output {
+    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
         let mut result = self.result.lock().await;
         match result.as_ref() {
             Some(output) => output.read(),
             None => {
-                let output = self.node.run(system, ex).await;
+                let output = self.node.run(ex).await;
                 let read = output.read();
                 *result = Some(output);
                 read
@@ -77,10 +76,9 @@ mod tests {
 
         #[async_trait]
         impl Node for A {
-            type Context = ();
             type Output = usize;
 
-            async fn run<'s>(&self, _ctx: &'s (), _env: Exec<'s>) -> Self::Output {
+            async fn run<'s>(&self, _env: Exec<'s>) -> Self::Output {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 6
             }
@@ -92,14 +90,14 @@ mod tests {
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
 
-        assert_eq!(Exec::run_blocking(&(), &a1), 6);
-        assert_eq!(Exec::run_blocking(&(), &a2), 6);
+        assert_eq!(Exec::run_blocking(&a1), 6);
+        assert_eq!(Exec::run_blocking(&a2), 6);
 
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-        assert_eq!(Exec::run_blocking(&(), &a1), 6);
-        assert_eq!(Exec::run_blocking(&(), &a2), 6);
+        assert_eq!(Exec::run_blocking(&a1), 6);
+        assert_eq!(Exec::run_blocking(&a2), 6);
 
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 1);
