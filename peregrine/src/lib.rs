@@ -1,17 +1,41 @@
 pub mod cache;
 pub mod memo;
 pub mod read;
+pub mod structure;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use smol::Executor;
 
-#[async_trait]
 pub trait Node: Send + Sync {
     type Output: Send;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output;
+    fn run<'s>(&self, ex: Exec<'s>) -> impl Future<Output=Self::Output> + Send;
+}
+
+impl<N: Node> Node for &N {
+    type Output = N::Output;
+
+    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
+        (*self).run(ex).await
+    }
+}
+
+#[async_trait]
+pub trait DynNode: Send + Sync {
+    type Output: Send;
+
+    async fn run_dyn<'s>(&self, ex: Exec<'s>) -> Self::Output;
+}
+
+#[async_trait]
+impl<N: Node> DynNode for N {
+    type Output = N::Output;
+
+    async fn run_dyn<'s>(&self, ex: Exec<'s>) -> Self::Output {
+        self.run(ex).await
+    }
 }
 
 #[derive(Clone)]

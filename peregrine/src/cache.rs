@@ -1,6 +1,5 @@
 use std::sync::Weak;
 
-use async_trait::async_trait;
 use derive_more::Deref;
 use smol::lock::Mutex;
 
@@ -43,7 +42,6 @@ impl<N: Node> ErasedCached for Cached<N> {
     }
 }
 
-#[async_trait]
 impl<N: Node> Node for Cached<N>
 where
     N::Output: Readable,
@@ -67,14 +65,12 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{Exec, Node, cache::Cached};
-    use async_trait::async_trait;
     use std::sync::atomic::AtomicU32;
 
     #[test]
     fn cache() {
         struct A(AtomicU32);
 
-        #[async_trait]
         impl Node for A {
             type Output = usize;
 

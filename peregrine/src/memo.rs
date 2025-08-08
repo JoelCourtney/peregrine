@@ -2,7 +2,6 @@
 
 use crate::{Exec, Node, read::Readable};
 use ahash::AHasher;
-use async_trait::async_trait;
 use dashmap::DashMap;
 use derive_more::Deref;
 use std::{
@@ -11,13 +10,12 @@ use std::{
 };
 use type_map::concurrent::TypeMap;
 
-#[async_trait]
 pub trait Memoized {
     type Input: Hash + Send;
     type Output: Readable;
 
     fn input(&self) -> Self::Input;
-    async fn run<'s>(&self, input: &Self::Input, env: Exec<'s>) -> Self::Output;
+    fn run<'s>(&self, input: &Self::Input, env: Exec<'s>) -> impl Future<Output=Self::Output> + Send;
 }
 
 #[derive(Deref)]
@@ -27,7 +25,6 @@ pub struct MemoizedNode<'h, M: Memoized> {
     memos: &'h InnerMemos<M>,
 }
 
-#[async_trait]
 impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
     type Output = <M::Output as Readable>::Read;
 
@@ -150,14 +147,12 @@ mod tests {
         Exec,
         memo::{Memoized, Memos},
     };
-    use async_trait::async_trait;
     use std::sync::atomic::AtomicU32;
 
     #[test]
     fn memo() {
         struct A(AtomicU32);
 
-        #[async_trait]
         impl Memoized for A {
             type Input = usize;
             type Output = usize;
