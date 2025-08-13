@@ -1,7 +1,7 @@
 #![doc(hidden)]
 
-use crate::{Exec, Node, read::Readable};
 use ahash::AHasher;
+use async_trait::async_trait;
 use dashmap::DashMap;
 use derive_more::Deref;
 use std::{
@@ -10,12 +10,18 @@ use std::{
 };
 use type_map::concurrent::TypeMap;
 
+use crate::{Exec, Node, View};
+
 pub trait Memoized {
     type Input: Hash + Send;
-    type Output: Readable;
+    type Output: View;
 
     fn input(&self) -> Self::Input;
-    fn run<'s>(&self, input: &Self::Input, env: Exec<'s>) -> impl Future<Output=Self::Output> + Send;
+    fn run<'s>(
+        &self,
+        input: &Self::Input,
+        env: Exec<'s>,
+    ) -> impl Future<Output = Self::Output> + Send;
 }
 
 #[derive(Deref)]
@@ -25,8 +31,9 @@ pub struct MemoizedNode<'h, M: Memoized> {
     memos: &'h InnerMemos<M>,
 }
 
+#[async_trait]
 impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
-    type Output = <M::Output as Readable>::Read;
+    type Output = <M::Output as View>::Result;
 
     async fn run<'s>(&self, env: Exec<'s>) -> Self::Output {
         use std::hash::Hasher;
@@ -82,13 +89,13 @@ impl<M: Memoized> Default for InnerMemos<M> {
 }
 
 impl<M: Memoized> InnerMemos<M> {
-    fn insert(&self, hash: u64, value: M::Output) -> <M::Output as Readable>::Read {
+    fn insert(&self, hash: u64, value: M::Output) -> <M::Output as View>::Result {
         let inserted = self.0.entry(hash).or_insert(value);
-        inserted.read()
+        inserted.view()
     }
 
-    fn get(&self, hash: u64) -> Option<<M::Output as Readable>::Read> {
-        self.0.get(&hash).map(move |r| r.value().read())
+    fn get(&self, hash: u64) -> Option<<M::Output as View>::Result> {
+        self.0.get(&hash).map(move |r| r.value().view())
     }
 }
 
@@ -130,14 +137,6 @@ impl BuildHasher for PassThroughHashBuilder {
 
     fn build_hasher(&self) -> PassThroughHasher {
         PassThroughHasher(0)
-    }
-}
-
-impl Readable for usize {
-    type Read = Self;
-
-    fn read(&self) -> Self::Read {
-        *self
     }
 }
 
