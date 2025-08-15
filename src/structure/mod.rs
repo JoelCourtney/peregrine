@@ -1,10 +1,10 @@
-pub mod stages;
 pub mod log;
+pub mod stages;
 
-use crate::{DynNode, Exec, IntoNode, Node};
-use async_trait::async_trait;
+use crate::{DynNode, IntoNode, Node};
+use forte::Worker;
 use parking_lot::{Mutex, RwLock};
-use std::{collections::BTreeMap, ops::RangeBounds, sync::Arc};
+use std::{collections::BTreeMap, mem::MaybeUninit, ops::RangeBounds, sync::Arc};
 
 struct OrderArc<I: Ord + Copy, V> {
     data: Arc<OrderData<I, V>>,
@@ -123,12 +123,19 @@ impl<I: Ord + Copy, V> Order<I, V> {
     pub fn read_at_end(&self) -> OrderUpstreamFinder<I, V> {
         OrderUpstreamFinder(self.0.clone_at_end())
     }
-    
-    pub fn collect(&self, index: I, filter: impl Fn(&I) -> bool + Send + Sync + 'static) -> OrderCollector<I, V> {
+
+    pub fn collect(
+        &self,
+        index: I,
+        filter: impl Fn(&I) -> bool + Send + Sync + 'static,
+    ) -> OrderCollector<I, V> {
         OrderCollector(self.0.clone_at_index(index), Box::new(filter))
     }
-    
-    pub fn collect_at_end(&self, filter: impl Fn(&I) -> bool + Send + Sync + 'static) -> OrderCollector<I, V> {
+
+    pub fn collect_at_end(
+        &self,
+        filter: impl Fn(&I) -> bool + Send + Sync + 'static,
+    ) -> OrderCollector<I, V> {
         OrderCollector(self.0.clone_at_end(), Box::new(filter))
     }
 
@@ -147,12 +154,10 @@ impl<I: Ord + Copy, V> Order<I, V> {
 #[derive(Clone)]
 pub struct OrderUpstreamFinder<I: Ord + Copy, V>(OrderArc<I, V>);
 
-#[async_trait]
 impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderUpstreamFinder<I, V> {
     type Output = V;
 
-    #[allow(clippy::await_holding_lock)]
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
+    fn run(&self, s: &Worker) -> Self::Output {
         let order = self
             .0
             .data
@@ -165,19 +170,16 @@ impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderUpstreamFinder<I
         };
         last.map(|(_, node)| node)
             .unwrap_or(&self.0.data.initial_condition)
-            .run(ex)
-            .await
+            .run(s)
     }
 }
 
 pub struct OrderCollector<I: Ord + Copy, V>(OrderArc<I, V>, Box<dyn Fn(&I) -> bool + Send + Sync>);
 
-#[async_trait]
 impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> {
     type Output = Vec<(I, V)>;
 
-    #[allow(clippy::await_holding_lock)]
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
+    fn run(&self, s: &Worker) -> Self::Output {
         let order = self
             .0
             .data
@@ -188,13 +190,43 @@ impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> 
             MaybeInf::Value(v) => order.range(..v),
             MaybeInf::Inf => order.range(..),
         };
-        let mut result = vec![];
-        for (i, n) in iter {
-            if (self.1)(i) {
-                result.push((*i, n.run(ex.increment()).await));
+
+        let input: Vec<(I, &DynNode<V>)> = iter
+            .filter(|(i, _)| (self.1)(i))
+            .map(|(i, n)| (*i, n))
+            .collect();
+        let mut output = Vec::with_capacity(input.len());
+
+        for (i, _) in &input {
+            output.push((*i, MaybeUninit::uninit()));
+        }
+
+        join_all(s, &input, output.as_mut_slice());
+
+        fn join_all<I: Copy + Ord + Send + Sync, V: Send + Sync>(
+            w: &Worker,
+            input: &[(I, &DynNode<V>)],
+            output: &mut [(I, MaybeUninit<V>)],
+        ) {
+            if input.len() == 1 {
+                let (i, n) = input[0];
+                output[0] = (i, MaybeUninit::new(n.run(w)));
+            } else {
+                let mid = input.len() / 2;
+                let (left_in, right_in) = input.split_at(mid);
+                let (left_out, right_out) = output.split_at_mut(mid);
+                println!("splitting");
+                w.join(
+                    |w| join_all(w, left_in, left_out),
+                    |w| join_all(w, right_in, right_out),
+                );
             }
         }
-        result
+
+        output
+            .into_iter()
+            .map(|(i, v)| (i, unsafe { v.assume_init() }))
+            .collect()
     }
 }
 
@@ -202,15 +234,14 @@ impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> 
 mod tests {
     use std::{ops::Add, sync::Arc};
 
-    use async_trait::async_trait;
+    use forte::Worker;
 
-    use crate::{Exec, IntoNode, Node};
+    use crate::{IntoNode, Node, run};
 
     use super::Order;
 
     struct AddNode<N: Node, M: Node>(N, M);
 
-    #[async_trait]
     impl<N: Node, M: Node + std::fmt::Debug> Node for AddNode<N, M>
     where
         N::Output: Add<M::Output>,
@@ -218,8 +249,8 @@ mod tests {
     {
         type Output = <N::Output as Add<M::Output>>::Output;
 
-        async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-            self.0.run(ex.increment()).await + self.1.run(ex.increment()).await
+        fn run(&self, s: &Worker) -> Self::Output {
+            self.0.run(s) + self.1.run(s)
         }
     }
 
@@ -235,7 +266,7 @@ mod tests {
         order_b.write("b", node_2.clone());
         order_a.write("c", node_3.clone());
 
-        assert_eq!(Exec::run_blocking(&order_a.read_at_end()), 6);
+        assert_eq!(run(&order_a.read_at_end()), 6);
 
         let weak_1 = Arc::downgrade(&node_1);
         let weak_2 = Arc::downgrade(&node_2);
@@ -274,7 +305,7 @@ mod tests {
         order_b.write("b", node_2.clone());
         order_a.write("c", node_3.clone());
 
-        assert_eq!(Exec::run_blocking(&order_a.read_at_end()), 6);
+        assert_eq!(run(&order_a.read_at_end()), 6);
 
         let weak_1 = Arc::downgrade(&node_1);
         let weak_2 = Arc::downgrade(&node_2);

@@ -18,4 +18,22 @@ pub trait View: Send + Sync + 'static {
     fn view(&self) -> Self::Result;
 }
 
-impl_view_for_copy!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, &'static str, bool, char);
+impl_view_for_copy!(
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32,
+    f64,
+    &'static str,
+    bool,
+    char
+);

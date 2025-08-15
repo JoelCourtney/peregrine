@@ -4,15 +4,13 @@ pub mod view;
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use smol::Executor;
+use forte::{ThreadPool, Worker};
 use view::View;
 
-#[async_trait]
 pub trait Node: Send + Sync {
     type Output: Send;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output;
+    fn run(&self, s: &Worker) -> Self::Output;
 
     fn should_not_spawn(&self) -> bool {
         false
@@ -21,12 +19,11 @@ pub trait Node: Send + Sync {
 
 type DynNode<O> = Box<dyn Node<Output = O>>;
 
-#[async_trait]
 impl<N: Node> Node for &N {
     type Output = N::Output;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-        (**self).run(ex).await
+    fn run(&self, s: &Worker) -> Self::Output {
+        (**self).run(s)
     }
 
     fn should_not_spawn(&self) -> bool {
@@ -34,12 +31,11 @@ impl<N: Node> Node for &N {
     }
 }
 
-#[async_trait]
 impl<N: Node + ?Sized> Node for Box<N> {
     type Output = N::Output;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-        (**self).run(ex).await
+    fn run(&self, s: &Worker) -> Self::Output {
+        (**self).run(s)
     }
 
     fn should_not_spawn(&self) -> bool {
@@ -47,12 +43,11 @@ impl<N: Node + ?Sized> Node for Box<N> {
     }
 }
 
-#[async_trait]
 impl<N: Node> Node for Arc<N> {
     type Output = N::Output;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-        (**self).run(ex).await
+    fn run(&self, s: &Worker) -> Self::Output {
+        (**self).run(s)
     }
 
     fn should_not_spawn(&self) -> bool {
@@ -67,11 +62,10 @@ pub trait IntoNode<N: Node> {
 #[derive(Debug)]
 pub struct ViewWrapper<O>(O);
 
-#[async_trait]
 impl<O: View> Node for ViewWrapper<O> {
     type Output = O::Result;
 
-    async fn run<'s>(&self, _: Exec<'s>) -> Self::Output {
+    fn run(&self, _: &Worker) -> Self::Output {
         self.0.view()
     }
 
@@ -94,11 +88,10 @@ impl<N: Node> IntoNode<N> for N {
 
 pub struct FnNodeWrapper<F>(F);
 
-#[async_trait]
 impl<O: Send, F: Fn() -> O + Send + Sync> Node for FnNodeWrapper<F> {
     type Output = O;
 
-    async fn run<'s>(&self, _ex: Exec<'s>) -> Self::Output {
+    fn run(&self, _: &Worker) -> Self::Output {
         self.0()
     }
 }
@@ -111,49 +104,17 @@ impl<O: Send, F: Fn() -> O + Send + Sync> IntoNode<FnNodeWrapper<F>> for F {
 
 pub struct ExFnNodeWrapper<F>(F);
 
-#[async_trait]
-impl<O: Send, F: Fn(Exec<'_>) -> O + Send + Sync> Node for ExFnNodeWrapper<F> {
+impl<O: Send, F: Fn(&Worker) -> O + Send + Sync> Node for ExFnNodeWrapper<F> {
     type Output = O;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-        self.0(ex)
+    fn run(&self, s: &Worker) -> Self::Output {
+        self.0(s)
     }
 }
 
-impl<O: Send, F: Fn(Exec<'_>) -> O + Send + Sync> IntoNode<ExFnNodeWrapper<F>> for F {
+impl<O: Send, F: Fn(&Worker) -> O + Send + Sync> IntoNode<ExFnNodeWrapper<F>> for F {
     fn into_node(self) -> ExFnNodeWrapper<F> {
         ExFnNodeWrapper(self)
-    }
-}
-
-#[derive(Clone)]
-pub struct Exec<'s> {
-    executor: Arc<Executor<'s>>,
-    stack_counter: usize,
-}
-
-impl<'s> Exec<'s> {
-    fn new() -> Self {
-        Exec {
-            executor: Arc::new(Executor::new()),
-            stack_counter: 0,
-        }
-    }
-
-    pub async fn run<O: Send + 's>(&self, node: &'s impl Node<Output = O>) -> O {
-        self.executor.spawn(node.run(self.increment())).await
-    }
-
-    pub fn run_blocking<N: Node>(node: impl IntoNode<N>) -> N::Output {
-        let ex = Exec::new();
-        smol::block_on(ex.executor.run(node.into_node().run(ex.increment())))
-    }
-
-    fn increment(&self) -> Self {
-        Exec {
-            executor: self.executor.clone(),
-            stack_counter: self.stack_counter + 1,
-        }
     }
 }
 
@@ -161,4 +122,11 @@ pub trait Init {
     type Value;
 
     fn init(value: Self::Value) -> Self;
+}
+
+pub fn run<N: Node>(node: impl IntoNode<N>) -> N::Output {
+    static COMPUTE: ThreadPool = ThreadPool::new();
+    COMPUTE.resize_to_available();
+
+    COMPUTE.with_worker(|w| node.into_node().run(w))
 }

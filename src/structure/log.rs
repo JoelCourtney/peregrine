@@ -1,6 +1,6 @@
-use async_trait::async_trait;
+use forte::Worker;
 
-use crate::{Exec, IntoNode, Node};
+use crate::{IntoNode, Node};
 
 use super::{Order, OrderCollector};
 
@@ -66,7 +66,8 @@ impl<I: Ord + Copy, L: Ord + Copy + Send + Sync, V: Send + Sync + Clone + 'stati
             .last_in_range((t, l, 0)..(t, l, usize::MAX))
             .map(|(_, _, index)| index);
         let index = if let Some(i) = index { i + 1 } else { 0 };
-        self.0.write((t, l, index), SingleItemWrapper(log.into_node()));
+        self.0
+            .write((t, l, index), SingleItemWrapper(log.into_node()));
     }
 
     pub fn collect(&self) -> LogCollector<I, L, V> {
@@ -90,12 +91,11 @@ impl<I: Ord + Copy, L: Ord + Copy + Send + Sync, V: Send + Sync + Clone + 'stati
 
 pub struct SingleItemWrapper<N: Node>(N);
 
-#[async_trait]
 impl<V: 'static + Send + Sync, N: Node<Output = V>> Node for SingleItemWrapper<N> {
     type Output = Box<dyn Iterator<Item = V> + Send + Sync>;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-        Box::new(std::iter::once(self.0.run(ex).await))
+    fn run(&self, s: &Worker) -> Self::Output {
+        Box::new(std::iter::once(self.0.run(s)))
     }
 }
 
@@ -119,14 +119,13 @@ impl<I: Ord + Copy + Send + Sync, L: Ord + Copy + Send + Sync, V: Send + Sync + 
     }
 }
 
-#[async_trait]
 impl<I: Ord + Copy + Send + Sync, L: Ord + Copy + Send + Sync, V: Send + Sync + Clone + 'static>
     Node for LogCollector<I, L, V>
 {
     type Output = Vec<LogEntry<I, L, V>>;
 
-    async fn run<'s>(&self, ex: Exec<'s>) -> Self::Output {
-        let v = self.0.run(ex).await;
+    fn run(&self, ex: &Worker) -> Self::Output {
+        let v = self.0.run(ex);
         v.into_iter()
             .flat_map(|((i, l, _), v)| {
                 v.map(move |v| LogEntry {
@@ -148,14 +147,13 @@ pub struct LogEntry<I, L, V> {
 
 pub struct IterWrapper<I: Clone + IntoIterator>(I);
 
-#[async_trait]
 impl<I: Send + Sync + Clone + IntoIterator> Node for IterWrapper<I>
 where
     I::IntoIter: 'static + Send + Sync,
 {
     type Output = Box<dyn Iterator<Item = I::Item> + Send + Sync>;
 
-    async fn run<'s>(&self, _ex: Exec<'s>) -> Self::Output {
+    fn run(&self, _s: &Worker) -> Self::Output {
         Box::new(self.0.clone().into_iter())
     }
 }
@@ -171,7 +169,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{structure::log::LogEntry, Exec};
+    use crate::{run, structure::log::LogEntry};
 
     use super::Log;
 
@@ -182,11 +180,26 @@ mod tests {
         log.emit(0, "Hello, world!");
         log.emit_many(1, None);
         log.emit_many(2, vec!["A", "B"]);
-        
-        itertools::assert_equal(Exec::run_blocking(&log), vec![
-            LogEntry { index: 0, level: (), value: "Hello, world!" },
-            LogEntry { index: 2, level: (), value: "A" },
-            LogEntry { index: 2, level: (), value: "B" },
-        ]);
+
+        itertools::assert_equal(
+            run(&log),
+            vec![
+                LogEntry {
+                    index: 0,
+                    level: (),
+                    value: "Hello, world!",
+                },
+                LogEntry {
+                    index: 2,
+                    level: (),
+                    value: "A",
+                },
+                LogEntry {
+                    index: 2,
+                    level: (),
+                    value: "B",
+                },
+            ],
+        );
     }
 }

@@ -1,27 +1,23 @@
 #![doc(hidden)]
 
 use ahash::AHasher;
-use async_trait::async_trait;
 use dashmap::DashMap;
 use derive_more::Deref;
+use forte::Worker;
 use std::{
     cell::RefCell,
     hash::{BuildHasher, Hash, Hasher},
 };
 use type_map::concurrent::TypeMap;
 
-use crate::{Exec, Node, View};
+use crate::{Node, View};
 
 pub trait Memoized {
     type Input: Hash + Send;
     type Output: View;
 
     fn input(&self) -> Self::Input;
-    fn run<'s>(
-        &self,
-        input: &Self::Input,
-        env: Exec<'s>,
-    ) -> impl Future<Output = Self::Output> + Send;
+    fn run(&self, input: &Self::Input, s: &Worker) -> Self::Output;
 }
 
 #[derive(Deref)]
@@ -31,11 +27,10 @@ pub struct MemoizedNode<'h, M: Memoized> {
     memos: &'h InnerMemos<M>,
 }
 
-#[async_trait]
 impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
     type Output = <M::Output as View>::Result;
 
-    async fn run<'s>(&self, env: Exec<'s>) -> Self::Output {
+    fn run(&self, env: &Worker) -> Self::Output {
         use std::hash::Hasher;
 
         let input = self.node.input();
@@ -46,7 +41,7 @@ impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
         if let Some(o) = self.memos.get(hash) {
             o
         } else {
-            let output = self.node.run(&input, env).await;
+            let output = self.node.run(&input, env);
             self.memos.insert(hash, output)
         }
     }
@@ -142,9 +137,11 @@ impl BuildHasher for PassThroughHashBuilder {
 
 #[cfg(test)]
 mod tests {
+    use forte::Worker;
+
     use crate::{
-        Exec,
         memo::{Memoized, Memos},
+        run,
     };
     use std::sync::atomic::AtomicU32;
 
@@ -160,7 +157,7 @@ mod tests {
                 5
             }
 
-            async fn run<'s>(&self, input: &Self::Input, _env: Exec<'s>) -> Self::Output {
+            fn run(&self, input: &Self::Input, _: &Worker) -> Self::Output {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 input + 1
             }
@@ -173,14 +170,14 @@ mod tests {
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
 
-        assert_eq!(Exec::run_blocking(&a1), 6);
-        assert_eq!(Exec::run_blocking(&a2), 6);
+        assert_eq!(run(&a1), 6);
+        assert_eq!(run(&a2), 6);
 
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
 
-        assert_eq!(Exec::run_blocking(&a1), 6);
-        assert_eq!(Exec::run_blocking(&a2), 6);
+        assert_eq!(run(&a1), 6);
+        assert_eq!(run(&a2), 6);
 
         assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
