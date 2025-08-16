@@ -215,7 +215,6 @@ impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> 
                 let mid = input.len() / 2;
                 let (left_in, right_in) = input.split_at(mid);
                 let (left_out, right_out) = output.split_at_mut(mid);
-                println!("splitting");
                 w.join(
                     |w| join_all(w, left_in, left_out),
                     |w| join_all(w, right_in, right_out),
@@ -250,7 +249,8 @@ mod tests {
         type Output = <N::Output as Add<M::Output>>::Output;
 
         fn run(&self, s: &Worker) -> Self::Output {
-            self.0.run(s) + self.1.run(s)
+            let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
+            a + b
         }
     }
 

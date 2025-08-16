@@ -1,48 +1,73 @@
 #![doc(hidden)]
 
 use ahash::AHasher;
-use dashmap::DashMap;
-use derive_more::Deref;
 use forte::Worker;
+use quick_cache::{UnitWeighter, sync::Cache};
 use std::{
     cell::RefCell,
     hash::{BuildHasher, Hash, Hasher},
 };
 use type_map::concurrent::TypeMap;
 
-use crate::{Node, View};
+use crate::{
+    Data, Node,
+    cache::{CacheableNode, UpstreamReceiver},
+};
 
-pub trait Memoized {
+pub trait MemoizeableNode: Send + Sync {
     type Input: Hash + Send;
-    type Output: View;
+    type Context;
+    type Output: Data;
+    const CACHE_SIZE: usize;
 
-    fn input(&self) -> Self::Input;
-    fn run(&self, input: &Self::Input, s: &Worker) -> Self::Output;
+    fn input(&self, ctx: &mut Self::Context) -> Self::Input;
+    fn run(input: &Self::Input, s: &Worker) -> Self::Output;
 }
 
-#[derive(Deref)]
-pub struct MemoizedNode<'h, M: Memoized> {
-    #[deref]
+pub struct MemoizedNode<'h, M: MemoizeableNode> {
     node: M,
     memos: &'h InnerMemos<M>,
 }
 
-impl<'h, M: Memoized + Send + Sync> Node for MemoizedNode<'h, M> {
-    type Output = <M::Output as View>::Result;
+impl<'h, M: MemoizeableNode<Context = ()>> Node for MemoizedNode<'h, M> {
+    type Output = M::Output;
 
-    fn run(&self, env: &Worker) -> Self::Output {
+    fn run(&self, w: &Worker) -> Self::Output {
+        self.run_with_context(&mut (), w)
+    }
+}
+
+impl<'h, O: Send + Sync, M: MemoizeableNode<Output = O, Context = UpstreamReceiver<O>>>
+    CacheableNode for MemoizedNode<'h, M>
+{
+    type Output = M::Output;
+
+    fn run_with_receiver(
+        &self,
+        w: &Worker,
+        r: &mut UpstreamReceiver<Self::Output>,
+    ) -> Self::Output {
+        self.run_with_context(r, w)
+    }
+}
+
+impl<'h, M: MemoizeableNode> MemoizedNode<'h, M> {
+    #[allow(unused_must_use)]
+    fn run_with_context(&self, ctx: &mut M::Context, w: &Worker) -> M::Output {
         use std::hash::Hasher;
 
-        let input = self.node.input();
+        let input = self.node.input(ctx);
         let mut hasher = PeregrineDefaultHashBuilder::default();
         input.hash(&mut hasher);
         let hash = hasher.finish();
 
-        if let Some(o) = self.memos.get(hash) {
-            o
-        } else {
-            let output = self.node.run(&input, env);
-            self.memos.insert(hash, output)
+        match w.block_on(self.memos.get_value_or_guard_async(&hash)) {
+            Ok(v) => v,
+            Err(g) => {
+                let output = M::run(&input, w);
+                g.insert(output.clone());
+                output
+            }
         }
     }
 }
@@ -57,9 +82,17 @@ impl Memos {
     pub fn new() -> Self {
         Memos(RefCell::new(TypeMap::new()))
     }
-    pub fn memoize<M: Memoized + 'static>(&self, node: M) -> MemoizedNode<'_, M> {
+    pub fn memoize<M: MemoizeableNode + 'static>(&self, node: M) -> MemoizedNode<'_, M> {
         let mut map = self.0.borrow_mut();
-        let inner: &InnerMemos<M> = map.entry().or_insert_with(InnerMemos::default);
+        let inner: &InnerMemos<M> = map.entry().or_insert_with(|| {
+            InnerMemos::<M>::with(
+                M::CACHE_SIZE,
+                M::CACHE_SIZE as u64,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            )
+        });
         let transmuted = unsafe { std::mem::transmute::<&InnerMemos<M>, &InnerMemos<M>>(inner) };
         MemoizedNode {
             node,
@@ -74,27 +107,9 @@ impl From<TypeMap> for Memos {
     }
 }
 
-/// See [Resource].
-struct InnerMemos<M: Memoized>(DashMap<u64, M::Output, PassThroughHashBuilder>);
+type InnerMemos<M> =
+    Cache<u64, <M as MemoizeableNode>::Output, UnitWeighter, PassThroughHashBuilder>;
 
-impl<M: Memoized> Default for InnerMemos<M> {
-    fn default() -> Self {
-        InnerMemos(DashMap::with_hasher(PassThroughHashBuilder))
-    }
-}
-
-impl<M: Memoized> InnerMemos<M> {
-    fn insert(&self, hash: u64, value: M::Output) -> <M::Output as View>::Result {
-        let inserted = self.0.entry(hash).or_insert(value);
-        inserted.view()
-    }
-
-    fn get(&self, hash: u64) -> Option<<M::Output as View>::Result> {
-        self.0.get(&hash).map(move |r| r.value().view())
-    }
-}
-
-// i suspect the compiler will be able to turn this into a no-op
 pub struct PassThroughHasher(u64);
 
 impl Hasher for PassThroughHasher {
@@ -140,46 +155,47 @@ mod tests {
     use forte::Worker;
 
     use crate::{
-        memo::{Memoized, Memos},
+        memo::{MemoizeableNode, Memos},
         run,
     };
     use std::sync::atomic::AtomicU32;
 
     #[test]
     fn memo() {
-        struct A(AtomicU32);
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-        impl Memoized for A {
+        struct A;
+
+        impl MemoizeableNode for A {
             type Input = usize;
+            type Context = ();
             type Output = usize;
+            const CACHE_SIZE: usize = 10;
 
-            fn input(&self) -> Self::Input {
+            fn input(&self, _: &mut ()) -> Self::Input {
                 5
             }
 
-            fn run(&self, input: &Self::Input, _: &Worker) -> Self::Output {
-                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            fn run(input: &Self::Input, _: &Worker) -> Self::Output {
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 input + 1
             }
         }
 
         let memos = Memos::new();
-        let a1 = memos.memoize(A(AtomicU32::new(0)));
-        let a2 = memos.memoize(A(AtomicU32::new(0)));
+        let a1 = memos.memoize(A);
+        let a2 = memos.memoize(A);
 
-        assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 0);
-        assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
-
-        assert_eq!(run(&a1), 6);
-        assert_eq!(run(&a2), 6);
-
-        assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(COUNTER.load(std::sync::atomic::Ordering::SeqCst), 0);
 
         assert_eq!(run(&a1), 6);
         assert_eq!(run(&a2), 6);
 
-        assert_eq!(a1.0.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(a2.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(COUNTER.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        assert_eq!(run(&a1), 6);
+        assert_eq!(run(&a2), 6);
+
+        assert_eq!(COUNTER.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

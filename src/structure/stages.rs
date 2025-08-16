@@ -5,11 +5,19 @@ use std::{
 
 use forte::Worker;
 
-use crate::{IntoNode, Node};
+use crate::{Init, IntoNode, Node, data::Data};
 
 use super::{Order, OrderUpstreamFinder};
 
 pub struct Stages<S: Ord + Copy, V>(Order<(S, usize), V>);
+
+impl<S: Ord + Copy, V: Data> Init for Stages<S, V> {
+    type Value = V;
+
+    fn init(value: Self::Value) -> Self {
+        Self::new(value)
+    }
+}
 
 impl<S: Ord + Copy, V> Stages<S, V> {
     pub fn new<N: Node<Output = V> + 'static>(value: impl IntoNode<N>) -> Self {
@@ -90,7 +98,8 @@ where
     type Output = <N::Output as Add<M::Output>>::Output;
 
     fn run(&self, s: &Worker) -> Self::Output {
-        self.0.run(s) + self.1.run(s)
+        let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
+        a + b
     }
 }
 
@@ -110,7 +119,8 @@ where
     type Output = <N::Output as Mul<M::Output>>::Output;
 
     fn run(&self, s: &Worker) -> Self::Output {
-        self.0.run(s) * self.1.run(s)
+        let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
+        a * b
     }
 }
 
