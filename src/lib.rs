@@ -1,7 +1,10 @@
 pub mod cache;
 pub mod data;
+pub mod macro_prelude;
 pub mod memo;
 pub mod structure;
+
+pub use peregrine_macros::node;
 
 use std::sync::Arc;
 
@@ -77,6 +80,23 @@ impl<O: Data> Node for DataWrapper<O> {
 impl<O: Data> IntoNode<DataWrapper<O>> for O {
     fn into_node(self) -> DataWrapper<O> {
         DataWrapper(self)
+    }
+}
+
+#[derive(Debug)]
+pub struct FnWrapper<F>(F);
+
+impl<O: Send, F: Fn(&Worker) -> O + Send + Sync> Node for FnWrapper<F> {
+    type Output = O;
+
+    fn run(&self, w: &Worker) -> Self::Output {
+        self.0(w)
+    }
+}
+
+impl<O: Send, F: Fn(&Worker) -> O + Send + Sync> IntoNode<FnWrapper<F>> for F {
+    fn into_node(self) -> FnWrapper<F> {
+        FnWrapper(self)
     }
 }
 

@@ -3,9 +3,7 @@ use std::{
     ops::{Add, Mul},
 };
 
-use forte::Worker;
-
-use crate::{Init, IntoNode, Node, data::Data};
+use crate::{Init, IntoNode, Node, data::Data, node};
 
 use super::{Order, OrderUpstreamFinder};
 
@@ -71,56 +69,16 @@ where
     where
         V: Add<Output = V>,
     {
-        self.update(stage, |n| AddNode::new(n, node));
+        use crate as peregrine;
+        self.update(stage, |n| node! { i!(n) + i!(node) });
     }
 
     pub fn multiply<N: Node<Output = V> + 'static>(&mut self, stage: S, node: impl IntoNode<N>)
     where
         V: Mul<Output = V>,
     {
-        self.update(stage, |n| MulNode::new(n, node));
-    }
-}
-
-struct AddNode<N: Node, M: Node>(N, M);
-
-impl<N: Node, M: Node> AddNode<N, M> {
-    fn new(n: impl IntoNode<N>, m: impl IntoNode<M>) -> Self {
-        Self(n.into_node(), m.into_node())
-    }
-}
-
-impl<N: Node, M: Node> Node for AddNode<N, M>
-where
-    N::Output: Add<M::Output>,
-    <N::Output as Add<M::Output>>::Output: Send + Sync,
-{
-    type Output = <N::Output as Add<M::Output>>::Output;
-
-    fn run(&self, s: &Worker) -> Self::Output {
-        let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
-        a + b
-    }
-}
-
-struct MulNode<N: Node, M: Node>(N, M);
-
-impl<N: Node, M: Node> MulNode<N, M> {
-    fn new(n: impl IntoNode<N>, m: impl IntoNode<M>) -> Self {
-        Self(n.into_node(), m.into_node())
-    }
-}
-
-impl<N: Node, M: Node> Node for MulNode<N, M>
-where
-    N::Output: Mul<M::Output>,
-    <N::Output as Mul<M::Output>>::Output: Send + Sync,
-{
-    type Output = <N::Output as Mul<M::Output>>::Output;
-
-    fn run(&self, s: &Worker) -> Self::Output {
-        let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
-        a * b
+        use crate as peregrine;
+        self.update(stage, |n| node! { i!(n) * i!(node) });
     }
 }
 
@@ -135,15 +93,18 @@ where
 
 #[cfg(test)]
 mod tests {
+    use peregrine_macros::node;
+
     use crate::run;
 
     use super::*;
+    use crate as peregrine;
 
     #[test]
     fn test_single() {
         let mut stages = Stages::<usize, _>::new(1);
 
-        stages.update(5, |n| AddNode::new(n.clone(), n));
+        stages.update(5, |n| node! { i!(n) * 2 });
         assert_eq!(run(&stages), 2);
 
         stages.multiply(6, 3);

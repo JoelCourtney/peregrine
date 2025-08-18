@@ -22,8 +22,11 @@ derive_more = { version = "2.0", features = ["deref"] }
 parking_lot = { version = "0.12", features = ["send_guard"] }
 quick_cache = "0.6"
 async-lock = "3.4"
+peregrine_macros = { path = "peregrine_macros" }
+serde_closure = { path = "serde_closure" }
 
 [dev-dependencies]
 itertools = "0.14"
 
 [workspace]
+members = [".", "peregrine_macros", "serde_closure"]
