@@ -23,10 +23,10 @@ parking_lot = { version = "0.12", features = ["send_guard"] }
 quick_cache = "0.6"
 async-lock = "3.4"
 peregrine_macros = { path = "peregrine_macros" }
-serde_closure = { path = "serde_closure" }
+futures = { version = "0.3.31", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 itertools = "0.14"
 
 [workspace]
-members = [".", "peregrine_macros", "serde_closure"]
+members = [".", "peregrine_macros"]

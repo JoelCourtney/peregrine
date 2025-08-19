@@ -1,6 +1,6 @@
 use forte::Worker;
 
-use crate::{IntoNode, Node};
+use crate::{IntoNode, Node, cache::MaybeCached};
 
 use super::{Order, OrderCollector};
 
@@ -94,8 +94,10 @@ pub struct SingleItemWrapper<N: Node>(N);
 impl<V: 'static + Send + Sync, N: Node<Output = V>> Node for SingleItemWrapper<N> {
     type Output = Box<dyn Iterator<Item = V> + Send + Sync>;
 
-    fn run(&self, s: &Worker) -> Self::Output {
-        Box::new(std::iter::once(self.0.run(s)))
+    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
+        self.0
+            .run(w)
+            .map(|v| Box::new(std::iter::once(v)) as Self::Output)
     }
 }
 
@@ -124,17 +126,19 @@ impl<I: Ord + Copy + Send + Sync, L: Ord + Copy + Send + Sync, V: Send + Sync + 
 {
     type Output = Vec<LogEntry<I, L, V>>;
 
-    fn run(&self, ex: &Worker) -> Self::Output {
-        let v = self.0.run(ex);
-        v.into_iter()
-            .flat_map(|((i, l, _), v)| {
-                v.map(move |v| LogEntry {
-                    index: i,
-                    level: l,
-                    value: v,
+    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
+        let v = self.0.run(w);
+        v.map(|v| {
+            v.into_iter()
+                .flat_map(|((i, l, _), v)| {
+                    v.map(move |v| LogEntry {
+                        index: i,
+                        level: l,
+                        value: v,
+                    })
                 })
-            })
-            .collect()
+                .collect()
+        })
     }
 }
 
@@ -153,8 +157,8 @@ where
 {
     type Output = Box<dyn Iterator<Item = I::Item> + Send + Sync>;
 
-    fn run(&self, _s: &Worker) -> Self::Output {
-        Box::new(self.0.clone().into_iter())
+    fn run(&self, _s: &Worker) -> MaybeCached<Self::Output> {
+        MaybeCached::Constant(Box::new(self.0.clone().into_iter()))
     }
 }
 

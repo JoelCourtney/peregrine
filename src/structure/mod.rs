@@ -1,7 +1,7 @@
 pub mod log;
 pub mod stages;
 
-use crate::{DynNode, IntoNode, Node};
+use crate::{DynNode, IntoNode, Node, cache::MaybeCached};
 use forte::Worker;
 use parking_lot::{Mutex, RwLock};
 use std::{collections::BTreeMap, mem::MaybeUninit, ops::RangeBounds, sync::Arc};
@@ -157,7 +157,7 @@ pub struct OrderUpstreamFinder<I: Ord + Copy, V>(OrderArc<I, V>);
 impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderUpstreamFinder<I, V> {
     type Output = V;
 
-    fn run(&self, s: &Worker) -> Self::Output {
+    fn run(&self, s: &Worker) -> MaybeCached<Self::Output> {
         let order = self
             .0
             .data
@@ -179,7 +179,7 @@ pub struct OrderCollector<I: Ord + Copy, V>(OrderArc<I, V>, Box<dyn Fn(&I) -> bo
 impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> {
     type Output = Vec<(I, V)>;
 
-    fn run(&self, s: &Worker) -> Self::Output {
+    fn run(&self, s: &Worker) -> MaybeCached<Self::Output> {
         let order = self
             .0
             .data
@@ -201,31 +201,39 @@ impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> 
             output.push((*i, MaybeUninit::uninit()));
         }
 
-        join_all(s, &input, output.as_mut_slice());
+        let maybe_cache = join_all(s, &input, output.as_mut_slice());
 
         fn join_all<I: Copy + Ord + Send + Sync, V: Send + Sync>(
             w: &Worker,
             input: &[(I, &DynNode<V>)],
             output: &mut [(I, MaybeUninit<V>)],
-        ) {
+        ) -> MaybeCached<()> {
             if input.len() == 1 {
                 let (i, n) = input[0];
-                output[0] = (i, MaybeUninit::new(n.run(w)));
+                let mut value = None;
+                let result = n.run(w).map(|v| {
+                    value = Some(v);
+                });
+                output[0] = (i, MaybeUninit::new(value.unwrap()));
+                result
             } else {
                 let mid = input.len() / 2;
                 let (left_in, right_in) = input.split_at(mid);
                 let (left_out, right_out) = output.split_at_mut(mid);
-                w.join(
+                let (l, r) = w.join(
                     |w| join_all(w, left_in, left_out),
                     |w| join_all(w, right_in, right_out),
                 );
+                l.merge(r, |_, _| ())
             }
         }
 
-        output
-            .into_iter()
-            .map(|(i, v)| (i, unsafe { v.assume_init() }))
-            .collect()
+        maybe_cache.map(|_| {
+            output
+                .into_iter()
+                .map(|(i, v)| (i, unsafe { v.assume_init() }))
+                .collect()
+        })
     }
 }
 
@@ -235,7 +243,7 @@ mod tests {
 
     use forte::Worker;
 
-    use crate::{IntoNode, Node, run};
+    use crate::{IntoNode, Node, cache::MaybeCached, run};
 
     use super::Order;
 
@@ -248,9 +256,9 @@ mod tests {
     {
         type Output = <N::Output as Add<M::Output>>::Output;
 
-        fn run(&self, s: &Worker) -> Self::Output {
+        fn run(&self, s: &Worker) -> MaybeCached<Self::Output> {
             let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
-            a + b
+            a.merge(b, |a, b| a + b)
         }
     }
 
