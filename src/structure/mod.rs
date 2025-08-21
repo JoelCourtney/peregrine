@@ -239,28 +239,10 @@ impl<I: Copy + Ord + Send + Sync, V: Send + Sync> Node for OrderCollector<I, V> 
 
 #[cfg(test)]
 mod tests {
-    use std::{ops::Add, sync::Arc};
-
-    use forte::Worker;
-
-    use crate::{IntoNode, Node, cache::MaybeCached, run};
-
     use super::Order;
-
-    struct AddNode<N: Node, M: Node>(N, M);
-
-    impl<N: Node, M: Node + std::fmt::Debug> Node for AddNode<N, M>
-    where
-        N::Output: Add<M::Output>,
-        <N::Output as Add<M::Output>>::Output: Send + Sync,
-    {
-        type Output = <N::Output as Add<M::Output>>::Output;
-
-        fn run(&self, s: &Worker) -> MaybeCached<Self::Output> {
-            let (a, b) = s.join(|w| self.0.run(w), |w| self.1.run(w));
-            a.merge(b, |a, b| a + b)
-        }
-    }
+    use crate as peregrine;
+    use crate::{IntoNode, node, run};
+    use std::sync::Arc;
 
     #[test]
     fn test_drop_mutual_recursion() {
@@ -268,8 +250,8 @@ mod tests {
         let mut order_b = Order::<&'static str, _>::new(0);
 
         let node_1 = Arc::new(1.into_node());
-        let node_2 = Arc::new(AddNode(order_a.read("aa"), 2.into_node()));
-        let node_3 = Arc::new(AddNode(order_b.read_at_end(), 3.into_node()));
+        let node_2 = Arc::new(node!(i!(order_a.read("aa")) + 2).into_node());
+        let node_3 = Arc::new(node!(i!(order_b.read_at_end()) + 3).into_node());
         order_a.write("a", node_1.clone());
         order_b.write("b", node_2.clone());
         order_a.write("c", node_3.clone());
@@ -307,8 +289,8 @@ mod tests {
         let mut order_b = Order::<&'static str, _>::new(0);
 
         let node_1 = Arc::new(1.into_node());
-        let node_2 = Arc::new(AddNode(order_a.read("aa"), 2.into_node()));
-        let node_3 = Arc::new(AddNode(order_b.read_at_end(), 3.into_node()));
+        let node_2 = Arc::new(node!(i!(order_a.read("aa")) + 2).into_node());
+        let node_3 = Arc::new(node!(i!(order_b.read_at_end()) + 3).into_node());
         order_a.write("a", node_1.clone());
         order_b.write("b", node_2.clone());
         order_a.write("c", node_3.clone());
