@@ -1,25 +1,27 @@
+use hifitime::Epoch;
+use std::time::Duration;
+
 // #[derive(Init)]
 // struct Potato {
 //     propellant: Timeline<f32>,
 //     battery: Timeline<f32>
 // }
 //
-// struct ThrusterActivity {
-//     when: Epoch,
-//     duration: Duration,
-//     impulse: f32,
+struct _ThrusterActivity {
+    when: Epoch,
+    duration: Duration,
+    impulse: f32,
+}
+
+// impl Series<Potato> for ThrusterActivity {
+// fn act(&self, potato: &mut Potato) {
+// for t in self.when..self.when + self.duration {
+// potato.propellant[t] -= self.impulse;
+// potato.battery[t] -= self.duration.as_millis() as f32 / 1000.0;
 // }
-//
-// impl Activity<Potato> for ThrusterActivity {
-//
-//     fn act(&self, potato: &mut Potato) {
-//         for t in self.when..self.when + self.duration {
-//             potato.propellant[t] -= self.impulse;
-//             potato.battery[t] -= self.duration.as_millis() as f32 / 1000.0;
-//         }
-//     }
 // }
-//
+// }
+
 fn main() {
     //     let potato = Potato::init().propellant(50.0).battery(100.0).build();
     //     let g = Graph::new(potato);

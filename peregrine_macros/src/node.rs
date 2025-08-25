@@ -38,13 +38,13 @@ pub fn process_node(input_expr: Expr) -> TokenStream {
                 });
                 if let Some(e) = join_expr {
                     join_expr = Some(quote! {
-                        peregrine::macro_prelude::merge_tuple(w.join(
-                            |w| #input_name.run(w),
+                        w.join(
+                            |w| #input_name.run(w).track(g),
                             |w| #e,
-                        ))
+                        )
                     })
                 } else {
-                    join_expr = Some(quote! {#input_name.run(w)});
+                    join_expr = Some(quote! {#input_name.run(w).track(g)});
                 }
                 if let Some(d) = join_destructure {
                     join_destructure = Some(quote! {
@@ -60,10 +60,9 @@ pub fn process_node(input_expr: Expr) -> TokenStream {
                     use peregrine::{Node, IntoNode};
 
                     #(#input_declarations)*
-                    move |w: &peregrine::macro_prelude::Worker| {
-                        #join_expr.map(move |#join_destructure| {
-                            #processed
-                        })
+                    move |w: &peregrine::macro_prelude::Worker, g: peregrine::macro_prelude::cache::InvalidatorGenerator<_>| {
+                        let #join_destructure = #join_expr;
+                        #processed
                     }
                 }
             };

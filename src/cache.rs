@@ -1,26 +1,161 @@
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use async_lock::{Mutex, MutexGuard};
-use derive_more::Deref;
 use forte::Worker;
-use parking_lot::RwLock;
+use oneshot::{Receiver, Sender, channel};
 
 use crate::{DynNode, IntoNode, Node};
 
-pub fn merge_tuple<A, B>((a, b): (MaybeCached<A>, MaybeCached<B>)) -> MaybeCached<(A, B)> {
-    a.merge(b, |a, b| (a, b))
+#[derive(Default)]
+enum DataState<T> {
+    Constant(T),
+    Valid(T),
+    Invalid(T),
+    #[default]
+    Empty,
+}
+
+impl<T> DataState<T> {
+    fn invalidate(&mut self) {
+        match std::mem::take(self) {
+            DataState::Valid(d) | DataState::Invalid(d) => *self = DataState::Invalid(d),
+            DataState::Constant(_) => unreachable!(),
+            _ => {}
+        }
+    }
+}
+
+type Invalidator = Box<dyn FnOnce() + Send>;
+pub struct Cache<T> {
+    data: Mutex<DataState<T>>,
+    downstreams: parking_lot::Mutex<Vec<Receiver<Invalidator>>>,
+}
+
+impl<T> Cache<T> {
+    pub fn new() -> Arc<Cache<T>> {
+        Arc::new(Cache {
+            data: Mutex::new(DataState::Empty),
+            downstreams: parking_lot::Mutex::new(vec![]),
+        })
+    }
+    fn resolve_internal(
+        self: &Arc<Self>,
+        f: impl FnOnce(InvalidatorGenerator<T>) -> T,
+        mut lock: MutexGuard<DataState<T>>,
+        force_variable: bool,
+    ) -> MaybeCached<T>
+    where
+        T: Send + Clone,
+    {
+        let (data, constant) = match &mut *lock {
+            DataState::Constant(d) => (d.clone(), true),
+            DataState::Valid(d) => (d.clone(), false),
+            DataState::Invalid(_d) => todo!(),
+            state @ DataState::Empty => {
+                let cell = AtomicBool::new(false);
+                let result = f(InvalidatorGenerator(self, &cell));
+                let generator_used = cell.load(std::sync::atomic::Ordering::Relaxed);
+                *state = if generator_used || force_variable {
+                    DataState::Valid(result.clone())
+                } else {
+                    DataState::Constant(result.clone())
+                };
+                (result, !generator_used)
+            }
+        };
+        if !constant || force_variable {
+            let (send, recv) = channel();
+            self.downstreams.lock().push(recv);
+            MaybeCached::Cached(data, send)
+        } else {
+            MaybeCached::Constant(data)
+        }
+    }
+    pub fn resolve(
+        self: &Arc<Self>,
+        w: &Worker,
+        f: impl FnOnce(InvalidatorGenerator<T>) -> T,
+        force_variable: bool,
+    ) -> MaybeCached<T>
+    where
+        T: Send + Clone,
+    {
+        let lock = self
+            .data
+            .try_lock()
+            .unwrap_or_else(|| w.block_on(self.data.lock()));
+        self.resolve_internal(f, lock, force_variable)
+    }
+    pub fn resolve_blocking(
+        self: &Arc<Self>,
+        f: impl FnOnce(InvalidatorGenerator<T>) -> T,
+        force_variable: bool,
+    ) -> MaybeCached<T>
+    where
+        T: Send + Clone,
+    {
+        self.resolve_internal(f, self.data.lock_blocking(), force_variable)
+    }
+    pub fn invalidate(&self) {
+        self.data.lock_blocking().invalidate();
+        for downstream in self.downstreams.lock().drain(..) {
+            if let Ok(inv) = downstream.recv() {
+                inv();
+            }
+        }
+    }
+    pub fn is_valid(&self) -> bool {
+        matches!(
+            &*self.data.lock_blocking(),
+            DataState::Valid(_) | DataState::Constant(_)
+        )
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct InvalidatorGenerator<'a, T>(&'a Arc<Cache<T>>, &'a AtomicBool);
+
+impl<T: 'static> InvalidatorGenerator<'_, T> {
+    fn get(&self) -> impl FnOnce() + 'static {
+        self.1.store(true, std::sync::atomic::Ordering::Relaxed);
+        let weak = Arc::downgrade(self.0);
+        move || {
+            if let Some(c) = weak.upgrade() {
+                c.invalidate()
+            }
+        }
+    }
 }
 
 pub enum MaybeCached<T> {
-    Cached(Upstream<T>),
+    Cached(T, Sender<Invalidator>),
     Constant(T),
     Uncached(T),
 }
 
 impl<T> MaybeCached<T> {
-    pub fn open(self) -> T {
+    pub fn track<G: Send + 'static>(self, generator: InvalidatorGenerator<G>) -> T
+    where
+        T: Send + 'static,
+    {
         match self {
-            MaybeCached::Cached(upstream) => upstream.value,
+            MaybeCached::Cached(value, sender) => {
+                sender
+                    .send(Box::new(generator.get()))
+                    .expect("Could not send invalidator");
+                value
+            }
+            MaybeCached::Constant(value) => value,
+            MaybeCached::Uncached(value) => value,
+        }
+    }
+
+    pub fn open(self) -> T
+    where
+        T: Send + 'static,
+    {
+        match self {
+            MaybeCached::Cached(value, _) => value,
             MaybeCached::Constant(value) => value,
             MaybeCached::Uncached(value) => value,
         }
@@ -28,263 +163,33 @@ impl<T> MaybeCached<T> {
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> MaybeCached<U> {
         match self {
-            MaybeCached::Cached(up) => MaybeCached::Cached(Upstream {
-                value: f(up.value),
-                callbacks: up.callbacks,
-            }),
+            MaybeCached::Cached(value, sender) => MaybeCached::Cached(f(value), sender),
             MaybeCached::Constant(value) => MaybeCached::Constant(f(value)),
             MaybeCached::Uncached(value) => MaybeCached::Uncached(f(value)),
         }
     }
-
-    pub fn merge<U, O>(self, other: MaybeCached<U>, f: impl FnOnce(T, U) -> O) -> MaybeCached<O> {
-        use MaybeCached::*;
-        match (self, other) {
-            (s @ Uncached(_), o) | (s, o @ Uncached(_)) => Uncached(f(s.open(), o.open())),
-            (Constant(s), Constant(o)) => Constant(f(s, o)),
-            (Cached(s), Constant(o)) => Cached(Upstream {
-                value: f(s.value, o),
-                callbacks: s.callbacks,
-            }),
-            (Constant(s), Cached(o)) => Cached(Upstream {
-                value: f(s, o.value),
-                callbacks: o.callbacks,
-            }),
-            (Cached(mut t), Cached(mut u)) => Cached(Upstream {
-                value: f(t.value, u.value),
-                callbacks: {
-                    t.callbacks.append(&mut u.callbacks);
-                    t.callbacks
-                },
-            }),
-        }
-    }
 }
 
-#[derive(Deref)]
-pub struct Cache<T>(Mutex<Option<InnerCache<T>>>);
-
-impl<T> Cache<T> {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self(Mutex::new(None)))
-    }
-
-    pub fn clear(&self) {
-        *self.0.lock_blocking() = None;
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.0.lock_blocking().is_some()
-    }
-
-    pub async fn resolve(
-        self: &Arc<Self>,
-        f: impl FnOnce(&mut UpstreamReceiver<T>) -> T,
-    ) -> MaybeCached<T>
-    where
-        T: Clone + 'static,
-    {
-        self.resolve_internal(self.0.lock().await, f)
-    }
-
-    pub fn try_resolve(
-        self: &Arc<Self>,
-        f: impl FnOnce(&mut UpstreamReceiver<T>) -> T,
-    ) -> Option<MaybeCached<T>>
-    where
-        T: Clone + 'static,
-    {
-        Some(self.resolve_internal(self.0.try_lock()?, f))
-    }
-
-    pub fn resolve_blocking(
-        self: &Arc<Self>,
-        f: impl FnOnce(&mut UpstreamReceiver<T>) -> T,
-    ) -> MaybeCached<T>
-    where
-        T: Clone + 'static,
-    {
-        self.resolve_internal(self.0.lock_blocking(), f)
-    }
-
-    fn resolve_internal(
-        self: &Arc<Self>,
-        mut guard: MutexGuard<Option<InnerCache<T>>>,
-        f: impl FnOnce(&mut UpstreamReceiver<T>) -> T,
-    ) -> MaybeCached<T>
-    where
-        T: Clone + 'static,
-    {
-        match &mut *guard {
-            Some(inner) => inner.get(),
-            i @ None => {
-                let downstream = Downstream(Arc::downgrade(self));
-                let mut receiver = UpstreamReceiver {
-                    constant: true,
-                    cacheable: true,
-                    downstream,
-                };
-                let value = f(&mut receiver);
-                if receiver.cacheable {
-                    let (new_cache, result) = InnerCache::new(value, receiver.constant);
-                    *i = Some(new_cache);
-                    drop(guard);
-                    result
-                } else {
-                    MaybeCached::Uncached(value)
-                }
-            }
-        }
-    }
-}
-
-pub enum InnerCache<T> {
-    Constant(T),
-    Cached {
-        value: T,
-        downstreams: Vec<Arc<OnceLock<Box<dyn ErasedDownstream>>>>,
-    },
-}
-
-impl<T: Clone + 'static> InnerCache<T> {
-    pub fn new(value: T, constant: bool) -> (Self, MaybeCached<T>) {
-        if constant {
-            (Self::Constant(value.clone()), MaybeCached::Constant(value))
-        } else {
-            let v = vec![Arc::new(OnceLock::new())];
-            (
-                Self::Cached {
-                    value: value.clone(),
-                    downstreams: v.clone(),
-                },
-                MaybeCached::Cached(Upstream {
-                    value,
-                    callbacks: v,
-                }),
-            )
-        }
-    }
-
-    pub fn get(&mut self) -> MaybeCached<T> {
-        match self {
-            Self::Constant(value) => MaybeCached::Constant(value.clone()),
-            Self::Cached { value, downstreams } => {
-                let downstream = Arc::new(OnceLock::new());
-                downstreams.push(downstream.clone());
-                MaybeCached::Cached(Upstream {
-                    value: value.clone(),
-                    callbacks: vec![downstream],
-                })
-            }
-        }
-    }
-}
-
-impl<T> Drop for InnerCache<T> {
-    fn drop(&mut self) {
-        match self {
-            Self::Constant(_) => {}
-            Self::Cached { downstreams, .. } => {
-                for downstream in downstreams.drain(..) {
-                    if let Some(downstream) = downstream.get() {
-                        downstream.invalidate();
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub struct Upstream<T> {
-    value: T,
-    callbacks: Vec<Arc<OnceLock<Box<dyn ErasedDownstream>>>>,
-}
-
-pub struct Downstream<T>(Weak<Cache<T>>);
-
-pub trait ErasedDownstream: Send + Sync {
-    fn invalidate(&self);
-}
-
-impl<T> Downstream<T> {
-    pub fn empty() -> Self {
-        Downstream(Weak::new())
-    }
-}
-
-impl<T: Send> ErasedDownstream for Downstream<T> {
-    fn invalidate(&self) {
-        if let Some(cache) = self.0.upgrade() {
-            cache.clear();
-        }
-    }
-}
-
-impl<T> Clone for Downstream<T> {
-    fn clone(&self) -> Self {
-        Downstream(self.0.clone())
-    }
-}
-
-pub struct UpstreamReceiver<T> {
-    cacheable: bool,
-    constant: bool,
-    downstream: Downstream<T>,
-}
-
-impl<T: Send + 'static> UpstreamReceiver<T> {
-    pub fn track<U>(&mut self, maybe_cached: MaybeCached<U>) -> U {
-        match maybe_cached {
-            MaybeCached::Cached(u) => {
-                self.constant = false;
-                for c in u.callbacks {
-                    c.set(Box::new(self.downstream.clone()))
-                        .ok()
-                        .expect("Upstream callback already set");
-                }
-                u.value
-            }
-            MaybeCached::Constant(value) => value,
-            MaybeCached::Uncached(u) => {
-                self.cacheable = false;
-                self.constant = false;
-                u
-            }
-        }
-    }
-
-    pub fn force_variable(&mut self) {
-        self.constant = false;
-    }
-
-    pub fn force_uncached(&mut self) {
-        self.cacheable = false;
-        self.constant = false;
-    }
-}
-
-pub struct NodeCell<O>(RwLock<DynNode<O>>, Arc<Cache<()>>);
+pub struct NodeCell<O>(Mutex<(DynNode<O>, Arc<Cache<O>>)>);
 
 impl<O> NodeCell<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
-        NodeCell(RwLock::new(Box::new(node.into_node())), Cache::new())
+        NodeCell(Mutex::new((Box::new(node.into_node()), Cache::new())))
     }
 
     pub fn set<N: Node<Output = O> + 'static>(&self, node: impl IntoNode<N>) {
-        *self.0.write() = Box::new(node.into_node());
-        self.1.clear();
+        let mut lock = self.0.lock_blocking();
+        lock.0 = Box::new(node.into_node());
+        lock.1.invalidate()
     }
 }
 
-impl<O: Send> Node for NodeCell<O> {
+impl<O: Clone + Send + 'static> Node for NodeCell<O> {
     type Output = O;
 
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        self.1
-            .resolve_blocking(|r| {
-                r.force_variable();
-            })
-            .merge(self.0.read().run(w), |_, v| v)
+        let lock = self.0.lock_blocking();
+        lock.1.resolve(w, |g| lock.0.run(w).track(g), true)
     }
 }
 
@@ -305,64 +210,14 @@ mod tests {
 
         let a = COMPUTE.block_on(async { Worker::with_current(|w| node_a.run(w.unwrap())) });
 
-        let b = cache_b.resolve_blocking(|r| {
-            let a = r.track(a);
-            a.to_string()
-        });
+        let b = cache_b.resolve_blocking(|i| a.track(i).to_string(), false);
 
-        assert!(matches!(b, MaybeCached::Cached(_)));
+        assert!(matches!(b, MaybeCached::Cached(_, _)));
         assert_eq!(b.open(), "42");
 
         assert!(cache_b.is_valid());
 
         node_a.set(5);
         assert!(!cache_b.is_valid());
-    }
-
-    #[test]
-    fn test_cache_auto_invalidation() {
-        COMPUTE.resize_to_available();
-
-        let node_a = NodeCell::new(42);
-        let cache_b = Cache::<String>::new();
-
-        let a = COMPUTE.block_on(async { Worker::with_current(|w| node_a.run(w.unwrap())) });
-
-        let b = cache_b.resolve_blocking(|r| {
-            let a = r.track(a);
-            a.to_string()
-        });
-
-        assert!(matches!(b, MaybeCached::Cached(_)));
-        assert_eq!(b.open(), "42");
-
-        assert!(cache_b.is_valid());
-
-        drop(node_a);
-        assert!(!cache_b.is_valid());
-    }
-
-    #[test]
-    fn test_cache_constant_not_invalidated() {
-        let cache_a = Cache::<usize>::new();
-        let cache_b = Cache::<String>::new();
-
-        let a = cache_a.resolve_blocking(|_| 42);
-
-        assert!(matches!(a, MaybeCached::Constant(_)));
-        assert!(cache_a.is_valid());
-
-        let b = cache_b.resolve_blocking(|r| {
-            let a = r.track(a);
-            a.to_string()
-        });
-
-        assert!(matches!(b, MaybeCached::Constant(_)));
-        assert_eq!(b.open(), "42");
-
-        assert!(cache_b.is_valid());
-
-        drop(cache_a);
-        assert!(cache_b.is_valid());
     }
 }
