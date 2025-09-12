@@ -8,10 +8,7 @@ pub fn generate_node_impl(types: &[syn::Ident]) -> TokenStream {
     let generic_bounds = types.iter().map(|t| quote! { #t: Node });
 
     // Generate output type: (A::Output, B::Output, ...)
-    let output_types = types.iter().map(|t| quote! { #t::Output });
-
-    // Generate tuple type for the wrapper: (A, B, ...)
-    let tuple_type = quote! { (#(#types,)*) };
+    let output_types = types.iter().map(|t| quote! { #t::Output }).collect::<Vec<_>>();
 
     // Generate field accesses: self.0.0, self.0.1, ...
     let field_accesses: Vec<_> = (0..arity)
@@ -31,12 +28,14 @@ pub fn generate_node_impl(types: &[syn::Ident]) -> TokenStream {
     let merge_chain = generate_merge_chain(arity);
 
     let expanded = quote! {
-        impl<#(#generic_bounds),*> Node for TupleWrapper<#tuple_type> {
+        impl<#(#generic_bounds),*> Node for TupleWrapper<(#(#types,)*), (#(#output_types,)*)> where #(#types::Output: Clone + 'static),* {
             type Output = (#(#output_types),*);
 
             fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-                let #destructure_pattern = #run_cache_join_expr;
-                #merge_chain
+                self.1.resolve(w, |g| {
+                    let #destructure_pattern = #run_cache_join_expr;
+                    #merge_chain
+                }, false)
             }
         }
     };
@@ -53,8 +52,8 @@ fn generate_nested_joins(field_accesses: &[proc_macro2::TokenStream]) -> proc_ma
 
         quote! {
             w.join(
-                |w| #first.run(w),
-                |w| #second.run(w)
+                |w| #first.run(w).track(g),
+                |w| #second.run(w).track(g)
             )
         }
     } else {
@@ -65,7 +64,7 @@ fn generate_nested_joins(field_accesses: &[proc_macro2::TokenStream]) -> proc_ma
 
         quote! {
             w.join(
-                |w| #first.run(w),
+                |w| #first.run(w).track(g),
                 |w| #nested_run_cache
             )
         }
@@ -94,31 +93,10 @@ fn generate_destructure_pattern(arity: usize) -> proc_macro2::TokenStream {
 }
 
 fn generate_merge_chain(arity: usize) -> proc_macro2::TokenStream {
-    if arity == 2 {
-        quote! { a.merge(b, |a,b| (a,b)) }
-    } else {
-        // Start with merging a and b
-        let mut result = quote! { a.merge(b, |a,b| (a,b)) };
-
-        // Chain additional merges
-        for i in 2..arity {
-            let var = format_ident!("{}", (b'a' + i as u8) as char);
-
-            // Generate pattern for previous tuple: (a,b), (a,b,c), etc.
-            let prev_vars: Vec<_> = (0..i)
-                .map(|j| format_ident!("{}", (b'a' + j as u8) as char))
-                .collect();
-            let prev_pattern = quote! { (#(#prev_vars),*) };
-
-            // Generate new tuple with added variable
-            let new_vars: Vec<_> = (0..=i)
-                .map(|j| format_ident!("{}", (b'a' + j as u8) as char))
-                .collect();
-            let new_tuple = quote! { (#(#new_vars),*) };
-
-            result = quote! { #result.merge(#var, |#prev_pattern, #var| #new_tuple) };
-        }
-
-        result
+    let mut result = quote! {};
+    for i in 0..arity {
+        let var = format_ident!("{}", (b'a' + i as u8) as char);
+        result = quote! { #result #var, };
     }
+    quote! { (#result) }
 }

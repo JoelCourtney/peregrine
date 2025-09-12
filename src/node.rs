@@ -142,43 +142,45 @@ impl<O: Send + Clone + 'static, F: Fn(&Worker, InvalidatorGenerator<O>) -> O + S
     }
 }
 
-pub struct TupleWrapper<T>(T);
+pub struct TupleWrapper<T, C>(T, Arc<Cache<C>>);
 
-// macro_rules! impl_into_node_for_tuple {
-//     ($($t:ident $t_i:ident),*) => {
-//         peregrine_macros::impl_node_for_tuple_wrapper!($($t),*);
-//         impl<$($t: Node, $t_i: IntoNode<$t>),*> IntoNode<TupleWrapper<($($t,)*)>> for ($($t_i,)*) {
-//             #[allow(non_snake_case)]
-//             fn into_node(self) -> TupleWrapper<($($t,)*)> {
-//                 let ($($t_i,)*) = self;
-//                 TupleWrapper(($($t_i.into_node()),*))
-//             }
-//         }
-//     };
-// }
+macro_rules! impl_into_node_for_tuple {
+    ($($t:ident $t_i:ident),*) => {
+        peregrine_macros::impl_node_for_tuple_wrapper!($($t),*);
+        impl<$($t: Node, $t_i: IntoNode<$t>),*> IntoNode<TupleWrapper<($($t,)*), ($($t::Output,)*)>> for ($($t_i,)*) where $($t::Output: Clone + 'static),* {
+            #[allow(non_snake_case)]
+            fn into_node(self) -> TupleWrapper<($($t,)*), ($($t::Output,)*)> {
+                let ($($t_i,)*) = self;
+                TupleWrapper(($($t_i.into_node()),*), Cache::new())
+            }
+        }
+    };
+}
 
-// impl_into_node_for_tuple!(A AI, B BI, C CI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J JI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J JI, K KI);
-// impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J JI, K KI, L LI);
+impl_into_node_for_tuple!(A AI, B BI, C CI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J JI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J JI, K KI);
+impl_into_node_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J JI, K KI, L LI);
 
-impl<A: Node, AI: IntoNode<A>> IntoNode<TupleWrapper<(A,)>> for (AI,) {
-    fn into_node(self) -> TupleWrapper<(A,)> {
-        TupleWrapper((self.0.into_node(),))
+pub struct UnaryTupleWrapper<A: Node>(A);
+
+impl<A: Node, AI: IntoNode<A>> IntoNode<UnaryTupleWrapper<A>> for (AI,) {
+    fn into_node(self) -> UnaryTupleWrapper<A> {
+        UnaryTupleWrapper(self.0.into_node())
     }
 }
 
-impl<A: Node> Node for TupleWrapper<(A,)> {
+impl<A: Node> Node for UnaryTupleWrapper<A> {
     type Output = (A::Output,);
 
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        self.0.0.run(w).map(|v| (v,))
+        self.0.run(w).map(|v| (v,))
     }
 }
 

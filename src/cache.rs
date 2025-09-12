@@ -112,8 +112,14 @@ impl<T> Cache<T> {
     }
 }
 
-#[derive(Copy, Clone)]
 pub struct InvalidatorGenerator<'a, T>(&'a Arc<Cache<T>>, &'a AtomicBool);
+
+impl<T> Clone for InvalidatorGenerator<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for InvalidatorGenerator<'_, T> {}
 
 impl<T: 'static> InvalidatorGenerator<'_, T> {
     fn get(&self) -> impl FnOnce() + 'static {
