@@ -9,6 +9,56 @@ use crate::{
     data::Data,
 };
 
+pub struct NodeBox<O>(Box<dyn Node<Output = O>>);
+
+impl<O> NodeBox<O> {
+    pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
+        Self(Box::new(node.into_node()))
+    }
+}
+
+impl<O: Send + 'static> Node for NodeBox<O> {
+    type Output = O;
+
+    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
+        self.0.run(w)
+    }
+}
+
+impl<O: Send + 'static> IntoNode<NodeBox<O>> for Box<dyn Node<Output = O>> {
+    fn into_node(self) -> NodeBox<O> {
+        NodeBox(self)
+    }
+}
+
+pub struct NodeArc<O>(Arc<dyn Node<Output = O>>);
+
+impl<O> NodeArc<O> {
+    pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
+        Self(Arc::new(node.into_node()))
+    }
+}
+
+impl<O> Clone for NodeArc<O> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<O: Send + 'static> Node for NodeArc<O> {
+    type Output = O;
+
+    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
+        self.0.run(w)
+    }
+}
+
+impl<O: Send + 'static> IntoNode<NodeArc<O>> for Arc<dyn Node<Output = O>> {
+    fn into_node(self) -> NodeArc<O> {
+        NodeArc(self)
+    }
+}
+
 impl<N: Node> IntoNode<N> for N {
     fn into_node(self) -> N {
         self
@@ -40,11 +90,13 @@ impl<N: Node> Node for Arc<N> {
 }
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct DataWrapper<O>(O);
 
 impl<O: Data> Node for DataWrapper<O> {
     type Output = O;
 
+    #[inline(always)]
     fn run(&self, _: &Worker) -> MaybeCached<Self::Output> {
         MaybeCached::Constant(self.0.clone())
     }
@@ -62,6 +114,7 @@ pub struct FnWrapper<F>(F);
 impl<O: Send + 'static, F: Fn() -> MaybeCached<O> + Send + Sync> Node for FnWrapper<F> {
     type Output = O;
 
+    #[inline(always)]
     fn run(&self, _: &Worker) -> MaybeCached<Self::Output> {
         self.0()
     }
@@ -81,6 +134,7 @@ impl<O: Send + 'static, F: Fn(&Worker) -> MaybeCached<O> + Send + Sync> Node
 {
     type Output = O;
 
+    #[inline(always)]
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
         self.0(w)
     }
@@ -119,6 +173,15 @@ impl<O: Send + Sync + Clone + 'static, F: Future<Output = O> + Send + Sync>
 pub struct CachedFnWrapper<O: Send, F: Fn(&Worker, InvalidatorGenerator<O>) -> O> {
     f: F,
     cache: Arc<Cache<O>>,
+}
+
+impl<O: Send, F: Fn(&Worker, InvalidatorGenerator<O>) -> O> CachedFnWrapper<O, F> {
+    pub fn new(f: F) -> Self {
+        CachedFnWrapper {
+            f,
+            cache: Cache::new(),
+        }
+    }
 }
 
 impl<O: Send + Clone + 'static, F: Fn(&Worker, InvalidatorGenerator<O>) -> O + Send + Sync>
@@ -181,6 +244,17 @@ impl<A: Node> Node for UnaryTupleWrapper<A> {
 
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
         self.0.run(w).map(|v| (v,))
+    }
+}
+
+impl<N: Node> Node for Option<N> {
+    type Output = Option<N::Output>;
+
+    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
+        match self {
+            Some(node) => node.run(w).map(Some),
+            None => MaybeCached::Constant(None),
+        }
     }
 }
 

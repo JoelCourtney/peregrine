@@ -60,10 +60,10 @@ pub fn process_node(input_expr: Expr) -> TokenStream {
                     use peregrine::{Node, IntoNode};
 
                     #(#input_declarations)*
-                    move |w: &peregrine::macro_prelude::Worker, g: peregrine::macro_prelude::cache::InvalidatorGenerator<_>| {
+                    peregrine::node::CachedFnWrapper::new(move |w: &peregrine::macro_prelude::Worker, g: peregrine::cache::InvalidatorGenerator<_>| {
                         let #join_destructure = #join_expr;
                         #processed
-                    }
+                    })
                 }
             };
 

@@ -1,4 +1,4 @@
-macro_rules! impl_view {
+macro_rules! impl_data {
     ($($t:ty),*) => {
         $(
             impl Data for $t {}
@@ -8,7 +8,7 @@ macro_rules! impl_view {
 
 pub trait Data: Clone + Send + Sync + 'static {}
 
-impl_view!(
+impl_data!(
     u8,
     u16,
     u32,

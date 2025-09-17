@@ -8,7 +8,10 @@ pub fn generate_node_impl(types: &[syn::Ident]) -> TokenStream {
     let generic_bounds = types.iter().map(|t| quote! { #t: Node });
 
     // Generate output type: (A::Output, B::Output, ...)
-    let output_types = types.iter().map(|t| quote! { #t::Output }).collect::<Vec<_>>();
+    let output_types = types
+        .iter()
+        .map(|t| quote! { #t::Output })
+        .collect::<Vec<_>>();
 
     // Generate field accesses: self.0.0, self.0.1, ...
     let field_accesses: Vec<_> = (0..arity)

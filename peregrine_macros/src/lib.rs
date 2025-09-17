@@ -5,7 +5,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 
 #[proc_macro]
-pub fn node(input: TokenStream) -> TokenStream {
+pub fn op(input: TokenStream) -> TokenStream {
     // Wrap the input in braces to make it parseable as a block expression
     let input2: proc_macro2::TokenStream = input.into();
     let wrapped_tokens = quote! { { #input2 } };

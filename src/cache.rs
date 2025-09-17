@@ -4,8 +4,6 @@ use async_lock::{Mutex, MutexGuard};
 use forte::Worker;
 use oneshot::{Receiver, Sender, channel};
 
-use crate::{DynNode, IntoNode, Node};
-
 #[derive(Default)]
 enum DataState<T> {
     Constant(T),
@@ -50,8 +48,7 @@ impl<T> Cache<T> {
         let (data, constant) = match &mut *lock {
             DataState::Constant(d) => (d.clone(), true),
             DataState::Valid(d) => (d.clone(), false),
-            DataState::Invalid(_d) => todo!(),
-            state @ DataState::Empty => {
+            state @ (DataState::Empty | DataState::Invalid(_)) => {
                 let cell = AtomicBool::new(false);
                 let result = f(InvalidatorGenerator(self, &cell));
                 let generator_used = cell.load(std::sync::atomic::Ordering::Relaxed);
@@ -176,33 +173,10 @@ impl<T> MaybeCached<T> {
     }
 }
 
-pub struct NodeCell<O>(Mutex<(DynNode<O>, Arc<Cache<O>>)>);
-
-impl<O> NodeCell<O> {
-    pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
-        NodeCell(Mutex::new((Box::new(node.into_node()), Cache::new())))
-    }
-
-    pub fn set<N: Node<Output = O> + 'static>(&self, node: impl IntoNode<N>) {
-        let mut lock = self.0.lock_blocking();
-        lock.0 = Box::new(node.into_node());
-        lock.1.invalidate()
-    }
-}
-
-impl<O: Clone + Send + 'static> Node for NodeCell<O> {
-    type Output = O;
-
-    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        let lock = self.0.lock_blocking();
-        lock.1.resolve(w, |g| lock.0.run(w).track(g), true)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Node;
+    use crate::{Node, structure::NodeCell};
     use forte::{ThreadPool, Worker};
 
     static COMPUTE: ThreadPool = ThreadPool::new();
