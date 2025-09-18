@@ -25,18 +25,16 @@
 
 pub mod stack;
 
-use std::sync::Arc;
-
 use forte::Worker;
 use parking_lot::Mutex;
 
 use crate::{
     IntoNode, Node,
     cache::{Cache, MaybeCached},
-    node::{NodeBox},
+    node::NodeBox,
 };
 
-pub struct NodeCell<O>(Mutex<NodeBox<O>>, Arc<Cache<O>>);
+pub struct NodeCell<O>(Mutex<NodeBox<O>>, Cache<()>);
 
 impl<O> NodeCell<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
@@ -46,7 +44,7 @@ impl<O> NodeCell<O> {
     pub fn set<N: Node<Output = O> + 'static>(&self, node: impl IntoNode<N>) {
         let mut lock = self.0.lock();
         *lock = NodeBox::new(node.into_node());
-        self.1.invalidate()
+        self.1.invalidate();
     }
 }
 
@@ -54,29 +52,30 @@ impl<O: Clone + Send + 'static> Node for NodeCell<O> {
     type Output = O;
 
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        let lock = self.0.lock();
-        self.1.resolve(w, |g| lock.run(w).track(g), true)
+        let mut result = self.0.lock().run(w);
+        result.push_sender(self.1.get_invalidation_sender());
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structure::stack::Stack;
     use crate as peregrine;
+    use crate::structure::stack::Stack;
     use crate::*;
-    
+
     #[test]
     fn test_cell() {
         let cell = NodeCell::new(0);
         assert_eq!(run(&cell), 0);
-        
+
         cell.set({
             let stack = Stack::new(2);
             stack.push(|prev| op!(i!(prev) * 3));
             stack
         });
-        
+
         assert_eq!(run(&cell), 6);
     }
 }

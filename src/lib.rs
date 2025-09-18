@@ -1,8 +1,8 @@
 pub mod cache;
+pub mod data;
 pub mod macro_prelude;
 pub mod node;
 pub mod structure;
-pub mod data;
 
 pub use peregrine_macros::op;
 

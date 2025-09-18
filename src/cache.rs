@@ -29,12 +29,21 @@ pub struct Cache<T> {
     downstreams: parking_lot::Mutex<Vec<Receiver<Invalidator>>>,
 }
 
+impl<T> Default for Cache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Cache<T> {
-    pub fn new() -> Arc<Cache<T>> {
-        Arc::new(Cache {
+    pub fn new() -> Cache<T> {
+        Cache {
             data: Mutex::new(DataState::Empty),
             downstreams: parking_lot::Mutex::new(vec![]),
-        })
+        }
+    }
+    pub fn new_arc() -> Arc<Cache<T>> {
+        Arc::new(Self::new())
     }
     fn resolve_internal(
         self: &Arc<Self>,
@@ -63,7 +72,7 @@ impl<T> Cache<T> {
         if !constant || force_variable {
             let (send, recv) = channel();
             self.downstreams.lock().push(recv);
-            MaybeCached::Cached(data, send)
+            MaybeCached::Cached(data, vec![send])
         } else {
             MaybeCached::Constant(data)
         }
@@ -107,6 +116,11 @@ impl<T> Cache<T> {
             DataState::Valid(_) | DataState::Constant(_)
         )
     }
+    pub fn get_invalidation_sender(&self) -> Sender<Invalidator> {
+        let (send, recv) = channel();
+        self.downstreams.lock().push(recv);
+        send
+    }
 }
 
 pub struct InvalidatorGenerator<'a, T>(&'a Arc<Cache<T>>, &'a AtomicBool);
@@ -131,7 +145,7 @@ impl<T: 'static> InvalidatorGenerator<'_, T> {
 }
 
 pub enum MaybeCached<T> {
-    Cached(T, Sender<Invalidator>),
+    Cached(T, Vec<Sender<Invalidator>>),
     Constant(T),
     Uncached(T),
 }
@@ -142,10 +156,11 @@ impl<T> MaybeCached<T> {
         T: Send + 'static,
     {
         match self {
-            MaybeCached::Cached(value, sender) => {
-                sender
-                    .send(Box::new(generator.get()))
-                    .expect("Could not send invalidator");
+            MaybeCached::Cached(value, senders) => {
+                senders.into_iter().for_each(|s| {
+                    s.send(Box::new(generator.get()))
+                        .expect("Could not sent invalidator")
+                });
                 value
             }
             MaybeCached::Constant(value) => value,
@@ -166,10 +181,21 @@ impl<T> MaybeCached<T> {
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> MaybeCached<U> {
         match self {
-            MaybeCached::Cached(value, sender) => MaybeCached::Cached(f(value), sender),
+            MaybeCached::Cached(value, senders) => MaybeCached::Cached(f(value), senders),
             MaybeCached::Constant(value) => MaybeCached::Constant(f(value)),
             MaybeCached::Uncached(value) => MaybeCached::Uncached(f(value)),
         }
+    }
+
+    pub fn push_sender(&mut self, sender: Sender<Invalidator>) {
+        replace_with::replace_with_or_abort(self, move |self_| match self_ {
+            MaybeCached::Cached(value, mut senders) => {
+                senders.push(sender);
+                MaybeCached::Cached(value, senders)
+            }
+            MaybeCached::Constant(value) => MaybeCached::Cached(value, vec![sender]),
+            MaybeCached::Uncached(value) => MaybeCached::Uncached(value),
+        });
     }
 }
 
@@ -186,7 +212,7 @@ mod tests {
         COMPUTE.resize_to_available();
 
         let node_a = NodeCell::new(42);
-        let cache_b = Cache::<String>::new();
+        let cache_b = Cache::<String>::new_arc();
 
         let a = COMPUTE.block_on(async { Worker::with_current(|w| node_a.run(w.unwrap())) });
 

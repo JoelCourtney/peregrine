@@ -179,7 +179,7 @@ impl<O: Send, F: Fn(&Worker, InvalidatorGenerator<O>) -> O> CachedFnWrapper<O, F
     pub fn new(f: F) -> Self {
         CachedFnWrapper {
             f,
-            cache: Cache::new(),
+            cache: Cache::new_arc(),
         }
     }
 }
@@ -190,7 +190,7 @@ impl<O: Send + Clone + 'static, F: Fn(&Worker, InvalidatorGenerator<O>) -> O + S
     fn into_node(self) -> CachedFnWrapper<O, F> {
         CachedFnWrapper {
             f: self,
-            cache: Cache::new(),
+            cache: Cache::new_arc(),
         }
     }
 }
@@ -214,7 +214,7 @@ macro_rules! impl_into_node_for_tuple {
             #[allow(non_snake_case)]
             fn into_node(self) -> TupleWrapper<($($t,)*), ($($t::Output,)*)> {
                 let ($($t_i,)*) = self;
-                TupleWrapper(($($t_i.into_node()),*), Cache::new())
+                TupleWrapper(($($t_i.into_node()),*), Cache::new_arc())
             }
         }
     };

@@ -3,7 +3,11 @@ use std::sync::Arc;
 use forte::Worker;
 use parking_lot::Mutex;
 
-use crate::{cache::{Cache, MaybeCached}, node::NodeArc, IntoNode, Node};
+use crate::{
+    IntoNode, Node,
+    cache::{Cache, MaybeCached},
+    node::NodeArc,
+};
 
 pub struct Stack<O>(Mutex<Vec<NodeArc<O>>>, Arc<Cache<O>>);
 
@@ -11,7 +15,7 @@ impl<O> Stack<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
         Stack(
             Mutex::new(vec![NodeArc::new(node.into_node())]),
-            Cache::new(),
+            Cache::new_arc(),
         )
     }
 
@@ -40,7 +44,7 @@ impl<O> Stack<O> {
     }
 
     pub fn fork(&self) -> Self {
-        Stack(Mutex::new(self.0.lock().clone()), Cache::new())
+        Stack(Mutex::new(self.0.lock().clone()), Cache::new_arc())
     }
 }
 
@@ -57,10 +61,10 @@ impl<O: Clone + Send + Sync + 'static> Node for Stack<O> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structure::NodeCell;
     use crate as peregrine;
+    use crate::structure::NodeCell;
     use crate::*;
-    
+
     #[test]
     fn test_stack_push_pop() {
         let stack = Stack::new(0);
@@ -91,16 +95,16 @@ mod tests {
         assert_eq!(run(&node), 0);
         assert!(stack.pop().is_none());
     }
-    
+
     #[test]
     fn test_stack_with_cell() {
         let cell = Arc::new(NodeCell::new(2));
         let stack = Stack::new(2);
         stack.push(|prev| op!(i!(prev) * i!(cell.clone())));
         stack.push(|prev| op!(i!(prev) + 10));
-        
+
         assert_eq!(run(&stack), 14);
-        
+
         cell.set(5);
         assert_eq!(run(&stack), 20);
     }
