@@ -209,7 +209,7 @@ pub struct TupleWrapper<T, C>(T, Arc<Cache<C>>);
 
 macro_rules! impl_into_node_for_tuple {
     ($($t:ident $t_i:ident),*) => {
-        peregrine_macros::impl_node_for_tuple_wrapper!($($t),*);
+        peregrine_macros::impl_op_for_tuple_wrapper!($($t),*);
         impl<$($t: Node, $t_i: IntoNode<$t>),*> IntoNode<TupleWrapper<($($t,)*), ($($t::Output,)*)>> for ($($t_i,)*) where $($t::Output: Clone + 'static),* {
             #[allow(non_snake_case)]
             fn into_node(self) -> TupleWrapper<($($t,)*), ($($t::Output,)*)> {

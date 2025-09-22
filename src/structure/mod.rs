@@ -70,12 +70,14 @@ mod tests {
         let cell = NodeCell::new(0);
         assert_eq!(run(&cell), 0);
 
-        cell.set({
-            let stack = Stack::new(2);
-            stack.push(|prev| op!(i!(prev) * 3));
-            stack
+        cell.set(stack! {
+            v = 2,
+            op! {
+                let result = v * 3;
+                result + 1
+            }
         });
 
-        assert_eq!(run(&cell), 6);
+        assert_eq!(run(&cell), 7);
     }
 }

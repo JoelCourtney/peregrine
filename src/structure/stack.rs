@@ -9,6 +9,23 @@ use crate::{
     node::NodeArc,
 };
 
+#[macro_export]
+macro_rules! stack {
+    ($node:expr) => {
+        Stack::new($crate::op!($node))
+    };
+
+    ($v:ident = $init:expr, $($layers:expr),+) => {
+        {
+            let stack = Stack::new($crate::op!($init));
+            $(
+                stack.push(|$v| $layers);
+            )*
+            stack
+        }
+    }
+}
+
 pub struct Stack<O>(Mutex<Vec<NodeArc<O>>>, Arc<Cache<O>>);
 
 impl<O> Stack<O> {
@@ -70,7 +87,7 @@ mod tests {
         let stack = Stack::new(0);
         assert_eq!(run(&stack), 0);
 
-        stack.push(|prev| op!(i!(prev) + 2));
+        stack.push(|prev| op!(prev + 2));
         assert_eq!(run(&stack), 2);
 
         stack.push(|_| 10);
@@ -88,7 +105,7 @@ mod tests {
 
         assert_eq!(run(&node), 0);
 
-        stack.push(|prev| op!(i!(prev) + 2));
+        stack.push(|prev| op!(prev + 2));
         assert_eq!(run(&node), 4);
 
         assert_eq!(run(stack.pop()), Some(2));
@@ -99,9 +116,11 @@ mod tests {
     #[test]
     fn test_stack_with_cell() {
         let cell = Arc::new(NodeCell::new(2));
-        let stack = Stack::new(2);
-        stack.push(|prev| op!(i!(prev) * i!(cell.clone())));
-        stack.push(|prev| op!(i!(prev) + 10));
+        let stack = stack! {
+            v = 2,
+            op! { v * i!(cell.clone()) },
+            op! { v + 10 }
+        };
 
         assert_eq!(run(&stack), 14);
 

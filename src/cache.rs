@@ -77,6 +77,7 @@ impl<T> Cache<T> {
             MaybeCached::Constant(data)
         }
     }
+
     pub fn resolve(
         self: &Arc<Self>,
         w: &Worker,
@@ -92,6 +93,7 @@ impl<T> Cache<T> {
             .unwrap_or_else(|| w.block_on(self.data.lock()));
         self.resolve_internal(f, lock, force_variable)
     }
+
     pub fn resolve_blocking(
         self: &Arc<Self>,
         f: impl FnOnce(InvalidatorGenerator<T>) -> T,

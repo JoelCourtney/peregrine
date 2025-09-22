@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 
-pub fn generate_node_impl(types: &[syn::Ident]) -> TokenStream {
+pub fn generate_op_impl(types: &[syn::Ident]) -> TokenStream {
     let arity = types.len();
 
     // Generate generic bounds: A: Node, B: Node, ...
