@@ -1,8 +1,10 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
 
 use async_lock::{Mutex, MutexGuard};
 use forte::Worker;
 use oneshot::{Receiver, Sender, channel};
+
+use crate::once_bool::OnceBool;
 
 #[derive(Default)]
 enum DataState<T> {
@@ -58,9 +60,9 @@ impl<T> Cache<T> {
             DataState::Constant(d) => (d.clone(), true),
             DataState::Valid(d) => (d.clone(), false),
             state @ (DataState::Empty | DataState::Invalid(_)) => {
-                let cell = AtomicBool::new(false);
-                let result = f(InvalidatorGenerator(self, &cell));
-                let generator_used = cell.load(std::sync::atomic::Ordering::Relaxed);
+                let flag = OnceBool::new();
+                let result = f(InvalidatorGenerator(self, &flag));
+                let generator_used = flag.get();
                 *state = if generator_used || force_variable {
                     DataState::Valid(result.clone())
                 } else {
@@ -125,7 +127,7 @@ impl<T> Cache<T> {
     }
 }
 
-pub struct InvalidatorGenerator<'a, T>(&'a Arc<Cache<T>>, &'a AtomicBool);
+pub struct InvalidatorGenerator<'a, T>(&'a Arc<Cache<T>>, &'a OnceBool);
 
 impl<T> Clone for InvalidatorGenerator<'_, T> {
     fn clone(&self) -> Self {
@@ -136,7 +138,7 @@ impl<T> Copy for InvalidatorGenerator<'_, T> {}
 
 impl<T: 'static> InvalidatorGenerator<'_, T> {
     fn get(&self) -> impl FnOnce() + 'static {
-        self.1.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.1.set();
         let weak = Arc::downgrade(self.0);
         move || {
             if let Some(c) = weak.upgrade() {
