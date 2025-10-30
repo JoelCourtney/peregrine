@@ -67,10 +67,10 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                     use peregrine::{Node, IntoNode};
 
                     #(#input_declarations)*
-                    peregrine::node::CachedFnWrapper::new(move |w: &peregrine::macro_prelude::Worker, g: peregrine::cache::InvalidatorGenerator<_>| {
+                    move |w: &peregrine::macro_prelude::Worker, g: peregrine::cache::InvalidatorGenerator<_>| {
                         #join_statement
                         #processed
-                    })
+                    }
                 }
             };
 

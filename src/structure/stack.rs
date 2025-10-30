@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forte::Worker;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use crate::{
     IntoNode, Node,
@@ -26,12 +26,12 @@ macro_rules! stack {
     }
 }
 
-pub struct Stack<O>(Mutex<Vec<NodeArc<O>>>, Arc<Cache<O>>);
+pub struct Stack<O>(RwLock<Vec<NodeArc<O>>>, Arc<Cache<O>>);
 
 impl<O> Stack<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
         Stack(
-            Mutex::new(vec![NodeArc::new(node.into_node())]),
+            RwLock::new(vec![NodeArc::new(node.into_node())]),
             Cache::new_arc(),
         )
     }
@@ -40,14 +40,14 @@ impl<O> Stack<O> {
         &self,
         f: impl FnOnce(NodeArc<O>) -> IN,
     ) {
-        let mut nodes = self.0.lock();
+        let mut nodes = self.0.write();
         let prev = nodes.last().unwrap().clone();
         nodes.push(NodeArc::new(f(prev).into_node()));
         self.1.invalidate()
     }
 
     pub fn pop(&self) -> Option<NodeArc<O>> {
-        let mut nodes = self.0.lock();
+        let mut nodes = self.0.write();
         if nodes.len() > 1 {
             self.1.invalidate();
             nodes.pop()
@@ -57,11 +57,11 @@ impl<O> Stack<O> {
     }
 
     pub fn freeze(&self) -> NodeArc<O> {
-        self.0.lock().last().unwrap().clone()
+        self.0.read().last().unwrap().clone()
     }
 
     pub fn fork(&self) -> Self {
-        Stack(Mutex::new(self.0.lock().clone()), Cache::new_arc())
+        Stack(RwLock::new(self.0.read().clone()), Cache::new_arc())
     }
 }
 
@@ -69,7 +69,7 @@ impl<O: Clone + Send + Sync + 'static> Node for Stack<O> {
     type Output = O;
 
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        let nodes = self.0.lock();
+        let nodes = self.0.read();
         let last = nodes.last().unwrap();
         self.1.resolve(w, |g| last.run(w).track(g), true)
     }
