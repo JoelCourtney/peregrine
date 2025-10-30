@@ -12,7 +12,7 @@ impl OnceBool {
             state: Cell::new(false),
         }
     }
-    
+
     pub fn set(&self) {
         self.state.set(true);
     }
@@ -38,7 +38,7 @@ mod tests {
     fn test_once_flag() {
         let flag = OnceBool::new();
         assert!(!flag.get());
-        
+
         let flag = OnceBool::new();
         flag.set();
         assert!(flag.get());

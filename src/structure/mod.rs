@@ -31,19 +31,18 @@ use parking_lot::Mutex;
 use crate::{
     IntoNode, Node,
     cache::{Cache, MaybeCached},
-    node::NodeBox,
 };
 
-pub struct NodeCell<O>(Mutex<NodeBox<O>>, Cache<()>);
+pub struct NodeCell<O>(Mutex<Box<dyn Node<Output=O>>>, Cache<()>);
 
 impl<O> NodeCell<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
-        NodeCell(Mutex::new(NodeBox::new(node.into_node())), Cache::new())
+        NodeCell(Mutex::new(Box::new(node.into_node())), Cache::new())
     }
 
     pub fn set<N: Node<Output = O> + 'static>(&self, node: impl IntoNode<N>) {
         let mut lock = self.0.lock();
-        *lock = NodeBox::new(node.into_node());
+        *lock = Box::new(node.into_node());
         self.1.invalidate();
     }
 }

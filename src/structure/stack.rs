@@ -6,7 +6,6 @@ use parking_lot::RwLock;
 use crate::{
     IntoNode, Node,
     cache::{Cache, MaybeCached},
-    node::NodeArc,
 };
 
 #[macro_export]
@@ -26,27 +25,27 @@ macro_rules! stack {
     }
 }
 
-pub struct Stack<O>(RwLock<Vec<NodeArc<O>>>, Arc<Cache<O>>);
+pub struct Stack<O>(RwLock<Vec<Arc<dyn Node<Output=O>>>>, Arc<Cache<O>>);
 
 impl<O> Stack<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
         Stack(
-            RwLock::new(vec![NodeArc::new(node.into_node())]),
+            RwLock::new(vec![Arc::new(node.into_node())]),
             Cache::new_arc(),
         )
     }
 
     pub fn push<N: Node<Output = O> + 'static, IN: IntoNode<N>>(
         &self,
-        f: impl FnOnce(NodeArc<O>) -> IN,
+        f: impl FnOnce(Arc<dyn Node<Output=O>>) -> IN,
     ) {
         let mut nodes = self.0.write();
         let prev = nodes.last().unwrap().clone();
-        nodes.push(NodeArc::new(f(prev).into_node()));
+        nodes.push(Arc::new(f(prev).into_node()));
         self.1.invalidate()
     }
 
-    pub fn pop(&self) -> Option<NodeArc<O>> {
+    pub fn pop(&self) -> Option<Arc<dyn Node<Output=O>>> {
         let mut nodes = self.0.write();
         if nodes.len() > 1 {
             self.1.invalidate();
@@ -56,7 +55,7 @@ impl<O> Stack<O> {
         }
     }
 
-    pub fn freeze(&self) -> NodeArc<O> {
+    pub fn freeze(&self) -> Arc<dyn Node<Output=O>> {
         self.0.read().last().unwrap().clone()
     }
 

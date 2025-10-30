@@ -9,56 +9,6 @@ use crate::{
     data::Data,
 };
 
-pub struct NodeBox<O>(Box<dyn Node<Output = O>>);
-
-impl<O> NodeBox<O> {
-    pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
-        Self(Box::new(node.into_node()))
-    }
-}
-
-impl<O: Send + 'static> Node for NodeBox<O> {
-    type Output = O;
-
-    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        self.0.run(w)
-    }
-}
-
-impl<O: Send + 'static> IntoNode<NodeBox<O>> for Box<dyn Node<Output = O>> {
-    fn into_node(self) -> NodeBox<O> {
-        NodeBox(self)
-    }
-}
-
-pub struct NodeArc<O>(Arc<dyn Node<Output = O>>);
-
-impl<O> NodeArc<O> {
-    pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
-        Self(Arc::new(node.into_node()))
-    }
-}
-
-impl<O> Clone for NodeArc<O> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<O: Send + 'static> Node for NodeArc<O> {
-    type Output = O;
-
-    fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-        self.0.run(w)
-    }
-}
-
-impl<O: Send + 'static> IntoNode<NodeArc<O>> for Arc<dyn Node<Output = O>> {
-    fn into_node(self) -> NodeArc<O> {
-        NodeArc(self)
-    }
-}
-
 impl<N: Node> IntoNode<N> for N {
     fn into_node(self) -> N {
         self
@@ -81,7 +31,7 @@ impl<N: Node + ?Sized> Node for Box<N> {
     }
 }
 
-impl<N: Node> Node for Arc<N> {
+impl<N: Node + ?Sized> Node for Arc<N> {
     type Output = N::Output;
 
     fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
