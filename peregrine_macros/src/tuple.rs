@@ -4,8 +4,8 @@ use quote::{format_ident, quote};
 pub fn generate_op_impl(types: &[syn::Ident]) -> TokenStream {
     let arity = types.len();
 
-    // Generate generic bounds: A: Node, B: Node, ...
-    let generic_bounds = types.iter().map(|t| quote! { #t: Node });
+    // Generate generic bounds: A: Run, B: Run, ...
+    let generic_bounds = types.iter().map(|t| quote! { #t: Run });
 
     // Generate output type: (A::Output, B::Output, ...)
     let output_types = types
@@ -31,11 +31,12 @@ pub fn generate_op_impl(types: &[syn::Ident]) -> TokenStream {
     let merge_chain = generate_merge_chain(arity);
 
     let expanded = quote! {
-        impl<#(#generic_bounds),*> Node for TupleWrapper<(#(#types,)*), (#(#output_types,)*)> where #(#types::Output: Clone + 'static),* {
+        impl<#(#generic_bounds),*> Run for TupleWrapper<(#(#types,)*), (#(#output_types,)*)> where #(#types::Output: Clone + 'static),* {
             type Output = (#(#output_types),*);
 
-            fn run(&self, w: &Worker) -> MaybeCached<Self::Output> {
-                self.1.resolve(w, |g| {
+            fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
+                self.1.resolve(ctx.worker, |g| {
+                    let Ctx { world, worker } = ctx;
                     let #destructure_pattern = #run_cache_join_expr;
                     #merge_chain
                 }, false)
@@ -54,9 +55,9 @@ fn generate_nested_joins(field_accesses: &[proc_macro2::TokenStream]) -> proc_ma
         let second = &field_accesses[1];
 
         quote! {
-            w.join(
-                |w| #first.run(w).track(g),
-                |w| #second.run(w).track(g)
+            worker.join(
+                |worker| #first.run(Ctx { world, worker }).track(g),
+                |worker| #second.run(Ctx { world, worker }).track(g)
             )
         }
     } else {
@@ -66,9 +67,9 @@ fn generate_nested_joins(field_accesses: &[proc_macro2::TokenStream]) -> proc_ma
         let nested_run_cache = generate_nested_joins(rest);
 
         quote! {
-            w.join(
-                |w| #first.run(w).track(g),
-                |w| #nested_run_cache
+            worker.join(
+                |worker| #first.run(Ctx { world, worker }).track(g),
+                |worker| #nested_run_cache
             )
         }
     }

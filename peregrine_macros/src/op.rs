@@ -33,17 +33,18 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
             for (index, (var_name, input_expr)) in inputs.iter().enumerate() {
                 let input_name = format_ident!("peregrine_internal_op_input_{index}");
                 input_declarations.push(quote! {
-                    let #input_name = (#input_expr).into_node();
+                    let #input_name = (#input_expr).into_run();
                 });
                 if let Some(e) = join_expr {
                     join_expr = Some(quote! {
-                        w.join(
-                            |w| #input_name.run(w).track(g),
-                            |w| #e,
+                        worker.join(
+                            |worker| #input_name.run(peregrine::Ctx { world, worker }).track(g),
+                            |worker| #e,
                         )
                     })
                 } else {
-                    join_expr = Some(quote! {#input_name.run(w).track(g)});
+                    join_expr =
+                        Some(quote! {#input_name.run(peregrine::Ctx { world, worker }).track(g)});
                 }
                 if let Some(d) = join_destructure {
                     join_destructure = Some(quote! {
@@ -58,19 +59,22 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                 quote! {}
             } else {
                 quote! {
-                    let #join_destructure = #join_expr;
+                    let #join_destructure = {
+                        let peregrine::Ctx { worker, world } = ctx;
+                        #join_expr
+                    };
                 }
             };
 
             let expanded = quote! {
                 {
-                    use peregrine::{Node, IntoNode};
+                    use peregrine::{Run, IntoRun};
 
                     #(#input_declarations)*
-                    move |w: &peregrine::macro_prelude::Worker, g: peregrine::cache::InvalidatorGenerator<_>| {
+                    peregrine::node::auto::CachedFnWrapper::new(move |ctx: peregrine::Ctx, g: peregrine::cache::InvalidatorGenerator<_>| {
                         #join_statement
                         #processed
-                    }
+                    })
                 }
             };
 
