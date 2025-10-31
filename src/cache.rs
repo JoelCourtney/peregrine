@@ -172,10 +172,7 @@ impl<T> MaybeCached<T> {
         }
     }
 
-    pub fn open(self) -> T
-    where
-        T: Send + 'static,
-    {
+    pub fn open(self) -> T {
         match self {
             MaybeCached::Cached(value, _) => value,
             MaybeCached::Constant(value) => value,
@@ -206,19 +203,13 @@ impl<T> MaybeCached<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Node, structure::NodeCell};
-    use forte::{ThreadPool, Worker};
-
-    static COMPUTE: ThreadPool = ThreadPool::new();
 
     #[test]
     fn test_cache_manual_invalidation() {
-        COMPUTE.resize_to_available();
+        let cache_a = Cache::<u32>::new_arc();
+        let a = cache_a.resolve_blocking(|_| 42, true);
 
-        let node_a = NodeCell::new(42);
         let cache_b = Cache::<String>::new_arc();
-
-        let a = COMPUTE.block_on(async { Worker::with_current(|w| node_a.run(w.unwrap())) });
 
         let b = cache_b.resolve_blocking(|i| a.track(i).to_string(), false);
 
@@ -227,7 +218,7 @@ mod tests {
 
         assert!(cache_b.is_valid());
 
-        node_a.set(5);
+        cache_a.invalidate();
         assert!(!cache_b.is_valid());
     }
 }

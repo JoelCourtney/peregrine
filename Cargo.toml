@@ -20,7 +20,9 @@ async-lock = "3.4"
 peregrine_macros = { path = "peregrine_macros" }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
 oneshot = "0.1.11"
+bumpalo = { version = "3.19.0", features = ["boxed"] }
 replace_with = "0.1.8"
+typed-arena = "2.0.2"
 
 [dev-dependencies]
 hifitime = "4.1.3"

@@ -25,7 +25,7 @@ macro_rules! stack {
     }
 }
 
-pub struct Stack<O>(RwLock<Vec<Arc<dyn Node<Output=O>>>>, Arc<Cache<O>>);
+pub struct Stack<O>(RwLock<Vec<Arc<dyn Node<Output = O>>>>, Arc<Cache<O>>);
 
 impl<O> Stack<O> {
     pub fn new<N: Node<Output = O> + 'static>(node: impl IntoNode<N>) -> Self {
@@ -37,7 +37,7 @@ impl<O> Stack<O> {
 
     pub fn push<N: Node<Output = O> + 'static, IN: IntoNode<N>>(
         &self,
-        f: impl FnOnce(Arc<dyn Node<Output=O>>) -> IN,
+        f: impl FnOnce(Arc<dyn Node<Output = O>>) -> IN,
     ) {
         let mut nodes = self.0.write();
         let prev = nodes.last().unwrap().clone();
@@ -45,7 +45,7 @@ impl<O> Stack<O> {
         self.1.invalidate()
     }
 
-    pub fn pop(&self) -> Option<Arc<dyn Node<Output=O>>> {
+    pub fn pop(&self) -> Option<Arc<dyn Node<Output = O>>> {
         let mut nodes = self.0.write();
         if nodes.len() > 1 {
             self.1.invalidate();
@@ -55,7 +55,7 @@ impl<O> Stack<O> {
         }
     }
 
-    pub fn freeze(&self) -> Arc<dyn Node<Output=O>> {
+    pub fn freeze(&self) -> Arc<dyn Node<Output = O>> {
         self.0.read().last().unwrap().clone()
     }
 
@@ -78,7 +78,7 @@ impl<O: Clone + Send + Sync + 'static> Node for Stack<O> {
 mod tests {
     use super::*;
     use crate as peregrine;
-    use crate::structure::NodeCell;
+    use crate::structure::variable::Var;
     use crate::*;
 
     #[test]
@@ -114,16 +114,16 @@ mod tests {
 
     #[test]
     fn test_stack_with_cell() {
-        let cell = Arc::new(NodeCell::new(2));
+        let mut var = Var::new(2);
         let stack = stack! {
             v = 2,
-            op! { v * i!(cell.clone()) },
+            op! { v * i!(&var) },
             op! { v + 10 }
         };
 
         assert_eq!(run(&stack), 14);
 
-        cell.set(5);
+        var.set(5);
         assert_eq!(run(&stack), 20);
     }
 }

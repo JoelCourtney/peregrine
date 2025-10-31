@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::Arc};
+
 macro_rules! impl_data {
     ($($t:ty),*) => {
         $(
@@ -27,5 +29,10 @@ impl_data!(
     bool,
     char,
     (),
-    String
+    String,
+    PathBuf
 );
+
+impl<T: Data> Data for Box<T> {}
+impl<T: Data> Data for Vec<T> {}
+impl<T: Data> Data for Arc<T> {}
