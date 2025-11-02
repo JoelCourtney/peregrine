@@ -177,9 +177,7 @@ mod tests {
         assert_eq!(run(var.world(), &var), 5);
 
         var.set(10);
-        
-        let asdf = (&var).into_run();
-        
+       
         assert_eq!(run(var.world(), &var), 10);
     }
 }
