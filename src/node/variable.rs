@@ -3,10 +3,7 @@ use std::cell::Cell;
 use parking_lot::RwLock;
 
 use crate::{
-    Ctx, IntoRun, Run,
-    cache::{Cache, MaybeCached},
-    node::Node,
-    world::World,
+    cache::{Cache, MaybeCached}, node::Node, world::World, Ctx, IntoRun, Run
 };
 
 pub struct Var<'e, O: Send + 'static> {
@@ -77,9 +74,9 @@ impl<O: Send> IntoRun<Node<dyn Run<Output = O>>> for Var<'_, O> {
     }
 }
 
-impl<O: Send> IntoRun<Node<VarCell<O>>> for &Var<'_, O> {
-    fn into_run(self) -> Node<VarCell<O>> {
-        self.node
+impl<O: Send> IntoRun<Node<dyn Run<Output = O>>> for &Var<'_, O> {
+    fn into_run(self) -> Node<dyn Run<Output = O>> {
+        self.node.as_dyn()
     }
 }
 

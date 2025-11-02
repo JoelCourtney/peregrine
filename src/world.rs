@@ -1,8 +1,13 @@
-use std::{any::Any, cell::UnsafeCell, mem::transmute};
+use std::{
+    any::Any,
+    cell::UnsafeCell,
+    mem::transmute,
+    ops::{Deref, DerefMut},
+};
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{Run, node::Node};
+use crate::{node::Node, IntoRun, Run};
 
 new_key_type! { pub(crate) struct Key; }
 
@@ -93,9 +98,58 @@ impl Default for World {
     }
 }
 
+pub struct WithWorld<T> {
+    world: Box<World>,
+    data: T,
+}
+
+impl<T> WithWorld<T> {
+    pub fn init(f: impl FnOnce(&'static World) -> T) -> Self {
+        let world = Box::new(World::new());
+        let world_ref = unsafe {
+            transmute::<&World, &'static World>(&*world)
+        };
+        WithWorld {
+            world,
+            data: f(world_ref)
+        }
+    }
+    
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+    
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> WithWorld<U> {
+        WithWorld {
+            world: self.world,
+            data: f(self.data)
+        }
+    }
+}
+
+impl<T> Deref for WithWorld<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T> DerefMut for WithWorld<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
+}
+
+impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<T> where &'a T: IntoRun<R> {
+    fn into_run(self) -> R {
+        self.deref().into_run()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::IntoRun;
+    use crate::{node::variable::Var, run, IntoRun};
 
     use super::*;
     use std::sync::Arc;
@@ -112,5 +166,20 @@ mod tests {
 
         drop(w);
         assert_eq!(Arc::strong_count(&arc), 1);
+    }
+    
+    #[test]
+    fn test_with_world() {
+        let mut var = WithWorld::init(|w| {
+            Var::new(w, 5)
+        });
+
+        assert_eq!(run(var.world(), &var), 5);
+
+        var.set(10);
+        
+        let asdf = (&var).into_run();
+        
+        assert_eq!(run(var.world(), &var), 10);
     }
 }
