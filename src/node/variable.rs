@@ -21,16 +21,13 @@ pub struct VarCell<O: Send + 'static> {
 }
 
 impl<O: Send> Var<'_, O> {
-    pub fn new<'e, N: Run<Output = O> + 'static>(
-        world: &'e World,
-        node: impl IntoRun<N>,
-    ) -> Var<'e, O> {
+    pub fn new<N: Run<Output = O> + 'static>(world: &World, node: impl IntoRun<N>) -> Var<'_, O> {
         let current = world.alloc(node.into_run()).as_dyn();
         let var_node = VarCell {
             cell: RwLock::new(current),
             cache: Cache::new(),
         };
-        Var::<'e, O> {
+        Var {
             world,
             node: world.alloc(var_node),
             frozen: Cell::new(false),

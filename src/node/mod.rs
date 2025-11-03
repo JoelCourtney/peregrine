@@ -1,5 +1,5 @@
-// pub mod stack;
 pub mod auto;
+pub mod stack;
 pub mod variable;
 
 use crate::{
