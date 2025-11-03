@@ -1,4 +1,4 @@
-use peregrine::{op, run_in, world::World};
+use peregrine::{op, run, };
 
 #[test]
 fn test_basic() {
@@ -8,5 +8,5 @@ fn test_basic() {
         x * y + i!(100)
     };
 
-    assert_eq!(run_in(&World::new(), result), Ok(520));
+    assert_eq!(run(result), Ok(520));
 }

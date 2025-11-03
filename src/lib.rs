@@ -10,12 +10,11 @@ pub use peregrine_macros::op;
 use cache::MaybeCached;
 use forte::{ThreadPool, Worker};
 
-use crate::world::{InWorld, World, WorldId, WorldView};
+use crate::world::{World, WorldView};
 
 pub trait Run: Send + Sync {
     type Output: Send;
 
-    fn world_id(&self) -> WorldId;
     fn run(&self, w: Ctx) -> MaybeCached<Self::Output>;
 }
 
@@ -26,26 +25,33 @@ pub struct Ctx<'a> {
 }
 
 pub trait IntoRun<R: Run> {
-    fn into_run(self) -> R;
+    fn into_run(self) -> RunInWorld<R>;
 }
 
-pub fn run<'a, IR: InWorld, R: Run>(r: &'a IR) -> Result<R::Output, IncompatibleWorldErr>
-where
-    &'a IR: IntoRun<R>,
-{
-    run_in(r.world(), r.into_run())
+pub struct RunInWorld<R> {
+    pub run: R,
+    pub world: World,
 }
 
-pub fn run_in<R: Run>(
-    world: &World,
-    r: impl IntoRun<R>,
-) -> Result<R::Output, IncompatibleWorldErr> {
+impl<R> RunInWorld<R> {
+    pub fn new(run: R, world: World) -> Self {
+        RunInWorld { run, world }
+    }
+}
+
+impl<R: Run> IntoRun<R> for RunInWorld<R> {
+    fn into_run(self) -> Self {
+        self
+    }
+}
+
+pub fn run<R: Run>(r: impl IntoRun<R>) -> Result<R::Output, IncompatibleWorldErr> {
     static COMPUTE: ThreadPool = ThreadPool::new();
 
-    let converted = r.into_run();
-    if !converted.world_id().matches(&world.id()) {
-        return Err(IncompatibleWorldErr);
-    }
+    let RunInWorld {
+        run: converted,
+        world,
+    } = r.into_run();
 
     COMPUTE.resize_to_available();
 

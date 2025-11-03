@@ -34,9 +34,6 @@ pub fn generate_op_impl(types: &[syn::Ident]) -> TokenStream {
         impl<#(#generic_bounds),*> Run for TupleWrapper<(#(#types,)*), (#(#output_types,)*)> where #(#types::Output: Clone + 'static),* {
             type Output = (#(#output_types),*);
 
-            fn world_id(&self) -> WorldId {
-                self.2
-            }
             fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
                 self.1.resolve(ctx.worker, |g| {
                     let Ctx { world, worker } = ctx;

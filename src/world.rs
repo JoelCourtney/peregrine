@@ -1,61 +1,108 @@
 use std::{
     any::Any,
-    cell::UnsafeCell,
+    cell::{Cell, UnsafeCell},
     mem::transmute,
-    ops::{Deref, DerefMut},
-    sync::atomic::AtomicU32,
+    ops::Deref,
+    rc::Rc,
 };
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{IntoRun, Run, node::Node};
+use crate::{IncompatibleWorldErr, Run, node::Node};
 
 new_key_type! { pub(crate) struct Key; }
 
-#[must_use]
+#[derive(Default)]
 pub struct World {
+    inner: Cell<Option<Rc<WorldInner>>>,
+}
+
+impl From<&World> for World {
+    fn from(world: &World) -> World {
+        world.clone()
+    }
+}
+
+impl Clone for World {
+    fn clone(&self) -> World {
+        self.init();
+        let inner = self.inner.take();
+        let new_inner = inner.clone();
+        self.inner.set(inner);
+        World {
+            inner: Cell::new(new_inner),
+        }
+    }
+}
+
+impl World {
+    pub fn new() -> Self {
+        World::default()
+    }
+
+    fn init(&self) {
+        let w = match self.inner.take() {
+            Some(world) => world,
+            None => Rc::new(WorldInner::new()),
+        };
+        self.inner.set(Some(w));
+    }
+
+    pub fn merge(self, other: World) -> Result<World, IncompatibleWorldErr> {
+        self.merge_in_place(other)?;
+        Ok(self)
+    }
+
+    pub fn merge_in_place(&self, other: World) -> Result<(), IncompatibleWorldErr> {
+        let w1 = self.inner.take();
+        if w1.is_none() {
+            self.inner.set(other.inner.take());
+            return Ok(());
+        }
+
+        let w2 = other.inner.into_inner();
+        if w2.is_none() {
+            self.inner.set(w1);
+            return Ok(());
+        }
+
+        let (w1, w2) = (w1.unwrap(), w2.unwrap());
+
+        if std::ptr::eq::<WorldInner>(&*w1, &*w2) {
+            self.inner.set(Some(w1));
+            Ok(())
+        } else {
+            Err(IncompatibleWorldErr)
+        }
+    }
+
+    pub fn is_compatible(&self, other: &World) -> bool {
+        let w1 = self.inner.take();
+        let w2 = other.inner.take();
+
+        let result = match (w1.as_ref(), w2.as_ref()) {
+            (Some(w1), Some(w2)) => std::ptr::eq::<WorldInner>(&**w1, &**w2),
+            _ => true,
+        };
+
+        self.inner.set(w1);
+        other.inner.set(w2);
+
+        result
+    }
+}
+
+impl Deref for World {
+    type Target = WorldInner;
+
+    fn deref(&self) -> &Self::Target {
+        self.init();
+        unsafe { self.inner.as_ptr().as_ref().unwrap().as_deref().unwrap() }
+    }
+}
+
+pub struct WorldInner {
     slots: UnsafeCell<SlotMap<Key, Box<dyn ErasedRun>>>,
-    id: WorldId,
-}
-
-pub trait InWorld {
-    fn world(&self) -> &World;
-}
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub enum WorldId {
-    Any,
-    Only(u32),
-}
-
-impl WorldId {
-    pub(crate) fn new_unique() -> Self {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        Self::Only(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-    }
-
-    pub fn any() -> Self {
-        Self::Any
-    }
-
-    pub(crate) fn matches(&self, other: &Self) -> bool {
-        use WorldId::*;
-
-        match (self, other) {
-            (Any, _) | (_, Any) => true,
-            (id1, id2) => id1 == id2,
-        }
-    }
-
-    pub fn merge(self, other: Self) -> Option<Self> {
-        use WorldId::*;
-
-        match (self, other) {
-            (Any, o) | (o, Any) => Some(o),
-            (id1, id2) if id1 == id2 => Some(id1),
-            _ => None,
-        }
-    }
 }
 
 pub(crate) trait AnyRun<O>: Any + Run<Output = O> {}
@@ -68,7 +115,7 @@ pub(crate) enum Never {}
 #[derive(Copy, Clone)]
 #[doc(hidden)]
 pub struct WorldView<'e> {
-    world: &'e World,
+    world: &'e WorldInner,
 }
 
 impl WorldView<'_> {
@@ -83,11 +130,10 @@ impl WorldView<'_> {
 
 unsafe impl Sync for WorldView<'_> {}
 
-impl World {
+impl WorldInner {
     pub fn new() -> Self {
         Self {
             slots: UnsafeCell::new(SlotMap::with_key()),
-            id: WorldId::new_unique(),
         }
     }
 
@@ -100,7 +146,6 @@ impl World {
         Node {
             index,
             phantom: std::marker::PhantomData,
-            world_id: self.id,
         }
     }
 
@@ -134,116 +179,11 @@ impl World {
     pub(crate) unsafe fn view(&self) -> WorldView<'_> {
         WorldView { world: self }
     }
-
-    pub(crate) fn id(&self) -> WorldId {
-        self.id
-    }
 }
 
-impl Default for World {
+impl Default for WorldInner {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub struct WithWorld<'w, T> {
-    world: WorldHandle<'w>,
-    data: T,
-}
-
-impl<T> InWorld for WithWorld<'_, T> {
-    fn world(&self) -> &World {
-        match &self.world {
-            WorldHandle::Owned(world) => world,
-            WorldHandle::Borrowed(world) => world,
-        }
-    }
-}
-
-enum WorldHandle<'w> {
-    Owned(Box<World>),
-    Borrowed(&'w World),
-}
-
-impl Deref for WorldHandle<'_> {
-    type Target = World;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            WorldHandle::Owned(world) => world,
-            WorldHandle::Borrowed(world) => world,
-        }
-    }
-}
-
-impl<T> WithWorld<'static, T> {
-    #[allow(unused)]
-    pub(crate) unsafe fn owned(f: impl FnOnce(&'static World) -> T) -> Self {
-        let world = WorldHandle::Owned(Box::default());
-        let world_ref = unsafe { transmute::<&World, &'static World>(&*world) };
-        WithWorld {
-            world,
-            data: f(world_ref),
-        }
-    }
-}
-
-impl<'w, T> WithWorld<'w, T> {
-    pub fn borrowed(world: &'w World, data: T) -> WithWorld<'w, T> {
-        WithWorld {
-            world: WorldHandle::Borrowed(world),
-            data,
-        }
-    }
-
-    pub fn world(&self) -> &World {
-        &self.world
-    }
-
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> WithWorld<'w, U> {
-        WithWorld {
-            world: self.world,
-            data: f(self.data),
-        }
-    }
-
-    pub fn into_inner(self) -> T
-    where
-        T: 'static,
-    {
-        self.data
-    }
-}
-
-impl<T> Deref for WithWorld<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl<T> DerefMut for WithWorld<'_, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.data
-    }
-}
-
-impl<T, R: Run> IntoRun<R> for WithWorld<'_, T>
-where
-    T: IntoRun<R>,
-{
-    fn into_run(self) -> R {
-        self.data.into_run()
-    }
-}
-
-impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<'_, T>
-where
-    &'a T: IntoRun<R>,
-{
-    fn into_run(self) -> R {
-        self.deref().into_run()
     }
 }
 
@@ -251,7 +191,7 @@ where
 mod tests {
     use peregrine_macros::op;
 
-    use crate::{IncompatibleWorldErr, IntoRun, node::variable::Var, run, run_in};
+    use crate::{IntoRun, node::variable::Var};
 
     use super::*;
     use std::sync::Arc;
@@ -265,7 +205,7 @@ mod tests {
 
         assert_eq!(Arc::strong_count(&arc), 1);
 
-        w.alloc(arc.clone().into_run());
+        w.alloc(arc.clone().into_run().run);
         assert_eq!(Arc::strong_count(&arc), 2);
 
         drop(w);
@@ -273,32 +213,19 @@ mod tests {
     }
 
     #[test]
-    fn test_with_world() {
-        let mut var = unsafe { WithWorld::owned(|w| Var::new(w, 5)) };
-
-        assert_eq!(run(&var), Ok(5));
-
-        var.set(10);
-
-        assert_eq!(run(&var), Ok(10));
-    }
-
-    #[test]
+    #[should_panic]
     fn incorrect_world() {
-        let w = World::new();
-        let node = Node::new(&w, 5);
-
-        assert_eq!(run_in(&w, &node), Ok(5));
-        assert_eq!(run_in(&World::new(), &node), Err(IncompatibleWorldErr));
+        let mut x = Var::new(0);
+        let y = Var::new(1);
+        
+        x.set(y);
     }
 
     #[test]
     #[should_panic]
     fn incompatible_world() {
-        let w1 = World::new();
-        let w2 = World::new();
-        let n1 = Node::new(&w1, 5);
-        let n2 = Node::new(&w2, 10);
+        let n1 = Var::new(5);
+        let n2 = Var::new(10);
 
         let _ = op! { n1 + n2 };
     }

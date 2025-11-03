@@ -40,13 +40,14 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                 if let Some(e) = join_expr {
                     join_expr = Some(quote! {
                         worker.join(
-                            |worker| #input_name.run(peregrine::Ctx { world, worker }).track(g),
+                            |worker| #input_name.run.run(peregrine::Ctx { world, worker }).track(g),
                             |worker| #e,
                         )
                     })
                 } else {
-                    join_expr =
-                        Some(quote! {#input_name.run(peregrine::Ctx { world, worker }).track(g)});
+                    join_expr = Some(
+                        quote! {#input_name.run.run(peregrine::Ctx { world, worker }).track(g)},
+                    );
                 }
                 if let Some(d) = join_destructure {
                     join_destructure = Some(quote! {
@@ -73,14 +74,14 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                     use peregrine::{Run, IntoRun};
 
                     #(#input_declarations)*
-                    peregrine::node::auto::CachedFnWrapper::new({
-                        let mut world_id = peregrine::world::WorldId::any();
+                    peregrine::node::op::Op::new({
+                        let mut world = peregrine::world::World::new();
 
                         #(
-                            world_id = world_id.merge(#input_names.world_id()).expect("Cannot merge node from different worlds in a single operation.");
+                            world= world.merge(#input_names.world).expect("Cannot merge node from different worlds in a single operation.");
                         )*
 
-                        world_id
+                        world
                     }, move |ctx: peregrine::Ctx, g: peregrine::cache::InvalidatorGenerator<_>| {
                         #join_statement
                         #processed
