@@ -10,11 +10,12 @@ pub use peregrine_macros::op;
 use cache::MaybeCached;
 use forte::{ThreadPool, Worker};
 
-use crate::world::{World, WorldView};
+use crate::world::{World, WorldId, WorldView};
 
 pub trait Run: Send + Sync {
     type Output: Send;
 
+    fn world_id(&self) -> WorldId;
     fn run(&self, w: Ctx) -> MaybeCached<Self::Output>;
 }
 
@@ -28,11 +29,17 @@ pub trait IntoRun<R: Run> {
     fn into_run(self) -> R;
 }
 
-pub fn run<R: Run>(world: &World, node: impl IntoRun<R>) -> R::Output {
+pub fn run<R: Run>(world: &World, r: impl IntoRun<R>) -> Result<R::Output, IncompatibleWorldErr> {
     static COMPUTE: ThreadPool = ThreadPool::new();
+
+    let converted = r.into_run();
+    if !converted.world_id().matches(&world.id()) {
+        return Err(IncompatibleWorldErr);
+    }
+
     COMPUTE.resize_to_available();
 
-    COMPUTE
+    let result = COMPUTE
         .with_worker(|w| {
             let ctx = unsafe {
                 Ctx {
@@ -40,7 +47,12 @@ pub fn run<R: Run>(world: &World, node: impl IntoRun<R>) -> R::Output {
                     world: world.view(),
                 }
             };
-            node.into_run().run(ctx)
+            converted.run(ctx)
         })
-        .open()
+        .open();
+
+    Ok(result)
 }
+
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct IncompatibleWorldErr;

@@ -3,17 +3,55 @@ use std::{
     cell::UnsafeCell,
     mem::transmute,
     ops::{Deref, DerefMut},
+    sync::atomic::AtomicU32,
 };
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{node::Node, IntoRun, Run};
+use crate::{IntoRun, Run, node::Node};
 
 new_key_type! { pub(crate) struct Key; }
 
 #[must_use]
 pub struct World {
     slots: UnsafeCell<SlotMap<Key, Box<dyn ErasedRun>>>,
+    id: WorldId,
+}
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum WorldId {
+    Any,
+    Only(u32),
+}
+
+impl WorldId {
+    pub(crate) fn new_unique() -> Self {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        Self::Only(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+
+    pub fn any() -> Self {
+        Self::Any
+    }
+
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        use WorldId::*;
+
+        match (self, other) {
+            (Any, _) | (_, Any) => true,
+            (id1, id2) => id1 == id2,
+        }
+    }
+
+    pub fn merge(self, other: Self) -> Option<Self> {
+        use WorldId::*;
+
+        match (self, other) {
+            (Any, o) | (o, Any) => Some(o),
+            (id1, id2) if id1 == id2 => Some(id1),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) trait AnyRun<O>: Any + Run<Output = O> {}
@@ -45,6 +83,7 @@ impl World {
     pub fn new() -> Self {
         Self {
             slots: UnsafeCell::new(SlotMap::with_key()),
+            id: WorldId::new_unique(),
         }
     }
 
@@ -57,6 +96,7 @@ impl World {
         Node {
             index,
             phantom: std::marker::PhantomData,
+            world_id: self.id,
         }
     }
 
@@ -90,6 +130,10 @@ impl World {
     pub(crate) unsafe fn view(&self) -> WorldView<'_> {
         WorldView { world: self }
     }
+
+    pub(crate) fn id(&self) -> WorldId {
+        self.id
+    }
 }
 
 impl Default for World {
@@ -106,23 +150,21 @@ pub struct WithWorld<T> {
 impl<T> WithWorld<T> {
     pub fn init(f: impl FnOnce(&'static World) -> T) -> Self {
         let world = Box::new(World::new());
-        let world_ref = unsafe {
-            transmute::<&World, &'static World>(&*world)
-        };
+        let world_ref = unsafe { transmute::<&World, &'static World>(&*world) };
         WithWorld {
             world,
-            data: f(world_ref)
+            data: f(world_ref),
         }
     }
-    
+
     pub fn world(&self) -> &World {
         &self.world
     }
-    
+
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> WithWorld<U> {
         WithWorld {
             world: self.world,
-            data: f(self.data)
+            data: f(self.data),
         }
     }
 }
@@ -141,7 +183,10 @@ impl<T> DerefMut for WithWorld<T> {
     }
 }
 
-impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<T> where &'a T: IntoRun<R> {
+impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<T>
+where
+    &'a T: IntoRun<R>,
+{
     fn into_run(self) -> R {
         self.deref().into_run()
     }
@@ -149,10 +194,14 @@ impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<T> where &'a T: IntoRun<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{node::variable::Var, run, IntoRun};
+    use peregrine_macros::op;
+
+    use crate::{IncompatibleWorldErr, IntoRun, node::variable::Var, run};
 
     use super::*;
     use std::sync::Arc;
+
+    use crate as peregrine;
 
     #[test]
     fn test_drop() {
@@ -167,17 +216,35 @@ mod tests {
         drop(w);
         assert_eq!(Arc::strong_count(&arc), 1);
     }
-    
+
     #[test]
     fn test_with_world() {
-        let mut var = WithWorld::init(|w| {
-            Var::new(w, 5)
-        });
+        let mut var = WithWorld::init(|w| Var::new(w, 5));
 
-        assert_eq!(run(var.world(), &var), 5);
+        assert_eq!(run(var.world(), &var), Ok(5));
 
         var.set(10);
-       
-        assert_eq!(run(var.world(), &var), 10);
+
+        assert_eq!(run(var.world(), &var), Ok(10));
+    }
+
+    #[test]
+    fn incorrect_world() {
+        let w = World::new();
+        let node = Node::new(&w, 5);
+
+        assert_eq!(run(&w, &node), Ok(5));
+        assert_eq!(run(&World::new(), &node), Err(IncompatibleWorldErr));
+    }
+
+    #[test]
+    #[should_panic]
+    fn incompatible_world() {
+        let w1 = World::new();
+        let w2 = World::new();
+        let n1 = Node::new(&w1, 5);
+        let n2 = Node::new(&w2, 10);
+
+        let _ = op! { n1 + n2 };
     }
 }

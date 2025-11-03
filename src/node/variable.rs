@@ -3,7 +3,10 @@ use std::cell::Cell;
 use parking_lot::RwLock;
 
 use crate::{
-    cache::{Cache, MaybeCached}, node::Node, world::World, Ctx, IntoRun, Run
+    Ctx, IntoRun, Run,
+    cache::{Cache, MaybeCached},
+    node::Node,
+    world::{World, WorldId},
 };
 
 pub struct Var<'e, O: Send + 'static> {
@@ -61,6 +64,9 @@ impl<O: Send> Var<'_, O> {
 impl<O: Send> Run for VarCell<O> {
     type Output = O;
 
+    fn world_id(&self) -> WorldId {
+        self.cell.read().world_id
+    }
     fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
         let mut result = self.cell.read().run(ctx);
         result.push_sender(self.cache.get_invalidation_sender());
@@ -92,10 +98,10 @@ mod tests {
     fn var() {
         let w = World::new();
         let mut var = Var::new(&w, 0);
-        assert_eq!(run(&w, &var), 0);
+        assert_eq!(run(&w, &var), Ok(0));
 
         var.set(7);
-        assert_eq!(run(&w, &var), 7);
+        assert_eq!(run(&w, &var), Ok(7));
     }
 
     #[test]
@@ -105,7 +111,7 @@ mod tests {
         let x = Var::new(&w, 1);
         let y = Var::new(&w, op! { x + 1 });
 
-        assert_eq!(run(&w, y), 2);
+        assert_eq!(run(&w, y), Ok(2));
     }
 
     #[test]
@@ -116,11 +122,11 @@ mod tests {
         let mut x = Var::new(&w, 0);
         let y = op! { i!(&x) + 1 };
 
-        assert_eq!(run(&w, &y), 1);
+        assert_eq!(run(&w, &y), Ok(1));
 
         x.set(10);
         drop(x);
-        assert_eq!(run(&w, y), 11);
+        assert_eq!(run(&w, y), Ok(11));
     }
 
     #[test]
@@ -129,13 +135,13 @@ mod tests {
 
         let mut x = Var::new(&w, 0);
 
-        assert_eq!(run(&w, &x), 0);
+        assert_eq!(run(&w, &x), Ok(0));
 
         let frozen = x.freeze();
         x.set(10);
-        assert_eq!(run(&w, x), 10);
+        assert_eq!(run(&w, x), Ok(10));
 
-        assert_eq!(run(&w, frozen), 0);
+        assert_eq!(run(&w, frozen), Ok(0));
     }
 
     #[test]

@@ -30,8 +30,10 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
             let mut input_declarations = Vec::new();
             let mut join_expr = None;
             let mut join_destructure = None;
+            let mut input_names = vec![];
             for (index, (var_name, input_expr)) in inputs.iter().enumerate() {
                 let input_name = format_ident!("peregrine_internal_op_input_{index}");
+                input_names.push(input_name.clone());
                 input_declarations.push(quote! {
                     let #input_name = (#input_expr).into_run();
                 });
@@ -71,10 +73,18 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                     use peregrine::{Run, IntoRun};
 
                     #(#input_declarations)*
-                    peregrine::node::auto::CachedFnWrapper::new(move |ctx: peregrine::Ctx, g: peregrine::cache::InvalidatorGenerator<_>| {
+                    peregrine::node::auto::CachedFnWrapper::new({
+                        let mut world_id = peregrine::world::WorldId::any();
+
+                        #(
+                            world_id = world_id.merge(#input_names.world_id()).expect("Cannot merge node from different worlds in a single operation.");
+                        )*
+
+                        world_id
+                    }, move |ctx: peregrine::Ctx, g: peregrine::cache::InvalidatorGenerator<_>| {
                         #join_statement
                         #processed
-                    })
+                    }, )
                 }
             };
 
