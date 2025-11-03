@@ -6,11 +6,11 @@ use crate::{
     Ctx, IntoRun, Run,
     cache::{Cache, MaybeCached},
     node::Node,
-    world::{World, WorldId},
+    world::{InWorld, WithWorld, World, WorldId},
 };
 
-pub struct Var<'e, O: Send + 'static> {
-    world: &'e World,
+pub struct Var<'w, O: Send + 'static> {
+    world: &'w World,
     node: Node<VarCell<O>>,
     frozen: Cell<bool>,
 }
@@ -20,7 +20,7 @@ pub struct VarCell<O: Send + 'static> {
     cache: Cache<()>,
 }
 
-impl<O: Send> Var<'_, O> {
+impl<'w, O: Send> Var<'w, O> {
     pub fn new<N: Run<Output = O> + 'static>(world: &World, node: impl IntoRun<N>) -> Var<'_, O> {
         let current = world.alloc(node.into_run()).as_dyn();
         let var_node = VarCell {
@@ -51,10 +51,10 @@ impl<O: Send> Var<'_, O> {
         *write = self.world.alloc(node.into_run()).as_dyn();
     }
 
-    pub fn freeze(&self) -> Node<dyn Run<Output = O>> {
+    pub fn freeze(&self) -> WithWorld<'w, Node<dyn Run<Output = O>>> {
         self.frozen.set(true);
         let var_node = self.world.get(self.node);
-        *var_node.cell.read()
+        WithWorld::borrowed(self.world, *var_node.cell.read())
     }
 }
 
@@ -73,13 +73,19 @@ impl<O: Send> Run for VarCell<O> {
 
 impl<O: Send> IntoRun<Node<dyn Run<Output = O>>> for Var<'_, O> {
     fn into_run(self) -> Node<dyn Run<Output = O>> {
-        self.freeze()
+        *self.world.get(self.node).cell.read()
     }
 }
 
 impl<O: Send> IntoRun<Node<dyn Run<Output = O>>> for &Var<'_, O> {
     fn into_run(self) -> Node<dyn Run<Output = O>> {
         self.node.as_dyn()
+    }
+}
+
+impl InWorld for Var<'_, i32> {
+    fn world(&self) -> &World {
+        self.world
     }
 }
 
@@ -95,10 +101,10 @@ mod tests {
     fn var() {
         let w = World::new();
         let mut var = Var::new(&w, 0);
-        assert_eq!(run(&w, &var), Ok(0));
+        assert_eq!(run(&var), Ok(0));
 
         var.set(7);
-        assert_eq!(run(&w, &var), Ok(7));
+        assert_eq!(run(&var), Ok(7));
     }
 
     #[test]
@@ -108,7 +114,7 @@ mod tests {
         let x = Var::new(&w, 1);
         let y = Var::new(&w, op! { x + 1 });
 
-        assert_eq!(run(&w, y), Ok(2));
+        assert_eq!(run(&y), Ok(2));
     }
 
     #[test]
@@ -119,11 +125,11 @@ mod tests {
         let mut x = Var::new(&w, 0);
         let y = op! { i!(&x) + 1 };
 
-        assert_eq!(run(&w, &y), Ok(1));
+        assert_eq!(run_in(&w, &y), Ok(1));
 
         x.set(10);
         drop(x);
-        assert_eq!(run(&w, y), Ok(11));
+        assert_eq!(run_in(&w, y), Ok(11));
     }
 
     #[test]
@@ -132,13 +138,13 @@ mod tests {
 
         let mut x = Var::new(&w, 0);
 
-        assert_eq!(run(&w, &x), Ok(0));
+        assert_eq!(run(&x), Ok(0));
 
         let frozen = x.freeze();
         x.set(10);
-        assert_eq!(run(&w, x), Ok(10));
+        assert_eq!(run(&x), Ok(10));
 
-        assert_eq!(run(&w, frozen), Ok(0));
+        assert_eq!(run_in(&w, frozen), Ok(0));
     }
 
     #[test]

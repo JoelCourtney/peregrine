@@ -10,7 +10,7 @@ pub use peregrine_macros::op;
 use cache::MaybeCached;
 use forte::{ThreadPool, Worker};
 
-use crate::world::{World, WorldId, WorldView};
+use crate::world::{InWorld, World, WorldId, WorldView};
 
 pub trait Run: Send + Sync {
     type Output: Send;
@@ -29,7 +29,17 @@ pub trait IntoRun<R: Run> {
     fn into_run(self) -> R;
 }
 
-pub fn run<R: Run>(world: &World, r: impl IntoRun<R>) -> Result<R::Output, IncompatibleWorldErr> {
+pub fn run<'a, IR: InWorld, R: Run>(r: &'a IR) -> Result<R::Output, IncompatibleWorldErr>
+where
+    &'a IR: IntoRun<R>,
+{
+    run_in(r.world(), r.into_run())
+}
+
+pub fn run_in<R: Run>(
+    world: &World,
+    r: impl IntoRun<R>,
+) -> Result<R::Output, IncompatibleWorldErr> {
     static COMPUTE: ThreadPool = ThreadPool::new();
 
     let converted = r.into_run();

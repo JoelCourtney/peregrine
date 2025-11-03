@@ -6,7 +6,7 @@ use crate::{
     Ctx, IntoRun, Run,
     cache::{Cache, MaybeCached},
     node::Node,
-    world::{World, WorldId},
+    world::{InWorld, WithWorld, World, WorldId},
 };
 
 pub struct Stack<'e, O> {
@@ -19,7 +19,7 @@ pub struct StackVec<O> {
     cache: Arc<Cache<O>>,
 }
 
-impl<'e, O: Clone + Send + 'static> Stack<'e, O> {
+impl<'w, O: Clone + Send + 'static> Stack<'w, O> {
     pub fn new<R: Run<Output = O> + 'static>(world: &World, run: impl IntoRun<R>) -> Stack<'_, O> {
         Stack {
             vec: world.alloc(StackVec {
@@ -41,29 +41,30 @@ impl<'e, O: Clone + Send + 'static> Stack<'e, O> {
         v.cache.invalidate()
     }
 
-    pub fn pop(&self) -> Option<Node<dyn Run<Output = O>>>
+    pub fn pop(&self) -> WithWorld<'w, Option<Node<dyn Run<Output = O>>>>
     where
         O: 'static,
     {
         let v = self.world.get(self.vec);
         let mut nodes = v.nodes.write();
-        if nodes.len() > 1 {
+        let result = if nodes.len() > 1 {
             v.cache.invalidate();
             nodes.pop()
         } else {
             None
-        }
+        };
+        WithWorld::borrowed(self.world, result)
     }
 
-    pub fn freeze(&self) -> Node<dyn Run<Output = O>>
+    pub fn freeze(&self) -> WithWorld<'w, Node<dyn Run<Output = O>>>
     where
         O: 'static,
     {
         let v = self.world.get(self.vec);
-        *v.nodes.read().last().unwrap()
+        WithWorld::borrowed(self.world, *v.nodes.read().last().unwrap())
     }
 
-    pub fn fork(&self) -> Stack<'e, O>
+    pub fn fork(&self) -> Stack<'w, O>
     where
         O: Send + Clone + 'static,
     {
@@ -94,13 +95,19 @@ impl<O: Clone + Send + 'static> Run for StackVec<O> {
 
 impl<'e, O: Send + Clone + 'static> IntoRun<Node<dyn Run<Output = O>>> for Stack<'e, O> {
     fn into_run(self) -> Node<dyn Run<Output = O>> {
-        self.freeze()
+        *self.world.get(self.vec).nodes.read().last().unwrap()
     }
 }
 
 impl<'e, O: Send + Clone + 'static> IntoRun<Node<StackVec<O>>> for &Stack<'e, O> {
     fn into_run(self) -> Node<StackVec<O>> {
         self.vec
+    }
+}
+
+impl InWorld for Stack<'_, i32> {
+    fn world(&self) -> &World {
+        self.world
     }
 }
 
@@ -116,16 +123,16 @@ mod tests {
         let w = World::new();
 
         let mut stack = Stack::new(&w, 0);
-        assert_eq!(run(&w, &stack), Ok(0));
+        assert_eq!(run(&stack), Ok(0));
 
         stack.push(|prev| op!(prev + 2));
-        assert_eq!(run(&w, &stack), Ok(2));
+        assert_eq!(run(&stack), Ok(2));
 
         stack.push(|_| 10);
-        assert_eq!(run(&w, &stack), Ok(10));
+        assert_eq!(run(&stack), Ok(10));
 
-        assert_eq!(run(&w, stack.pop()), Ok(Some(10)));
-        assert_eq!(run(&w, stack.pop()), Ok(Some(2)));
+        assert_eq!(run(&stack.pop()), Ok(Some(10)));
+        assert_eq!(run(&stack.pop()), Ok(Some(2)));
         assert!(stack.pop().is_none());
     }
 
@@ -136,13 +143,13 @@ mod tests {
         let mut stack = Stack::new(&w, 0);
         let node = op! { i!(&stack) * 2 };
 
-        assert_eq!(run(&w, &node), Ok(0));
+        assert_eq!(run_in(&w, &node), Ok(0));
 
         stack.push(|prev| op!(prev + 2));
-        assert_eq!(run(&w, &node), Ok(4));
+        assert_eq!(run_in(&w, &node), Ok(4));
 
-        assert_eq!(run(&w, stack.pop()), Ok(Some(2)));
-        assert_eq!(run(&w, &node), Ok(0));
+        assert_eq!(run(&stack.pop()), Ok(Some(2)));
+        assert_eq!(run_in(&w, &node), Ok(0));
         assert!(stack.pop().is_none());
     }
 
@@ -156,9 +163,9 @@ mod tests {
         stack.push(|p| op!(p * i!(&var)));
         stack.push(|p| op!(p + 10));
 
-        assert_eq!(run(&w, &stack), Ok(14));
+        assert_eq!(run(&stack), Ok(14));
 
         var.set(5);
-        assert_eq!(run(&w, &stack), Ok(20));
+        assert_eq!(run(&stack), Ok(20));
     }
 }

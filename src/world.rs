@@ -18,6 +18,10 @@ pub struct World {
     id: WorldId,
 }
 
+pub trait InWorld {
+    fn world(&self) -> &World;
+}
+
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum WorldId {
     Any,
@@ -142,18 +146,53 @@ impl Default for World {
     }
 }
 
-pub struct WithWorld<T> {
-    world: Box<World>,
+pub struct WithWorld<'w, T> {
+    world: WorldHandle<'w>,
     data: T,
 }
 
-impl<T> WithWorld<T> {
-    pub fn init(f: impl FnOnce(&'static World) -> T) -> Self {
-        let world = Box::new(World::new());
+impl<T> InWorld for WithWorld<'_, T> {
+    fn world(&self) -> &World {
+        match &self.world {
+            WorldHandle::Owned(world) => world,
+            WorldHandle::Borrowed(world) => world,
+        }
+    }
+}
+
+enum WorldHandle<'w> {
+    Owned(Box<World>),
+    Borrowed(&'w World),
+}
+
+impl Deref for WorldHandle<'_> {
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            WorldHandle::Owned(world) => world,
+            WorldHandle::Borrowed(world) => world,
+        }
+    }
+}
+
+impl<T> WithWorld<'static, T> {
+    #[allow(unused)]
+    pub(crate) unsafe fn owned(f: impl FnOnce(&'static World) -> T) -> Self {
+        let world = WorldHandle::Owned(Box::default());
         let world_ref = unsafe { transmute::<&World, &'static World>(&*world) };
         WithWorld {
             world,
             data: f(world_ref),
+        }
+    }
+}
+
+impl<'w, T> WithWorld<'w, T> {
+    pub fn borrowed(world: &'w World, data: T) -> WithWorld<'w, T> {
+        WithWorld {
+            world: WorldHandle::Borrowed(world),
+            data,
         }
     }
 
@@ -161,15 +200,22 @@ impl<T> WithWorld<T> {
         &self.world
     }
 
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> WithWorld<U> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> WithWorld<'w, U> {
         WithWorld {
             world: self.world,
             data: f(self.data),
         }
     }
+
+    pub fn into_inner(self) -> T
+    where
+        T: 'static,
+    {
+        self.data
+    }
 }
 
-impl<T> Deref for WithWorld<T> {
+impl<T> Deref for WithWorld<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -177,13 +223,22 @@ impl<T> Deref for WithWorld<T> {
     }
 }
 
-impl<T> DerefMut for WithWorld<T> {
+impl<T> DerefMut for WithWorld<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         &mut self.data
     }
 }
 
-impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<T>
+impl<T, R: Run> IntoRun<R> for WithWorld<'_, T>
+where
+    T: IntoRun<R>,
+{
+    fn into_run(self) -> R {
+        self.data.into_run()
+    }
+}
+
+impl<'a, T, R: Run> IntoRun<R> for &'a WithWorld<'_, T>
 where
     &'a T: IntoRun<R>,
 {
@@ -196,7 +251,7 @@ where
 mod tests {
     use peregrine_macros::op;
 
-    use crate::{IncompatibleWorldErr, IntoRun, node::variable::Var, run};
+    use crate::{IncompatibleWorldErr, IntoRun, node::variable::Var, run, run_in};
 
     use super::*;
     use std::sync::Arc;
@@ -219,13 +274,13 @@ mod tests {
 
     #[test]
     fn test_with_world() {
-        let mut var = WithWorld::init(|w| Var::new(w, 5));
+        let mut var = unsafe { WithWorld::owned(|w| Var::new(w, 5)) };
 
-        assert_eq!(run(var.world(), &var), Ok(5));
+        assert_eq!(run(&var), Ok(5));
 
         var.set(10);
 
-        assert_eq!(run(var.world(), &var), Ok(10));
+        assert_eq!(run(&var), Ok(10));
     }
 
     #[test]
@@ -233,8 +288,8 @@ mod tests {
         let w = World::new();
         let node = Node::new(&w, 5);
 
-        assert_eq!(run(&w, &node), Ok(5));
-        assert_eq!(run(&World::new(), &node), Err(IncompatibleWorldErr));
+        assert_eq!(run_in(&w, &node), Ok(5));
+        assert_eq!(run_in(&World::new(), &node), Err(IncompatibleWorldErr));
     }
 
     #[test]

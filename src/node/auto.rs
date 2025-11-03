@@ -216,11 +216,11 @@ impl<R: Run> Run for Option<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{run, world::World};
+    use crate::{run_in, world::World};
 
     #[test]
     fn test_async() {
-        let result = run(&World::new(), async { 5 });
+        let result = run_in(&World::new(), async { 5 });
 
         assert_eq!(result, Ok(5));
     }
