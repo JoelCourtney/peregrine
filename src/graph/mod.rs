@@ -135,7 +135,7 @@ impl<T: ?Sized + Run> Run for Node<T> {
 mod tests {
     use petgraph::data::DataMap;
 
-    use crate::node::GRAPH;
+    use crate::graph::GRAPH;
 
     use super::Node;
 

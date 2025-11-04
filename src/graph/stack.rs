@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 use crate::{
     Ctx, IntoRun, Run,
     cache::{Cache, MaybeCached},
-    node::Node,
+    graph::Node,
 };
 
 pub struct Stack<O> {
@@ -112,7 +112,7 @@ impl<O: Send + Clone + 'static> IntoRun<Node<StackVec<O>>> for &Stack<O> {
 mod tests {
     use super::*;
     use crate as peregrine;
-    use crate::node::variable::Var;
+    use crate::graph::variable::Var;
     use crate::*;
 
     #[test]

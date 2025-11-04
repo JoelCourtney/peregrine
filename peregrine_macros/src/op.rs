@@ -72,7 +72,7 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                     use peregrine::{Run, IntoRun};
 
                     #(#input_declarations)*
-                    peregrine::node::op::Op::new(
+                    peregrine::graph::op::Op::new(
                         move |ctx: peregrine::Ctx, g: peregrine::cache::InvalidatorGenerator<_>| {
                             #join_statement
                             #processed
