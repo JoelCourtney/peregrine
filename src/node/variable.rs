@@ -1,18 +1,14 @@
-use std::cell::Cell;
-
-use parking_lot::RwLock;
+use std::sync::RwLock;
 
 use crate::{
-    Ctx, IntoRun, Run, RunInWorld,
+    Ctx, IntoRun, Run,
     cache::{Cache, MaybeCached},
-    node::Node,
-    world::World,
 };
 
+use super::Node;
+
 pub struct Var<O: Send + 'static> {
-    world: World,
     node: Node<VarCell<O>>,
-    frozen: Cell<bool>,
 }
 
 pub struct VarCell<O: Send + 'static> {
@@ -21,48 +17,28 @@ pub struct VarCell<O: Send + 'static> {
 }
 
 impl<O: Send> Var<O> {
-    pub fn new<N: Run<Output = O> + 'static>(node: impl IntoRun<N>) -> Var<O> {
-        let RunInWorld { run, world } = node.into_run();
-        let current = world.alloc(run).as_dyn();
-        let var_node = VarCell {
-            cell: RwLock::new(current),
+    pub fn new<R: Run<Output = O> + 'static>(node: impl IntoRun<R>) -> Var<O> {
+        let outer = Node::empty();
+        let inner = Node::new_dyn(node.into_run());
+        outer.add_edge(&inner);
+        let var_cell = outer.init(VarCell {
+            cell: RwLock::new(inner),
             cache: Cache::new(),
-        };
-        Var {
-            node: world.alloc(var_node),
-            world,
-            frozen: Cell::new(false),
-        }
-    }
-
-    pub fn world(&self) -> World {
-        self.world.clone()
+        });
+        Var { node: var_cell }
     }
 
     pub fn set<N: Run<Output = O> + 'static>(&mut self, node: impl IntoRun<N>) {
-        let RunInWorld {
-            run,
-            world: new_world,
-        } = node.into_run();
-        self.world
-            .merge_in_place(new_world)
-            .expect("Cannot set variable to a node that requires a different world");
-        let var_node = self.world.get(self.node);
-        var_node.cache.invalidate();
-        let mut write = var_node.cell.write();
-        if !self.frozen.get() {
-            let current_key = *write;
-            self.world.remove(current_key);
-        } else {
-            self.frozen.set(false);
-        }
-        *write = self.world.alloc(run).as_dyn();
+        let mut write = self.node.cell.write().unwrap();
+        self.node.remove_edge(&*write);
+        let new_node = Node::new_dyn(node.into_run());
+        self.node.add_edge(&new_node);
+        self.node.cache.invalidate();
+        *write = new_node;
     }
 
-    pub fn freeze(&self) -> RunInWorld<Node<dyn Run<Output = O>>> {
-        self.frozen.set(true);
-        let var_node = self.world.get(self.node);
-        RunInWorld::new(*var_node.cell.read(), self.world.clone())
+    pub fn freeze(&self) -> Node<dyn Run<Output = O>> {
+        (*self.node.cell.read().unwrap()).clone()
     }
 }
 
@@ -70,22 +46,21 @@ impl<O: Send> Run for VarCell<O> {
     type Output = O;
 
     fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
-        let mut result = self.cell.read().run(ctx);
+        let mut result = self.cell.read().unwrap().run(ctx);
         result.push_sender(self.cache.get_invalidation_sender());
         result
     }
 }
 
-impl<O: Send> IntoRun<Node<dyn Run<Output = O>>> for Var<O> {
-    fn into_run(self) -> RunInWorld<Node<dyn Run<Output = O>>> {
-        let r = *self.world.get(self.node).cell.read();
-        RunInWorld::new(r, self.world)
+impl<O: Send> IntoRun<Node<VarCell<O>>> for Var<O> {
+    fn into_run(self) -> Node<VarCell<O>> {
+        self.node
     }
 }
 
-impl<O: Send> IntoRun<Node<dyn Run<Output = O>>> for &Var<O> {
-    fn into_run(self) -> RunInWorld<Node<dyn Run<Output = O>>> {
-        RunInWorld::new(self.node.as_dyn(), self.world.clone())
+impl<O: Send> IntoRun<Node<VarCell<O>>> for &Var<O> {
+    fn into_run(self) -> Node<VarCell<O>> {
+        self.node.clone()
     }
 }
 
@@ -100,10 +75,10 @@ mod tests {
     #[test]
     fn var() {
         let mut var = Var::new(0);
-        assert_eq!(run(&var), Ok(0));
+        assert_eq!(run(&var), 0);
 
         var.set(7);
-        assert_eq!(run(&var), Ok(7));
+        assert_eq!(run(&var), 7);
     }
 
     #[test]
@@ -111,7 +86,7 @@ mod tests {
         let x = Var::new(1);
         let y = Var::new(op! { x + 1 });
 
-        assert_eq!(run(&y), Ok(2));
+        assert_eq!(run(&y), 2);
     }
 
     #[test]
@@ -120,24 +95,24 @@ mod tests {
         let mut x = Var::new(0);
         let y = op! { i!(&x) + 1 };
 
-        assert_eq!(run(&y), Ok(1));
+        assert_eq!(run(&y), 1);
 
         x.set(10);
         drop(x);
-        assert_eq!(run(y), Ok(11));
+        assert_eq!(run(y), 11);
     }
 
     #[test]
     fn freeze() {
         let mut x = Var::new(0);
 
-        assert_eq!(run(&x), Ok(0));
+        assert_eq!(run(&x), 0);
 
         let frozen = x.freeze();
         x.set(10);
-        assert_eq!(run(&x), Ok(10));
+        assert_eq!(run(&x), 10);
 
-        assert_eq!(run(frozen), Ok(0));
+        assert_eq!(run(frozen), 0);
     }
 
     #[test]
@@ -151,11 +126,12 @@ mod tests {
         assert_eq!(Arc::strong_count(&payload), 1);
 
         x.set(payload.clone());
-        x.freeze();
+        let frozen = x.freeze();
         assert_eq!(Arc::strong_count(&payload), 2);
         x.set(payload.clone());
         assert_eq!(Arc::strong_count(&payload), 3);
 
+        drop(frozen);
         drop(x);
 
         assert_eq!(Arc::strong_count(&payload), 1);

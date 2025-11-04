@@ -36,7 +36,7 @@ pub fn generate_op_impl(types: &[syn::Ident]) -> TokenStream {
 
             fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
                 self.1.resolve(ctx.worker, |g| {
-                    let Ctx { world, worker } = ctx;
+                    let Ctx { worker } = ctx;
                     let #destructure_pattern = #run_cache_join_expr;
                     #merge_chain
                 }, false)
@@ -56,8 +56,8 @@ fn generate_nested_joins(field_accesses: &[proc_macro2::TokenStream]) -> proc_ma
 
         quote! {
             worker.join(
-                |worker| #first.run(Ctx { world, worker }).track(g),
-                |worker| #second.run(Ctx { world, worker }).track(g)
+                move |worker| #first.run(Ctx { worker }).track(g),
+                move |worker| #second.run(Ctx { worker }).track(g)
             )
         }
     } else {
@@ -68,8 +68,8 @@ fn generate_nested_joins(field_accesses: &[proc_macro2::TokenStream]) -> proc_ma
 
         quote! {
             worker.join(
-                |worker| #first.run(Ctx { world, worker }).track(g),
-                |worker| #nested_run_cache
+                move |worker| #first.run(Ctx { worker }).track(g),
+                move |worker| #nested_run_cache
             )
         }
     }

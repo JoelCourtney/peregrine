@@ -3,11 +3,16 @@ use std::sync::Arc;
 use futures::future::Shared;
 
 use crate::{
-    Ctx, IntoRun, Run, RunInWorld,
+    Ctx, IntoRun, Run,
     cache::{Cache, MaybeCached},
     data::Data,
-    world::World,
 };
+
+impl<R: Run> IntoRun<R> for R {
+    fn into_run(self) -> Self {
+        self
+    }
+}
 
 impl<R: Run + ?Sized> Run for &R {
     type Output = R::Output;
@@ -47,8 +52,8 @@ impl<O: Data> Run for DataWrapper<O> {
 }
 
 impl<O: Data> IntoRun<DataWrapper<O>> for O {
-    fn into_run(self) -> RunInWorld<DataWrapper<O>> {
-        RunInWorld::new(DataWrapper(self), World::new())
+    fn into_run(self) -> DataWrapper<O> {
+        DataWrapper(self)
     }
 }
 
@@ -65,8 +70,8 @@ impl<O: Send + 'static, F: Fn() -> MaybeCached<O> + Send + Sync> Run for FnWrapp
 }
 
 impl<O: Send + 'static, F: Fn() -> MaybeCached<O> + Send + Sync> IntoRun<FnWrapper<F>> for F {
-    fn into_run(self) -> RunInWorld<FnWrapper<F>> {
-        RunInWorld::new(FnWrapper(self), World::new())
+    fn into_run(self) -> FnWrapper<F> {
+        FnWrapper(self)
     }
 }
 
@@ -86,9 +91,9 @@ impl<O: Send + Sync + Clone + 'static, F: Future<Output = O> + Send + Sync> Run
 impl<O: Send + Sync + Clone + 'static, F: Future<Output = O> + Send + Sync> IntoRun<AsyncWrapper<F>>
     for F
 {
-    fn into_run(self) -> RunInWorld<AsyncWrapper<F>> {
+    fn into_run(self) -> AsyncWrapper<F> {
         use futures::future::FutureExt;
-        RunInWorld::new(AsyncWrapper(self.shared()), World::new())
+        AsyncWrapper(self.shared())
     }
 }
 
@@ -99,16 +104,12 @@ macro_rules! impl_into_run_for_tuple {
         peregrine_macros::impl_op_for_tuple_wrapper!($($t),*);
         impl<$($t: Run, $t_i: IntoRun<$t>),*> IntoRun<TupleWrapper<($($t,)*), ($($t::Output,)*)>> for ($($t_i,)*) where $($t::Output: Clone + 'static),* {
             #[allow(non_snake_case)]
-            fn into_run(self) -> RunInWorld<TupleWrapper<($($t,)*), ($($t::Output,)*)>> {
+            fn into_run(self) -> TupleWrapper<($($t,)*), ($($t::Output,)*)> {
                 let ($($t_i,)*) = self;
 
                 let ($($t_i,)*) = ($($t_i.into_run()),*);
 
-                let mut world = World::new();
-                $(
-                    world = world.merge($t_i.world).expect("Cannot merge nodes from different worlds into the same tuple");
-                )*
-                RunInWorld::new(TupleWrapper(($($t_i.run,)*), Cache::new_arc()), world)
+                TupleWrapper(($($t_i,)*), Cache::new_arc())
             }
         }
     };
@@ -128,9 +129,8 @@ impl_into_run_for_tuple!(A AI, B BI, C CI, D DI, E EI, F FI, G GI, H HI, I II, J
 pub struct UnaryTupleWrapper<A: Run>(A);
 
 impl<A: Run, AI: IntoRun<A>> IntoRun<UnaryTupleWrapper<A>> for (AI,) {
-    fn into_run(self) -> RunInWorld<UnaryTupleWrapper<A>> {
-        let RunInWorld { run, world } = self.0.into_run();
-        RunInWorld::new(UnaryTupleWrapper(run), world)
+    fn into_run(self) -> UnaryTupleWrapper<A> {
+        UnaryTupleWrapper(self.0.into_run())
     }
 }
 
@@ -139,12 +139,6 @@ impl<A: Run> Run for UnaryTupleWrapper<A> {
 
     fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
         self.0.run(ctx).map(|v| (v,))
-    }
-}
-
-impl<R: Run> IntoRun<Self> for Option<R> {
-    fn into_run(self) -> RunInWorld<Self> {
-        RunInWorld::new(self, World::new())
     }
 }
 
@@ -167,6 +161,6 @@ mod tests {
     fn test_async() {
         let result = run(async { 5 });
 
-        assert_eq!(result, Ok(5));
+        assert_eq!(result, 5);
     }
 }
