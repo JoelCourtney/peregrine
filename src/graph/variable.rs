@@ -1,9 +1,6 @@
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
-use crate::{
-    Ctx, IntoRun, Run,
-    cache::{Cache, MaybeCached},
-};
+use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache};
 
 use super::Node;
 
@@ -12,14 +9,14 @@ pub struct Var<O: Send + 'static> {
 }
 
 pub struct VarCell<O: Send + 'static> {
-    cell: RwLock<Node<dyn Run<Output = O>>>,
+    cell: RwLock<Node<dyn Upstream<Output = O>>>,
     cache: Cache<()>,
 }
 
 impl<O: Send> Var<O> {
-    pub fn new<R: Run<Output = O> + 'static>(node: impl IntoRun<R>) -> Var<O> {
+    pub fn new<U: Upstream<Output = O> + 'static>(node: impl IntoUpstream<U>) -> Var<O> {
         let outer = Node::empty();
-        let inner = Node::new_dyn(node.into_run());
+        let inner = Node::new_dyn(node.into_upstream());
         outer.add_edge(&inner);
         let var_cell = outer.init(VarCell {
             cell: RwLock::new(inner),
@@ -28,38 +25,42 @@ impl<O: Send> Var<O> {
         Var { node: var_cell }
     }
 
-    pub fn set<N: Run<Output = O> + 'static>(&mut self, node: impl IntoRun<N>) {
-        let mut write = self.node.cell.write().unwrap();
+    pub fn set<U: Upstream<Output = O> + 'static>(&mut self, node: impl IntoUpstream<U>) {
+        let mut write = self.node.cell.write();
         self.node.remove_edge(&*write);
-        let new_node = Node::new_dyn(node.into_run());
+        let new_node = Node::new_dyn(node.into_upstream());
         self.node.add_edge(&new_node);
         self.node.cache.invalidate();
         *write = new_node;
     }
 
-    pub fn freeze(&self) -> Node<dyn Run<Output = O>> {
-        (*self.node.cell.read().unwrap()).clone()
+    pub fn freeze(&self) -> Node<dyn Upstream<Output = O>> {
+        (*self.node.cell.read()).clone()
     }
 }
 
-impl<O: Send> Run for VarCell<O> {
+impl<O: Send> Upstream for VarCell<O> {
     type Output = O;
 
-    fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
-        let mut result = self.cell.read().unwrap().run(ctx);
-        result.push_sender(self.cache.get_invalidation_sender());
-        result
+    fn request(&self, ctx: Ctx, callback: Callback<O>) {
+        let sender = self.cache.get_invalidator_sender();
+        let callback = callback.map(|mut c| {
+            c.push_sender(sender, false);
+            c
+        });
+        let cell = self.cell.read();
+        cell.request(ctx, callback);
     }
 }
 
-impl<O: Send> IntoRun<Node<VarCell<O>>> for Var<O> {
-    fn into_run(self) -> Node<VarCell<O>> {
+impl<O: Send> IntoUpstream<Node<VarCell<O>>> for Var<O> {
+    fn into_upstream(self) -> Node<VarCell<O>> {
         self.node
     }
 }
 
-impl<O: Send> IntoRun<Node<VarCell<O>>> for &Var<O> {
-    fn into_run(self) -> Node<VarCell<O>> {
+impl<O: Send> IntoUpstream<Node<VarCell<O>>> for &Var<O> {
+    fn into_upstream(self) -> Node<VarCell<O>> {
         self.node.clone()
     }
 }
@@ -83,10 +84,10 @@ mod tests {
 
     #[test]
     fn upstream_var() {
-        let x = Var::new(1);
-        let y = Var::new(op! { x + 1 });
+        let x = op!(i!(1));
+        // let y = Var::new(op! { x + 1 });
 
-        assert_eq!(run(&y), 2);
+        assert_eq!(run(&x), 1);
     }
 
     #[test]

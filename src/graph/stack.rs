@@ -2,25 +2,21 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{
-    Ctx, IntoRun, Run,
-    cache::{Cache, MaybeCached},
-    graph::Node,
-};
+use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache, graph::Node};
 
 pub struct Stack<O> {
     vec: Node<StackVec<O>>,
 }
 
 pub struct StackVec<O> {
-    nodes: RwLock<Vec<Node<dyn Run<Output = O>>>>,
+    nodes: RwLock<Vec<Node<dyn Upstream<Output = O>>>>,
     cache: Arc<Cache<O>>,
 }
 
 impl<O: Clone + Send + 'static> Stack<O> {
-    pub fn new<R: Run<Output = O> + 'static>(run: impl IntoRun<R>) -> Stack<O> {
+    pub fn new<U: Upstream<Output = O> + 'static>(run: impl IntoUpstream<U>) -> Stack<O> {
         let outer = Node::empty();
-        let inner = Node::new_dyn(run.into_run());
+        let inner = Node::new_dyn(run.into_upstream());
         outer.add_edge(&inner);
         Stack {
             vec: outer.init(StackVec {
@@ -30,20 +26,20 @@ impl<O: Clone + Send + 'static> Stack<O> {
         }
     }
 
-    pub fn push<R: Run<Output = O> + 'static, IR: IntoRun<R>>(
+    pub fn push<U: Upstream<Output = O> + 'static, IR: IntoUpstream<U>>(
         &mut self,
-        f: impl FnOnce(Node<dyn Run<Output = O>>) -> IR,
+        f: impl FnOnce(Node<dyn Upstream<Output = O>>) -> IR,
     ) {
         let mut nodes = self.vec.nodes.write();
         let prev = nodes.last().unwrap().clone();
-        let ir = f(prev).into_run();
+        let ir = f(prev).into_upstream();
         let new_node = Node::new_dyn(ir);
         self.vec.add_edge(&new_node);
         nodes.push(new_node);
         self.vec.cache.invalidate()
     }
 
-    pub fn pop(&self) -> Option<Node<dyn Run<Output = O>>>
+    pub fn pop(&self) -> Option<Node<dyn Upstream<Output = O>>>
     where
         O: 'static,
     {
@@ -58,7 +54,7 @@ impl<O: Clone + Send + 'static> Stack<O> {
         }
     }
 
-    pub fn freeze(&self) -> Node<dyn Run<Output = O>>
+    pub fn freeze(&self) -> Node<dyn Upstream<Output = O>>
     where
         O: 'static,
     {
@@ -85,25 +81,28 @@ impl<O: Clone + Send + 'static> Stack<O> {
     }
 }
 
-impl<O: Clone + Send + 'static> Run for StackVec<O> {
+impl<O: Send + 'static> Upstream for StackVec<O> {
     type Output = O;
 
-    fn run(&self, ctx: Ctx) -> MaybeCached<Self::Output> {
-        let nodes = self.nodes.read();
-        let last = nodes.last().unwrap();
-        self.cache
-            .resolve(ctx.worker, |g| last.run(ctx).track(g), true)
+    fn request(&self, ctx: Ctx, callback: Callback<O>) {
+        let sender = self.cache.get_invalidator_sender();
+        let callback = callback.map(|mut c| {
+            c.push_sender(sender, false);
+            c
+        });
+        let cell = self.nodes.read();
+        cell.last().unwrap().request(ctx, callback);
     }
 }
 
-impl<O: Send + Clone + 'static> IntoRun<Node<StackVec<O>>> for Stack<O> {
-    fn into_run(self) -> Node<StackVec<O>> {
+impl<O: Send + Clone + 'static> IntoUpstream<Node<StackVec<O>>> for Stack<O> {
+    fn into_upstream(self) -> Node<StackVec<O>> {
         self.vec
     }
 }
 
-impl<O: Send + Clone + 'static> IntoRun<Node<StackVec<O>>> for &Stack<O> {
-    fn into_run(self) -> Node<StackVec<O>> {
+impl<O: Send + Clone + 'static> IntoUpstream<Node<StackVec<O>>> for &Stack<O> {
+    fn into_upstream(self) -> Node<StackVec<O>> {
         self.vec.clone()
     }
 }

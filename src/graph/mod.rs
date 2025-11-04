@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use petgraph::{acyclic::Acyclic, data::Build, prelude::StableDiGraph, visit::GraphBase};
 
-use crate::{Ctx, Run, cache::MaybeCached};
+use crate::{Callback, Ctx, Upstream};
 
 pub mod auto;
 pub mod op;
@@ -13,7 +13,7 @@ pub mod stack;
 pub mod variable;
 
 lazy_static! {
-    static ref GRAPH: Mutex<Acyclic<StableDiGraph<(), ()>>> = Mutex::new(Acyclic::new());
+    pub(crate) static ref GRAPH: Mutex<Acyclic<StableDiGraph<(), ()>>> = Mutex::new(Acyclic::new());
 }
 
 pub struct Node<T: ?Sized> {
@@ -63,7 +63,11 @@ impl<T> Node<T> {
     }
 
     fn add_edge<U: ?Sized>(&self, other: &Node<U>) {
-        GRAPH.lock().add_edge(self.id, other.id, ());
+        self.add_edge_id(other.id);
+    }
+
+    fn add_edge_id(&self, id: <StableDiGraph<(), ()> as GraphBase>::NodeId) {
+        GRAPH.lock().add_edge(self.id, id, ());
     }
 
     fn remove_edge<U: ?Sized>(&self, other: &Node<U>) {
@@ -75,8 +79,8 @@ impl<T> Node<T> {
     }
 }
 
-impl<T: Run + 'static> Node<T> {
-    fn new_dyn(value: T) -> Node<dyn Run<Output = T::Output>> {
+impl<T: Upstream + 'static> Node<T> {
+    fn new_dyn(value: T) -> Node<dyn Upstream<Output = T::Output>> {
         let arc = Arc::new(value);
         let id = GRAPH.lock().add_node(());
         Node { arc, id }
@@ -95,17 +99,15 @@ impl<T: ?Sized> Clone for Node<T> {
 impl<T: ?Sized> Drop for Node<T> {
     fn drop(&mut self) {
         if Arc::strong_count(&self.arc) == 1 {
+            let mut lock = GRAPH.lock();
             if cfg!(debug_assertions) {
                 assert_eq!(
-                    GRAPH
-                        .lock()
-                        .edges_directed(self.id, petgraph::Direction::Incoming)
+                    lock.edges_directed(self.id, petgraph::Direction::Incoming)
                         .count(),
                     0
                 );
             }
-            println!("{:?}", GRAPH.lock().nodes_iter().collect::<Vec<_>>());
-            GRAPH.lock().remove_node(self.id).unwrap_or_else(|| {
+            lock.remove_node(self.id).unwrap_or_else(|| {
                 panic!(
                     "Node was not found in graph when dropping id: {:?}",
                     self.id
@@ -123,11 +125,11 @@ impl<T> Deref for Node<T> {
     }
 }
 
-impl<T: ?Sized + Run> Run for Node<T> {
+impl<T: ?Sized + Upstream> Upstream for Node<T> {
     type Output = T::Output;
 
-    fn run(&self, ctx: Ctx) -> MaybeCached<T::Output> {
-        self.arc.run(ctx)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>) {
+        self.arc.request(ctx, callback);
     }
 }
 

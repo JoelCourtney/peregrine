@@ -27,54 +27,22 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
             let inputs = &node_input.inputs;
 
             // Generate variable declarations for each input
-            let mut input_declarations = Vec::new();
-            let mut join_expr = None;
-            let mut join_destructure = None;
+            let mut upstreams = vec![];
             let mut input_names = vec![];
-            for (index, (var_name, input_expr)) in inputs.iter().enumerate() {
-                let input_name = format_ident!("peregrine_internal_op_input_{index}");
-                input_names.push(input_name.clone());
-                input_declarations.push(quote! {
-                    let #input_name = (#input_expr).into_run();
+            for (input_name, input_expr) in inputs {
+                input_names.push(input_name);
+                upstreams.push(quote! {
+                    (#input_expr).into_upstream()
                 });
-                if let Some(e) = join_expr {
-                    join_expr = Some(quote! {
-                        worker.join(
-                            |worker| #input_name.run(peregrine::Ctx { worker }).track(g),
-                            |worker| #e,
-                        )
-                    })
-                } else {
-                    join_expr = Some(quote! {#input_name.run(peregrine::Ctx { worker }).track(g)});
-                }
-                if let Some(d) = join_destructure {
-                    join_destructure = Some(quote! {
-                        (#var_name, #d)
-                    })
-                } else {
-                    join_destructure = Some(quote! {#var_name});
-                }
             }
-
-            let join_statement = if input_declarations.is_empty() {
-                quote! {}
-            } else {
-                quote! {
-                    let #join_destructure = {
-                        let peregrine::Ctx { worker } = ctx;
-                        #join_expr
-                    };
-                }
-            };
 
             let expanded = quote! {
                 {
-                    use peregrine::{Run, IntoRun};
+                    use peregrine::IntoUpstream;
 
-                    #(#input_declarations)*
                     peregrine::graph::op::Op::new(
-                        move |ctx: peregrine::Ctx, g: peregrine::cache::InvalidatorGenerator<_>| {
-                            #join_statement
+                        (#(#upstreams,)*),
+                        move |(#(#input_names,)*)| {
                             #processed
                         }
                     )
@@ -101,7 +69,7 @@ fn collect_inputs(
         }) => {
             if is_i_macro(path) {
                 let input_index = collected_inputs.len();
-                let var_ident = format_ident!("peregrine_internal_op_result_{input_index}");
+                let var_ident = format_ident!("peregrine_internal_op_input_{input_index}");
 
                 // Parse the tokens inside i!() as an expression
                 let input_expr: Expr = syn::parse2(tokens.clone())?;
