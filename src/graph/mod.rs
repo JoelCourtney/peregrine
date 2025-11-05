@@ -67,7 +67,10 @@ impl<T> Node<T> {
     }
 
     fn add_edge_id(&self, id: <StableDiGraph<(), ()> as GraphBase>::NodeId) {
-        GRAPH.lock().add_edge(self.id, id, ());
+        GRAPH
+            .lock()
+            .try_add_edge(self.id, id, ())
+            .expect("Cycle detected in dependency graph.");
     }
 
     fn remove_edge<U: ?Sized>(&self, other: &Node<U>) {
@@ -100,7 +103,7 @@ impl<T: ?Sized> Drop for Node<T> {
     fn drop(&mut self) {
         if Arc::strong_count(&self.arc) == 1 {
             let mut lock = GRAPH.lock();
-            if cfg!(debug_assertions) {
+            if cfg!(debug_assertions) && !std::thread::panicking() {
                 assert_eq!(
                     lock.edges_directed(self.id, petgraph::Direction::Incoming)
                         .count(),
@@ -153,14 +156,14 @@ mod tests {
 
     #[test]
     fn add_to_graph() {
-            let b = Node::new(());
-            let a = Node::new(());
+        let b = Node::new(());
+        let a = Node::new(());
 
-            a.add_edge(&b);
+        a.add_edge(&b);
 
-            assert_eq!(GRAPH.lock().node_weight(a.id), Some(&()));
-            assert_eq!(GRAPH.lock().node_weight(b.id), Some(&()));
-            
-            assert!(GRAPH.lock().find_edge(a.id, b.id).is_some());
+        assert_eq!(GRAPH.lock().node_weight(a.id), Some(&()));
+        assert_eq!(GRAPH.lock().node_weight(b.id), Some(&()));
+
+        assert!(GRAPH.lock().find_edge(a.id, b.id).is_some());
     }
 }

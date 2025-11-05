@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    Callback, Ctx, IntoUpstream, Upstream,
-    cache::Cached,
-    data::Data,
-    graph::op::Op,
-};
+use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cached, data::Data, graph::op::Op};
 use crossbeam::atomic::AtomicCell;
 
 impl<U: Upstream> IntoUpstream<U> for U {
