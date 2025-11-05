@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use crate::{
-    Callback, Ctx, Downstream, IntoUpstream, Upstream,
+    Callback, Ctx, IntoUpstream, Upstream,
     cache::Cached,
     data::Data,
-    flow::{Callbacks, UpstreamCollector, UpstreamCollectorExt},
+    graph::op::Op,
 };
 use crossbeam::atomic::AtomicCell;
-use parking_lot::Mutex;
-use std::sync::atomic::AtomicU32;
 
 impl<U: Upstream> IntoUpstream<U> for U {
     fn into_upstream(self) -> Self {
@@ -77,49 +75,24 @@ impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> IntoUpstream<FnWrapp
     }
 }
 
-pub struct TupleWrapper<U, C, O: 'static> {
-    collector: UpstreamCollector<U, C>,
-    counter: AtomicU32,
-    callbacks: Mutex<Callbacks<O>>,
-}
-
 macro_rules! impl_into_upstream_for_tuple {
     ($($t:ident $t_i:ident),*) => {
-        impl<$($t: Upstream + 'static),*> Upstream for TupleWrapper<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*)>
-        where $($t::Output: Clone + Send,)* {
-            type Output = ($($t::Output,)*);
-
-            fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
-                self.callbacks.lock().add(callback);
-                self.collector.request(ctx, &self.counter, unsafe {
-                    std::mem::transmute::<&dyn Downstream, &'static dyn Downstream>(self)
-                });
-            }
-        }
-
-        impl<$($t: Upstream + 'static),*> Downstream for TupleWrapper<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*)>
-        where $($t::Output: Clone + Send,)* {
-            fn should_run(&self) -> bool {
-                self.counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1
-            }
-            fn run(&self, ctx: Ctx) {
-                let callbacks = std::mem::take(&mut *self.callbacks.lock());
-                callbacks.run(ctx, || self.collector.get())
-            }
-        }
-
-        impl<$($t: Upstream + 'static, $t_i: IntoUpstream<$t>),*> IntoUpstream<TupleWrapper<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*)>> for ($($t_i,)*)
+        impl<$($t: Upstream + 'static, $t_i: IntoUpstream<$t>),*> IntoUpstream<Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> for ($($t_i,)*)
         where $($t::Output: Send + Clone + 'static, )* {
             #[allow(non_snake_case)]
-            fn into_upstream(self) -> TupleWrapper<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*)> {
+            fn into_upstream(self) -> Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)> {
                 let ($($t_i,)*) = self;
 
                 let ($($t_i,)*) = ($($t_i.into_upstream()),*);
 
-                TupleWrapper {collector: UpstreamCollector::new(($($t_i,)*)), counter: AtomicU32::new(0), callbacks: Default::default() }
+                Op::new(($($t_i,)*), identity)
             }
         }
     };
+}
+
+fn identity<T>(value: T) -> T {
+    value
 }
 
 impl_into_upstream_for_tuple!(A AI, B BI);

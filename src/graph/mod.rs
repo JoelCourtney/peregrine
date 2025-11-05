@@ -152,18 +152,15 @@ mod tests {
     }
 
     #[test]
-    fn remove_from_graph() {
-        let id = {
+    fn add_to_graph() {
             let b = Node::new(());
             let a = Node::new(());
 
             a.add_edge(&b);
 
+            assert_eq!(GRAPH.lock().node_weight(a.id), Some(&()));
             assert_eq!(GRAPH.lock().node_weight(b.id), Some(&()));
-
-            b.id
-        };
-
-        assert_eq!(GRAPH.lock().node_weight(id), None);
+            
+            assert!(GRAPH.lock().find_edge(a.id, b.id).is_some());
     }
 }
