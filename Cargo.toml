@@ -15,17 +15,13 @@ categories = ["aerospace::simulation", "simulation"]
 
 [dependencies]
 forte = "1.0.0-alpha.4"
-parking_lot = { version = "0.12", features = ["send_guard"] }
-async-lock = "3.4"
+parking_lot = { version = "0.12" }
 peregrine_macros = { path = "peregrine_macros" }
-futures = { version = "0.3.31", default-features = false, features = ["std"] }
 oneshot = "0.1.11"
 replace_with = "0.1.8"
-slotmap = "1.0.7"
-petgraph = { version = "0.8.3", features = ["stable_graph"] }
+petgraph = { version = "0.8.3", default-features = false, features = ["stable_graph"] }
 lazy_static = "1.5.0"
-derive_destructure2 = "0.1.3"
-crossbeam = "0.8.4"
+crossbeam = { version = "0.8.4", default-features = false }
 
 [dev-dependencies]
 
