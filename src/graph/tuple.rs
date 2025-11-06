@@ -82,7 +82,10 @@ impl<A: Upstream> Upstream for UnaryTupleWrapper<A> {
     fn node_id(&self) -> Option<NodeId> {
         self.0.node_id()
     }
-    fn request(&self, ctx: Ctx, callback: Callback<(A::Output,)>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<(A::Output,)>)
+    where
+        Self: 's,
+    {
         self.0.request(ctx, callback.map(|o| o.map(|o| (o,))))
     }
 }

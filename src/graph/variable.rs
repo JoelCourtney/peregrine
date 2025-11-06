@@ -6,50 +6,48 @@ use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache};
 
 use super::Node;
 
-pub struct Var<O: Send + 'static> {
-    node: Arc<VarCell<O>>,
-}
-
-pub struct VarCell<O: Send + 'static> {
+pub struct Var<'a, O: Send + 'static> {
     node: Node,
-    cell: RwLock<Arc<dyn Upstream<Output = O>>>,
+    cell: RwLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
 }
 
-impl<O: Send> Var<O> {
-    pub fn new<U: Upstream<Output = O> + 'static>(node: impl IntoUpstream<U>) -> Var<O> {
+impl<'a, O: Send> Var<'a, O> {
+    pub fn new<U: Upstream<Output = O> + 'a>(node: impl IntoUpstream<U>) -> Var<'a, O> {
         let outer = Node::new();
         let inner = node.into_upstream();
         outer.add_edges(inner.node_id());
-        let var_cell = Arc::new(VarCell {
+        Var {
             cell: RwLock::new(Arc::new(inner)),
             cache: Cache::new(),
             node: outer,
-        });
-        Var { node: var_cell }
+        }
     }
 
-    pub fn set<U: Upstream<Output = O> + 'static>(&mut self, node: impl IntoUpstream<U>) {
-        let mut write = self.node.cell.write();
-        self.node.node.remove_edges(write.node_id());
+    pub fn set<U: Upstream<Output = O> + 'a>(&self, node: impl IntoUpstream<U>) {
+        let mut write = self.cell.write();
+        self.node.remove_edges(write.node_id());
         let new_node = Arc::new(node.into_upstream());
-        self.node.node.add_edges(new_node.node_id());
-        self.node.cache.invalidate();
+        self.node.add_edges(new_node.node_id());
+        self.cache.invalidate();
         *write = new_node;
     }
 
-    pub fn freeze(&self) -> Arc<dyn Upstream<Output = O>> {
-        (*self.node.cell.read()).clone()
+    pub fn freeze(&self) -> Arc<dyn Upstream<Output = O> + 'a> {
+        (*self.cell.read()).clone()
     }
 }
 
-impl<O: Send> Upstream for VarCell<O> {
+impl<O: Send> Upstream for Var<'_, O> {
     type Output = O;
 
     fn node_id(&self) -> Option<super::NodeId> {
         Some(self.node.id)
     }
-    fn request(&self, ctx: Ctx, callback: Callback<O>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<O>)
+    where
+        Self: 's,
+    {
         let sender = self.cache.get_invalidator_sender();
         let callback = callback.map(|mut c| {
             c.push_sender(sender, false);
@@ -57,18 +55,6 @@ impl<O: Send> Upstream for VarCell<O> {
         });
         let cell = self.cell.read();
         cell.request(ctx, callback);
-    }
-}
-
-impl<O: Send> IntoUpstream<Arc<VarCell<O>>> for Var<O> {
-    fn into_upstream(self) -> Arc<VarCell<O>> {
-        self.node
-    }
-}
-
-impl<O: Send> IntoUpstream<Arc<VarCell<O>>> for &Var<O> {
-    fn into_upstream(self) -> Arc<VarCell<O>> {
-        self.node.clone()
     }
 }
 
@@ -82,7 +68,7 @@ mod tests {
 
     #[test]
     fn var() {
-        let mut var = Var::new(0);
+        let var = Var::new(0);
         assert_eq!(run(&var), 0);
 
         var.set(7);
@@ -92,27 +78,25 @@ mod tests {
     #[test]
     fn upstream_var() {
         let x = op!(i!(1));
-        // let y = Var::new(op! { x + 1 });
+        let y = Var::new(op! { i!(&x) + 1 });
 
-        assert_eq!(run(&x), 1);
+        assert_eq!(run(y), 2);
     }
 
     #[test]
-    #[allow(clippy::drop_non_drop)]
     fn mutate_upstream_var() {
-        let mut x = Var::new(0);
+        let x = Var::new(0);
         let y = op! { i!(&x) + 1 };
 
         assert_eq!(run(&y), 1);
 
         x.set(10);
-        drop(x);
         assert_eq!(run(y), 11);
     }
 
     #[test]
     fn freeze() {
-        let mut x = Var::new(0);
+        let x = Var::new(0);
 
         assert_eq!(run(&x), 0);
 
@@ -127,7 +111,7 @@ mod tests {
     fn freeze_drop() {
         let payload = Arc::new(());
 
-        let mut x = Var::new(payload.clone());
+        let x = Var::new(payload.clone());
         assert_eq!(Arc::strong_count(&payload), 2);
 
         x.set(Arc::new(()));

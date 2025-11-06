@@ -98,7 +98,13 @@ pub trait UpstreamCollectorExt<U> {
     type Combined;
 
     fn new(upstreams: U) -> Self;
-    fn request(&self, ctx: Ctx, counter: &AtomicU32, downstream: &'static dyn Downstream);
+    fn request<'s>(
+        &self,
+        ctx: Ctx<'_, 's>,
+        counter: &AtomicU32,
+        downstream: &'static dyn Downstream,
+    ) where
+        Self: 's;
     fn get(&self) -> Cached<Self::Combined>;
 }
 
@@ -112,7 +118,14 @@ impl UpstreamCollectorExt<()> for UpstreamCollector<(), ()> {
         }
     }
 
-    fn request(&self, ctx: Ctx, _counter: &AtomicU32, downstream: &'static dyn Downstream) {
+    fn request<'s>(
+        &self,
+        ctx: Ctx<'_, 's>,
+        _counter: &AtomicU32,
+        downstream: &'static dyn Downstream,
+    ) where
+        Self: 's,
+    {
         downstream.run(ctx);
     }
 
@@ -123,7 +136,7 @@ impl UpstreamCollectorExt<()> for UpstreamCollector<(), ()> {
 
 macro_rules! impl_upstream_collector_tuple {
     ($($t:ident $u:ident $c:ident),*) => {
-        impl<$($t: Upstream + 'static),*> UpstreamCollectorExt<($($t,)*),> for UpstreamCollector<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*)>
+        impl<$($t: Upstream),*> UpstreamCollectorExt<($($t,)*),> for UpstreamCollector<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*)>
         where $($t::Output: Clone),* {
             type Combined = ($($t::Output,)*);
 
@@ -135,7 +148,7 @@ macro_rules! impl_upstream_collector_tuple {
             }
 
             #[allow(unused)]
-            fn request(&self, ctx: Ctx, counter: &AtomicU32, downstream: &'static dyn Downstream) {
+            fn request<'s>(&self, ctx: Ctx<'_, 's>, counter: &AtomicU32, downstream: &'static dyn Downstream) where Self: 's {
                 let mut count = $( one::<$t>() +)* 0;
                 counter.store(count, Ordering::Relaxed);
 
@@ -151,7 +164,7 @@ macro_rules! impl_upstream_collector_tuple {
                         $u.request(ctx, callback);
                     } else {
                         let upstream = unsafe {
-                            transmute::<&$t, &'static $t>(&$u)
+                            transmute::<&$t, &'s $t>(&$u)
                         };
                         ctx.scope.spawn(move |scope| upstream.request(Ctx { scope }, callback))
                     }

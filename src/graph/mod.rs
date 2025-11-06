@@ -4,6 +4,7 @@ use petgraph::{acyclic::Acyclic, data::Build, prelude::StableDiGraph, visit::Gra
 
 pub mod auto;
 pub mod op;
+pub mod series;
 pub mod stack;
 pub mod tuple;
 pub mod variable;

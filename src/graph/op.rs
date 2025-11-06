@@ -53,7 +53,10 @@ where
     fn node_id(&self) -> Option<super::NodeId> {
         Some(self.node.id)
     }
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         match self.cache.check() {
             CheckResult::NoProblem(r) => {
                 callback.call(r, ctx);

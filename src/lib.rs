@@ -17,7 +17,9 @@ pub trait Upstream: Send + Sync {
     type Output: Send + 'static;
 
     fn node_id(&self) -> Option<NodeId>;
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>);
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's;
 }
 
 pub struct Callback<I: 'static> {

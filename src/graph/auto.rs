@@ -16,7 +16,10 @@ impl<U: Upstream + ?Sized> Upstream for &U {
     fn node_id(&self) -> Option<NodeId> {
         (**self).node_id()
     }
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         (**self).request(ctx, callback)
     }
 }
@@ -27,7 +30,10 @@ impl<U: Upstream + ?Sized> Upstream for Box<U> {
     fn node_id(&self) -> Option<NodeId> {
         (**self).node_id()
     }
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         (**self).request(ctx, callback)
     }
 }
@@ -38,7 +44,10 @@ impl<U: Upstream + ?Sized> Upstream for Arc<U> {
     fn node_id(&self) -> Option<NodeId> {
         (**self).node_id()
     }
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         (**self).request(ctx, callback)
     }
 }
@@ -54,7 +63,10 @@ impl<O: Data> Upstream for DataWrapper<O> {
         None
     }
     #[inline(always)]
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         callback.call(Cached::Constant(self.0.clone()), ctx);
     }
 }
@@ -75,7 +87,10 @@ impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> Upstream for FnWrapp
         None
     }
     #[inline(always)]
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         callback.call(self.0(), ctx);
     }
 }
@@ -92,7 +107,10 @@ impl<R: Upstream> Upstream for Option<R> {
     fn node_id(&self) -> Option<NodeId> {
         self.as_ref().and_then(|this| this.node_id())
     }
-    fn request(&self, ctx: Ctx, callback: Callback<Option<R::Output>>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Option<R::Output>>)
+    where
+        Self: 's,
+    {
         match self {
             Some(r) => r.request(ctx, callback.map(|o| o.map(Some))),
             None => callback.call(Cached::Constant(None), ctx),
@@ -111,7 +129,10 @@ impl<U: Upstream, O: Send + 'static> Upstream for UncachedMap<U, O> {
     fn node_id(&self) -> Option<NodeId> {
         self.upstream.node_id()
     }
-    fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    where
+        Self: 's,
+    {
         let func = self.func;
         self.upstream
             .request(ctx, callback.map(move |c| c.map(func)))
