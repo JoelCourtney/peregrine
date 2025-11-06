@@ -119,7 +119,7 @@ mod tests {
         let mut stack = Stack::new(0);
         assert_eq!(run(&stack), 0);
 
-        stack.push(|prev| op!(prev + 2));
+        stack.push(|prev| op!(i!(prev) + 2));
         assert_eq!(run(&stack), 2);
 
         stack.push(|_| 10);
@@ -137,7 +137,7 @@ mod tests {
 
         assert_eq!(run(&node), 0);
 
-        stack.push(|prev| op!(prev + 2));
+        stack.push(|prev| op!(i!(prev) + 2));
         assert_eq!(run(&node), 4);
 
         assert_eq!(run(stack.pop()), Some(2));
@@ -150,8 +150,8 @@ mod tests {
         let mut var = Var::new(2);
 
         let mut stack = Stack::new(2);
-        stack.push(|p| op!(p * i!(&var)));
-        stack.push(|p| op!(p + 10));
+        stack.push(|p| op!(i!(p) * i!(&var)));
+        stack.push(|p| op!(i!(p) + 10));
 
         assert_eq!(run(&stack), 14);
 

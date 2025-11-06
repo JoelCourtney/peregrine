@@ -102,6 +102,25 @@ pub trait UpstreamCollectorExt<U> {
     fn get(&self) -> Cached<Self::Combined>;
 }
 
+impl UpstreamCollectorExt<()> for UpstreamCollector<(), ()> {
+    type Combined = ();
+
+    fn new(upstreams: ()) -> Self {
+        UpstreamCollector {
+            upstreams,
+            outputs: (),
+        }
+    }
+
+    fn request(&self, ctx: Ctx, _counter: &AtomicU32, downstream: &'static dyn Downstream) {
+        downstream.run(ctx);
+    }
+
+    fn get(&self) -> Cached<()> {
+        Cached::Constant(())
+    }
+}
+
 macro_rules! impl_upstream_collector_tuple {
     ($($t:ident $u:ident $c:ident),*) => {
         impl<$($t: Upstream + 'static),*> UpstreamCollectorExt<($($t,)*),> for UpstreamCollector<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*)>

@@ -10,6 +10,7 @@ use crate::{Callback, Ctx, Upstream};
 pub mod auto;
 pub mod op;
 pub mod stack;
+pub mod tuple;
 pub mod variable;
 
 lazy_static! {

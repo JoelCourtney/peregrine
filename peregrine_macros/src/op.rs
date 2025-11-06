@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Expr, Ident, Pat, Path};
+use syn::{Expr, Ident, Path};
 
 struct OpInput {
     processed_code: Expr,
@@ -11,7 +11,7 @@ impl OpInput {
     pub fn from_expr(input: Expr) -> syn::Result<Self> {
         let mut input_expressions = Vec::new();
         let mut output = input.clone();
-        collect_inputs(&mut output, &mut input_expressions, vec![])?;
+        collect_inputs(&mut output, &mut input_expressions)?;
 
         Ok(OpInput {
             processed_code: output,
@@ -55,11 +55,7 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
     }
 }
 
-fn collect_inputs(
-    expr: &mut Expr,
-    collected_inputs: &mut Vec<(Ident, Expr)>,
-    mut known_idents: Vec<syn::Ident>,
-) -> syn::Result<()> {
+fn collect_inputs(expr: &mut Expr, collected_inputs: &mut Vec<(Ident, Expr)>) -> syn::Result<()> {
     use syn::{ExprMacro, Macro};
 
     match expr {
@@ -85,16 +81,11 @@ fn collect_inputs(
             for stmt in &mut expr_block.block.stmts {
                 match stmt {
                     syn::Stmt::Expr(e, _) => {
-                        collect_inputs(e, collected_inputs, known_idents.clone())?;
+                        collect_inputs(e, collected_inputs)?;
                     }
                     syn::Stmt::Local(local) => {
-                        known_idents.extend(get_idents_from_pattern(&local.pat));
                         if let Some(local_init) = &mut local.init {
-                            collect_inputs(
-                                &mut local_init.expr,
-                                collected_inputs,
-                                known_idents.clone(),
-                            )?;
+                            collect_inputs(&mut local_init.expr, collected_inputs)?;
                         }
                     }
                     _ => {}
@@ -105,34 +96,41 @@ fn collect_inputs(
         Expr::Call(call) => {
             call.args
                 .iter_mut()
-                .try_for_each(|arg| collect_inputs(arg, collected_inputs, known_idents.clone()))?;
+                .try_for_each(|arg| collect_inputs(arg, collected_inputs))?;
         }
 
         Expr::Binary(binary) => {
-            collect_inputs(&mut binary.left, collected_inputs, known_idents.clone())?;
-            collect_inputs(&mut binary.right, collected_inputs, known_idents)?;
+            collect_inputs(&mut binary.left, collected_inputs)?;
+            collect_inputs(&mut binary.right, collected_inputs)?;
         }
 
         Expr::Unary(unary) => {
-            collect_inputs(&mut unary.expr, collected_inputs, known_idents)?;
+            collect_inputs(&mut unary.expr, collected_inputs)?;
         }
 
         Expr::Paren(paren) => {
-            collect_inputs(&mut paren.expr, collected_inputs, known_idents)?;
+            collect_inputs(&mut paren.expr, collected_inputs)?;
         }
 
         Expr::Group(g) => {
-            collect_inputs(&mut g.expr, collected_inputs, known_idents)?;
+            collect_inputs(&mut g.expr, collected_inputs)?;
         }
 
         Expr::Lit(_) => {}
 
-        Expr::Path(path) => {
-            if let Some(ident) = path.path.get_ident()
-                && !known_idents.contains(ident)
-            {
-                collected_inputs.push((ident.clone(), Expr::Path(path.clone())));
+        Expr::Path(_) => {}
+
+        Expr::Tuple(tuple) => {
+            for elem in &mut tuple.elems {
+                collect_inputs(elem, collected_inputs)?;
             }
+        }
+
+        Expr::MethodCall(method_call) => {
+            for arg in &mut method_call.args {
+                collect_inputs(arg, collected_inputs)?;
+            }
+            collect_inputs(&mut method_call.receiver, collected_inputs)?;
         }
 
         // For other expression types, return as-is for now
@@ -141,37 +139,6 @@ fn collect_inputs(
     }
 
     Ok(())
-}
-
-fn get_idents_from_pattern(pat: &Pat) -> Vec<syn::Ident> {
-    match pat {
-        Pat::Ident(ident) => vec![ident.ident.clone()],
-        Pat::Or(or) => get_idents_from_pattern(or.cases.first().unwrap()),
-        Pat::Paren(paren) => get_idents_from_pattern(&paren.pat),
-        Pat::Reference(reference) => get_idents_from_pattern(&reference.pat),
-        Pat::Slice(slice) => slice
-            .elems
-            .iter()
-            .flat_map(get_idents_from_pattern)
-            .collect(),
-        Pat::Struct(struct_pat) => struct_pat
-            .fields
-            .iter()
-            .flat_map(|field| get_idents_from_pattern(&field.pat))
-            .collect(),
-        Pat::Tuple(tuple) => tuple
-            .elems
-            .iter()
-            .flat_map(get_idents_from_pattern)
-            .collect(),
-        Pat::TupleStruct(tuple_struct) => tuple_struct
-            .elems
-            .iter()
-            .flat_map(get_idents_from_pattern)
-            .collect(),
-        Pat::Type(type_pat) => get_idents_from_pattern(&type_pat.pat),
-        _ => vec![],
-    }
 }
 
 fn is_i_macro(path: &Path) -> bool {
