@@ -5,6 +5,7 @@ pub mod graph;
 pub mod macro_prelude;
 
 use crossbeam::atomic::AtomicCell;
+use graph::NodeId;
 pub use peregrine_macros::op;
 
 use cache::Cached;
@@ -15,6 +16,7 @@ use crate::{flow::Sink, graph::GRAPH};
 pub trait Upstream: Send + Sync {
     type Output: Send + 'static;
 
+    fn node_id(&self) -> Option<NodeId>;
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>);
 }
 

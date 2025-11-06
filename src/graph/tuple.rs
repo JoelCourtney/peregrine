@@ -3,6 +3,8 @@ use crate::{Cached, Callback, Ctx, IntoUpstream, Upstream, graph::op::Op};
 use crossbeam::atomic::AtomicCell;
 use std::sync::Arc;
 
+use super::NodeId;
+
 pub trait Split<U> {
     type Result;
 
@@ -18,8 +20,9 @@ macro_rules! impl_into_upstream_for_tuple {
                 let ($($t_i,)*) = self;
 
                 let ($($t_i,)*) = ($($t_i.into_upstream()),*);
+                let node_ids = [$($t_i.node_id(),)*].into_iter().filter_map(|i| i);
 
-                Op::new(($($t_i,)*), identity)
+                Op::new(($($t_i,)*), identity, node_ids)
             }
         }
 
@@ -76,6 +79,9 @@ impl<A: Upstream, AI: IntoUpstream<A>> IntoUpstream<UnaryTupleWrapper<A>> for (A
 impl<A: Upstream> Upstream for UnaryTupleWrapper<A> {
     type Output = (A::Output,);
 
+    fn node_id(&self) -> Option<NodeId> {
+        self.0.node_id()
+    }
     fn request(&self, ctx: Ctx, callback: Callback<(A::Output,)>) {
         self.0.request(ctx, callback.map(|o| o.map(|o| (o,))))
     }

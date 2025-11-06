@@ -38,13 +38,16 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
 
             let expanded = quote! {
                 {
-                    use peregrine::IntoUpstream;
+                    use peregrine::{Upstream, IntoUpstream};
 
+                    let (#(#input_names,)*) = (#(#upstreams,)*);
+                    let node_ids = [#(#input_names.node_id(),)*].into_iter().filter_map(|i| i);
                     peregrine::graph::op::Op::new(
-                        (#(#upstreams,)*),
+                        (#(#input_names,)*),
                         move |(#(#input_names,)*)| {
                             #processed
-                        }
+                        },
+                        node_ids
                     )
                 }
             };
@@ -135,7 +138,7 @@ fn collect_inputs(expr: &mut Expr, collected_inputs: &mut Vec<(Ident, Expr)>) ->
 
         // For other expression types, return as-is for now
         // We can extend this as needed
-        e => panic!("Unsupported expression type: {e:?}"),
+        e => todo!("Unsupported expression type: {e:?}"),
     }
 
     Ok(())

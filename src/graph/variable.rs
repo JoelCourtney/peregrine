@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use parking_lot::RwLock;
 
 use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache};
@@ -5,36 +7,38 @@ use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache};
 use super::Node;
 
 pub struct Var<O: Send + 'static> {
-    node: Node<VarCell<O>>,
+    node: Arc<VarCell<O>>,
 }
 
 pub struct VarCell<O: Send + 'static> {
-    cell: RwLock<Node<dyn Upstream<Output = O>>>,
+    node: Node,
+    cell: RwLock<Arc<dyn Upstream<Output = O>>>,
     cache: Cache<()>,
 }
 
 impl<O: Send> Var<O> {
     pub fn new<U: Upstream<Output = O> + 'static>(node: impl IntoUpstream<U>) -> Var<O> {
-        let outer = Node::empty();
-        let inner = Node::new_dyn(node.into_upstream());
-        outer.add_edge(&inner);
-        let var_cell = outer.init(VarCell {
-            cell: RwLock::new(inner),
+        let outer = Node::new();
+        let inner = node.into_upstream();
+        outer.add_edges(inner.node_id());
+        let var_cell = Arc::new(VarCell {
+            cell: RwLock::new(Arc::new(inner)),
             cache: Cache::new(),
+            node: outer,
         });
         Var { node: var_cell }
     }
 
     pub fn set<U: Upstream<Output = O> + 'static>(&mut self, node: impl IntoUpstream<U>) {
         let mut write = self.node.cell.write();
-        self.node.remove_edge(&*write);
-        let new_node = Node::new_dyn(node.into_upstream());
-        self.node.add_edge(&new_node);
+        self.node.node.remove_edges(write.node_id());
+        let new_node = Arc::new(node.into_upstream());
+        self.node.node.add_edges(new_node.node_id());
         self.node.cache.invalidate();
         *write = new_node;
     }
 
-    pub fn freeze(&self) -> Node<dyn Upstream<Output = O>> {
+    pub fn freeze(&self) -> Arc<dyn Upstream<Output = O>> {
         (*self.node.cell.read()).clone()
     }
 }
@@ -42,6 +46,9 @@ impl<O: Send> Var<O> {
 impl<O: Send> Upstream for VarCell<O> {
     type Output = O;
 
+    fn node_id(&self) -> Option<super::NodeId> {
+        Some(self.node.id)
+    }
     fn request(&self, ctx: Ctx, callback: Callback<O>) {
         let sender = self.cache.get_invalidator_sender();
         let callback = callback.map(|mut c| {
@@ -53,14 +60,14 @@ impl<O: Send> Upstream for VarCell<O> {
     }
 }
 
-impl<O: Send> IntoUpstream<Node<VarCell<O>>> for Var<O> {
-    fn into_upstream(self) -> Node<VarCell<O>> {
+impl<O: Send> IntoUpstream<Arc<VarCell<O>>> for Var<O> {
+    fn into_upstream(self) -> Arc<VarCell<O>> {
         self.node
     }
 }
 
-impl<O: Send> IntoUpstream<Node<VarCell<O>>> for &Var<O> {
-    fn into_upstream(self) -> Node<VarCell<O>> {
+impl<O: Send> IntoUpstream<Arc<VarCell<O>>> for &Var<O> {
+    fn into_upstream(self) -> Arc<VarCell<O>> {
         self.node.clone()
     }
 }

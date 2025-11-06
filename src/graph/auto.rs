@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cached, data::Data};
 
+use super::NodeId;
+
 impl<U: Upstream> IntoUpstream<U> for U {
     fn into_upstream(self) -> Self {
         self
@@ -11,6 +13,9 @@ impl<U: Upstream> IntoUpstream<U> for U {
 impl<U: Upstream + ?Sized> Upstream for &U {
     type Output = U::Output;
 
+    fn node_id(&self) -> Option<NodeId> {
+        (**self).node_id()
+    }
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
         (**self).request(ctx, callback)
     }
@@ -19,6 +24,9 @@ impl<U: Upstream + ?Sized> Upstream for &U {
 impl<U: Upstream + ?Sized> Upstream for Box<U> {
     type Output = U::Output;
 
+    fn node_id(&self) -> Option<NodeId> {
+        (**self).node_id()
+    }
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
         (**self).request(ctx, callback)
     }
@@ -27,6 +35,9 @@ impl<U: Upstream + ?Sized> Upstream for Box<U> {
 impl<U: Upstream + ?Sized> Upstream for Arc<U> {
     type Output = U::Output;
 
+    fn node_id(&self) -> Option<NodeId> {
+        (**self).node_id()
+    }
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
         (**self).request(ctx, callback)
     }
@@ -39,6 +50,9 @@ pub struct DataWrapper<O>(O);
 impl<O: Data> Upstream for DataWrapper<O> {
     type Output = O;
 
+    fn node_id(&self) -> Option<NodeId> {
+        None
+    }
     #[inline(always)]
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
         callback.call(Cached::Constant(self.0.clone()), ctx);
@@ -57,6 +71,9 @@ pub struct FnWrapper<F>(F);
 impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> Upstream for FnWrapper<F> {
     type Output = O;
 
+    fn node_id(&self) -> Option<NodeId> {
+        None
+    }
     #[inline(always)]
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>) {
         callback.call(self.0(), ctx);
@@ -72,6 +89,9 @@ impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> IntoUpstream<FnWrapp
 impl<R: Upstream> Upstream for Option<R> {
     type Output = Option<R::Output>;
 
+    fn node_id(&self) -> Option<NodeId> {
+        self.as_ref().and_then(|this| this.node_id())
+    }
     fn request(&self, ctx: Ctx, callback: Callback<Option<R::Output>>) {
         match self {
             Some(r) => r.request(ctx, callback.map(|o| o.map(Some))),
@@ -88,6 +108,9 @@ pub struct UncachedMap<U: Upstream, O> {
 impl<U: Upstream, O: Send + 'static> Upstream for UncachedMap<U, O> {
     type Output = O;
 
+    fn node_id(&self) -> Option<NodeId> {
+        self.upstream.node_id()
+    }
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
         let func = self.func;
         self.upstream

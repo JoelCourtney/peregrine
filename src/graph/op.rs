@@ -11,7 +11,10 @@ use crate::{
     flow::{Callbacks, UpstreamCollector, UpstreamCollectorExt},
 };
 
+use super::{Node, NodeId};
+
 pub struct Op<U, C, O: 'static, F> {
+    node: Node,
     collector: UpstreamCollector<U, C>,
     counter: AtomicU32,
     func: F,
@@ -26,13 +29,16 @@ impl<U: Send + Sync, C: Send + Sync, O: Send + Clone, F: Fn(OpInput<U, C>) -> O 
 where
     UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
 {
-    pub fn new(upstreams: U, func: F) -> Self {
+    pub fn new(upstreams: U, func: F, node_ids: impl IntoIterator<Item = NodeId>) -> Self {
+        let node = Node::new();
+        node.add_edges(node_ids);
         Op {
             collector: UpstreamCollector::new(upstreams),
             counter: AtomicU32::new(0),
             func,
             callbacks: Default::default(),
             cache: Cache::new_arc(),
+            node,
         }
     }
 }
@@ -44,6 +50,9 @@ where
 {
     type Output = O;
 
+    fn node_id(&self) -> Option<super::NodeId> {
+        Some(self.node.id)
+    }
     fn request(&self, ctx: Ctx, callback: Callback<Self::Output>) {
         match self.cache.check() {
             CheckResult::NoProblem(r) => {

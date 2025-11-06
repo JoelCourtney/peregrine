@@ -4,57 +4,62 @@ use parking_lot::RwLock;
 
 use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache, graph::Node};
 
+use super::NodeId;
+
 pub struct Stack<O> {
-    vec: Node<StackVec<O>>,
+    vec: Arc<StackVec<O>>,
 }
 
 pub struct StackVec<O> {
-    nodes: RwLock<Vec<Node<dyn Upstream<Output = O>>>>,
+    node: Node,
+    nodes: RwLock<Vec<Arc<dyn Upstream<Output = O>>>>,
     cache: Arc<Cache<O>>,
 }
 
 impl<O: Clone + Send + 'static> Stack<O> {
     pub fn new<U: Upstream<Output = O> + 'static>(run: impl IntoUpstream<U>) -> Stack<O> {
-        let outer = Node::empty();
-        let inner = Node::new_dyn(run.into_upstream());
-        outer.add_edge(&inner);
+        let node = Node::new();
+        let inner = run.into_upstream();
+        node.add_edges(inner.node_id());
         Stack {
-            vec: outer.init(StackVec {
-                nodes: RwLock::new(vec![inner]),
+            vec: Arc::new(StackVec {
+                nodes: RwLock::new(vec![Arc::new(inner)]),
                 cache: Cache::new_arc(),
+                node,
             }),
         }
     }
 
     pub fn push<U: Upstream<Output = O> + 'static, IR: IntoUpstream<U>>(
         &mut self,
-        f: impl FnOnce(Node<dyn Upstream<Output = O>>) -> IR,
+        f: impl FnOnce(Arc<dyn Upstream<Output = O>>) -> IR,
     ) {
         let mut nodes = self.vec.nodes.write();
         let prev = nodes.last().unwrap().clone();
+        self.vec.node.remove_edges(prev.node_id());
         let ir = f(prev).into_upstream();
-        let new_node = Node::new_dyn(ir);
-        self.vec.add_edge(&new_node);
-        nodes.push(new_node);
+        self.vec.node.add_edges(ir.node_id());
+        nodes.push(Arc::new(ir));
         self.vec.cache.invalidate()
     }
 
-    pub fn pop(&self) -> Option<Node<dyn Upstream<Output = O>>>
+    pub fn pop(&self) -> Option<Arc<dyn Upstream<Output = O>>>
     where
         O: 'static,
     {
         let mut nodes = self.vec.nodes.write();
         if nodes.len() > 1 {
             self.vec.cache.invalidate();
-            let node = nodes.pop();
-            self.vec.remove_edge(node.as_ref().unwrap());
-            node
+            let node = nodes.pop().unwrap();
+            self.vec.node.remove_edges(node.node_id());
+            self.vec.node.add_edges(nodes.last().unwrap().node_id());
+            Some(node)
         } else {
             None
         }
     }
 
-    pub fn freeze(&self) -> Node<dyn Upstream<Output = O>>
+    pub fn freeze(&self) -> Arc<dyn Upstream<Output = O>>
     where
         O: 'static,
     {
@@ -65,17 +70,16 @@ impl<O: Clone + Send + 'static> Stack<O> {
     where
         O: Send + Clone + 'static,
     {
-        let new_outer = Node::empty();
+        let node = Node::new();
+        let vec = self.vec.nodes.read();
 
-        let nodes = self.vec.nodes.read();
-        for node in nodes.iter() {
-            new_outer.add_edge(node);
-        }
+        node.add_edges(vec.iter().filter_map(|n| n.node_id()));
 
         Stack {
-            vec: new_outer.init(StackVec {
-                nodes: RwLock::new(nodes.clone()),
+            vec: Arc::new(StackVec {
+                nodes: RwLock::new(vec.clone()),
                 cache: Cache::new_arc(),
+                node,
             }),
         }
     }
@@ -84,6 +88,9 @@ impl<O: Clone + Send + 'static> Stack<O> {
 impl<O: Send + 'static> Upstream for StackVec<O> {
     type Output = O;
 
+    fn node_id(&self) -> Option<NodeId> {
+        Some(self.node.id)
+    }
     fn request(&self, ctx: Ctx, callback: Callback<O>) {
         let sender = self.cache.get_invalidator_sender();
         let callback = callback.map(|mut c| {
@@ -95,14 +102,14 @@ impl<O: Send + 'static> Upstream for StackVec<O> {
     }
 }
 
-impl<O: Send + Clone + 'static> IntoUpstream<Node<StackVec<O>>> for Stack<O> {
-    fn into_upstream(self) -> Node<StackVec<O>> {
+impl<O: Send + Clone + 'static> IntoUpstream<Arc<StackVec<O>>> for Stack<O> {
+    fn into_upstream(self) -> Arc<StackVec<O>> {
         self.vec
     }
 }
 
-impl<O: Send + Clone + 'static> IntoUpstream<Node<StackVec<O>>> for &Stack<O> {
-    fn into_upstream(self) -> Node<StackVec<O>> {
+impl<O: Send + Clone + 'static> IntoUpstream<Arc<StackVec<O>>> for &Stack<O> {
+    fn into_upstream(self) -> Arc<StackVec<O>> {
         self.vec.clone()
     }
 }
