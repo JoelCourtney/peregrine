@@ -30,7 +30,7 @@ impl Node {
         let mut lock = GRAPH.lock();
         other.into_iter().for_each(|o| {
             lock.try_add_edge(self.id, o, ())
-                .expect("Cycle detected in dependency graph.");
+                .expect("Cycle detected in dependency graph");
         });
     }
 
@@ -52,7 +52,11 @@ impl Drop for Node {
             assert_eq!(
                 lock.edges_directed(self.id, petgraph::Direction::Incoming)
                     .count(),
-                0
+                0,
+                "Tried to remove a node that still has references pointing to it: {:?} <- {:?}",
+                self.id,
+                lock.edges_directed(self.id, petgraph::Direction::Incoming)
+                    .collect::<Vec<_>>()
             );
         }
         lock.remove_node(self.id).unwrap_or_else(|| {

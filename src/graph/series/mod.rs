@@ -1,3 +1,6 @@
+pub mod dense;
+pub mod timeline;
+
 use crate::{IntoUpstream, Upstream, cache::Cache, data::Data, graph::NodeId};
 use parking_lot::Mutex;
 use std::{
@@ -9,10 +12,11 @@ use std::{
 use super::Node;
 
 pub struct Series<'a, T, O> {
-    list: Mutex<BTreeMap<T, (Arc<dyn Upstream<Output = O> + 'a>, ProbeList<'a, T, O>)>>,
+    list: Mutex<BTreeMap<T, ProbedNode<'a, T, O>>>,
     default: (Arc<dyn Upstream<Output = O> + 'a>, ProbeList<'a, T, O>),
 }
 
+type ProbedNode<'a, T, O> = (Arc<dyn Upstream<Output = O> + 'a>, ProbeList<'a, T, O>);
 type ProbeList<'a, T, O> = Vec<Weak<SeriesProbe<'a, T, O>>>;
 
 pub struct SeriesProbe<'a, T, O> {
@@ -57,20 +61,20 @@ impl<'a, T: Copy + Ord, O: Send + 'static> Series<'a, T, O> {
 
     pub fn remove(&mut self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
         let mut list = self.list.lock();
-        if let Some((node, probes)) = list.remove(&index) {
+        if let Some((old_node, probes)) = list.remove(&index) {
             let (prev_node, prev_probes) = list
                 .range_mut(..index)
                 .next_back()
                 .map(|(_, v)| v)
                 .unwrap_or(&mut self.default);
-            let prev_node_id = prev_node.node_id();
+            let old_node_id = old_node.node_id();
             for weak in probes.into_iter() {
                 if let Some(probe) = weak.upgrade() {
-                    probe.switch(prev_node_id, prev_node);
+                    probe.switch(old_node_id, prev_node);
                     prev_probes.push(weak);
                 }
             }
-            Some(node)
+            Some(old_node)
         } else {
             None
         }
@@ -137,21 +141,21 @@ impl<'a, T: Ord, O: Send + 'static> SeriesProbe<'a, T, O> {
     fn reconsider(
         &self,
         new_key: T,
-        prev_node_id: Option<NodeId>,
+        old_node_id: Option<NodeId>,
         upstream: &Arc<dyn Upstream<Output = O> + 'a>,
     ) -> MontyHall {
         use MontyHall::*;
 
-        if self.at < new_key || (self.inclusive && self.at == new_key) {
+        if self.at < new_key || (!self.inclusive && self.at == new_key) {
             return Stay;
         }
 
-        self.switch(prev_node_id, upstream);
+        self.switch(old_node_id, upstream);
         Switch
     }
 
-    fn switch(&self, prev_node_id: Option<NodeId>, upstream: &Arc<dyn Upstream<Output = O> + 'a>) {
-        self.node.remove_edges(prev_node_id);
+    fn switch(&self, old_node_id: Option<NodeId>, upstream: &Arc<dyn Upstream<Output = O> + 'a>) {
+        self.node.remove_edges(old_node_id);
         self.node.add_edges(upstream.node_id());
 
         self.cache.invalidate();
@@ -258,6 +262,19 @@ mod tests {
 
     #[test]
     fn mutate() {
+        let mut s = Series::new(0);
+        s.set(2, 2);
+
+        s.mutate(3, |p| op!(i!(p) * 2));
+
+        assert_eq!(run(s.get_inclusive(3)), 4);
+
+        s.remove(2);
+        assert_eq!(run(s.get_inclusive(3)), 0);
+    }
+
+    #[test]
+    fn mutate_overwrite() {
         let mut s = Series::new(0);
         s.set(2, 2);
 
