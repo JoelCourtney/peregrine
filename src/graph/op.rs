@@ -76,13 +76,13 @@ where
                         callback.call(r, ctx);
                     }
                     CheckResult::SomeoneElsesProblem => {
-                        callbacks.add(callback);
+                        callbacks.add(callback, ctx.run_count);
                     }
                     CheckResult::YourProblem => unreachable!(),
                 }
             }
             CheckResult::YourProblem => {
-                self.callbacks.lock().add(callback);
+                self.callbacks.lock().add(callback, ctx.run_count);
                 self.collector.request(ctx, &self.counter, unsafe {
                     transmute::<&dyn Downstream, &'static dyn Downstream>(self)
                 });

@@ -171,7 +171,7 @@ impl<'a, T: Send + Sync, O: Send + 'static> Upstream for SeriesProbe<'a, T, O> {
         Some(self.node.id)
     }
 
-    fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<Self::Output>)
+    fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
     where
         Self: 's,
     {

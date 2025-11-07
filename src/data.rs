@@ -1,4 +1,12 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    cmp::Ordering,
+    convert::Infallible,
+    num::{Saturating, Wrapping},
+    path::PathBuf,
+    sync::Arc,
+};
+
+pub trait Data: Clone + Send + Sync + 'static {}
 
 macro_rules! impl_data {
     ($($t:ty),*) => {
@@ -8,7 +16,13 @@ macro_rules! impl_data {
     };
 }
 
-pub trait Data: Clone + Send + Sync + 'static {}
+macro_rules! impl_generic_data {
+    ($($t:ident<$d:ident: $bound:tt>),*) => {
+        $(
+            impl<$d: $bound> Data for $t<$d> {}
+        )*
+    };
+}
 
 impl_data!(
     u8,
@@ -30,9 +44,21 @@ impl_data!(
     char,
     (),
     String,
-    PathBuf
+    PathBuf,
+    Ordering,
+    Infallible,
+    std::time::Duration,
+    std::time::Instant,
+    std::time::SystemTime
 );
 
-impl<T: Data> Data for Box<T> {}
-impl<T: Data> Data for Vec<T> {}
-impl<T: Data> Data for Arc<T> {}
+impl_generic_data!(
+    Option<T: Data>,
+    Box<T: Data>,
+    Vec<T: Data>,
+    Arc<T: Data>,
+    Saturating<T: Data>,
+    Wrapping<T: Data>
+);
+
+impl<const N: usize, T: Data> Data for [T; N] {}

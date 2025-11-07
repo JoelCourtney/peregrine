@@ -44,7 +44,7 @@ impl<O: Send> Upstream for Var<'_, O> {
     fn node_id(&self) -> Option<super::NodeId> {
         Some(self.node.id)
     }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<O>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
     {

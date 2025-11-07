@@ -16,7 +16,7 @@ impl<U: Upstream + ?Sized> Upstream for &U {
     fn node_id(&self) -> Option<NodeId> {
         (**self).node_id()
     }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -30,7 +30,7 @@ impl<U: Upstream + ?Sized> Upstream for Box<U> {
     fn node_id(&self) -> Option<NodeId> {
         (**self).node_id()
     }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -44,7 +44,7 @@ impl<U: Upstream + ?Sized> Upstream for Arc<U> {
     fn node_id(&self) -> Option<NodeId> {
         (**self).node_id()
     }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -63,7 +63,7 @@ impl<O: Data> Upstream for DataWrapper<O> {
         None
     }
     #[inline(always)]
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -107,7 +107,7 @@ impl<R: Upstream> Upstream for Option<R> {
     fn node_id(&self) -> Option<NodeId> {
         self.as_ref().and_then(|this| this.node_id())
     }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Option<R::Output>>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Option<R::Output>>)
     where
         Self: 's,
     {
@@ -129,7 +129,7 @@ impl<U: Upstream, O: Send + 'static> Upstream for UncachedMap<U, O> {
     fn node_id(&self) -> Option<NodeId> {
         self.upstream.node_id()
     }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
