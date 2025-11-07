@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache, graph::Node};
+use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache, data::Data, graph::Node};
 
 use super::NodeId;
 
 pub struct Stack<'a, O> {
     node: Node,
     nodes: RwLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
-    cache: Arc<Cache<O>>,
+    cache: Cache<()>,
 }
 
 impl<'a, O: Clone + Send + 'static> Stack<'a, O> {
@@ -19,7 +19,7 @@ impl<'a, O: Clone + Send + 'static> Stack<'a, O> {
         node.add_edges(inner.node_id());
         Stack {
             nodes: RwLock::new(vec![Arc::new(inner)]),
-            cache: Cache::new_arc(),
+            cache: Cache::new(),
             node,
         }
     }
@@ -60,7 +60,7 @@ impl<'a, O: Clone + Send + 'static> Stack<'a, O> {
         self.nodes.read().last().unwrap().clone()
     }
 
-    pub fn fork(&self) -> Stack<O>
+    pub fn fork(&self) -> Stack<'a, O>
     where
         O: Send + Clone + 'static,
     {
@@ -71,7 +71,7 @@ impl<'a, O: Clone + Send + 'static> Stack<'a, O> {
 
         Stack {
             nodes: RwLock::new(vec.clone()),
-            cache: Cache::new_arc(),
+            cache: Cache::new(),
             node,
         }
     }
@@ -94,6 +94,18 @@ impl<O: Send + 'static> Upstream for Stack<'_, O> {
         });
         let cell = self.nodes.read();
         cell.last().unwrap().request(ctx, callback);
+    }
+}
+
+impl<O: Data + Default + Send> Default for Stack<'_, O> {
+    fn default() -> Self {
+        Stack {
+            node: Node::new(),
+            nodes: RwLock::new(vec![
+                Arc::new(O::default().into_upstream()) as Arc<dyn Upstream<Output = O>>
+            ]),
+            cache: Cache::new(),
+        }
     }
 }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache};
+use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache, data::Data};
 
 use super::Node;
 
@@ -55,6 +55,16 @@ impl<O: Send> Upstream for Var<'_, O> {
         });
         let cell = self.cell.read();
         cell.request(ctx, callback);
+    }
+}
+
+impl<O: Data + Default + Send> Default for Var<'_, O> {
+    fn default() -> Self {
+        Var {
+            node: Node::new(),
+            cell: RwLock::new(Arc::new(O::default().into_upstream())),
+            cache: Cache::new(),
+        }
     }
 }
 
