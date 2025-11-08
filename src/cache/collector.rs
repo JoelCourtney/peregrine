@@ -1,13 +1,16 @@
 use array_init::array_init;
-use crossbeam::atomic::AtomicCell;
 use std::{
+    cell::UnsafeCell,
     mem::transmute,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use crate::{Callback, Ctx, Downstream, Upstream};
 
-use super::{Cached, Invalidator};
+use super::Cached;
 
 pub trait UpstreamCollector: Send + Sync {
     type Cells: Send + Sync + 'static;
@@ -22,10 +25,10 @@ pub trait UpstreamCollector: Send + Sync {
         downstream: &'s dyn Downstream,
     ) where
         Self: 's;
-    fn get(
+    fn get<F: FnOnce() + Send + 'static>(
         &self,
-        cells: &Self::Cells,
-        invalidator_factory: impl Fn() -> Invalidator,
+        cells: &Arc<Self::Cells>,
+        invalidator_factory: impl Fn() -> F,
     ) -> (Self::Result, CollectionStatus);
 }
 
@@ -53,20 +56,58 @@ impl UpstreamCollector for () {
         downstream.run(ctx);
     }
 
-    fn get(
+    fn get<F: FnOnce() + Send>(
         &self,
-        _cells: &Self::Cells,
-        _factory: impl Fn() -> Invalidator,
+        _cells: &Arc<Self::Cells>,
+        _factory: impl Fn() -> F,
     ) -> ((), CollectionStatus) {
         ((), CollectionStatus::Constant)
     }
 }
 
+pub struct OutputCell<T>(UnsafeCell<Option<Cached<T>>>);
+
+impl<T> Default for OutputCell<T> {
+    fn default() -> Self {
+        OutputCell(UnsafeCell::new(None))
+    }
+}
+
+impl<T> OutputCell<T> {
+    fn is_some(&self) -> bool {
+        unsafe { (*self.0.get()).is_some() }
+    }
+
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn get_mut(&self) -> &mut Cached<T> {
+        unsafe { (*self.0.get()).as_mut().unwrap() }
+    }
+
+    fn clear(&self) {
+        unsafe {
+            (*self.0.get()) = None;
+        }
+    }
+
+    pub(crate) fn take(&self) -> Option<Cached<T>> {
+        unsafe { (*self.0.get()).take() }
+    }
+
+    pub(crate) fn store(&self, value: Cached<T>) {
+        unsafe {
+            (*self.0.get()) = Some(value);
+        }
+    }
+}
+
+unsafe impl<T: Send> Sync for OutputCell<T> {}
+unsafe impl<T: Send> Send for OutputCell<T> {}
+
 macro_rules! impl_upstream_collector_tuple {
-    ($($t:ident $u:ident $c:ident),*) => {
+    ($($t:ident $u:ident $c:ident $index:tt),*) => {
         impl<$($t: Upstream),*> UpstreamCollector for ($($t,)*)
         where $($t::Output: Clone),* {
-            type Cells = ($(AtomicCell<Option<Cached<$t::Output>>>,)*);
+            type Cells = ($(OutputCell<$t::Output>,)*);
             type Result = ($($t::Output,)*);
 
             fn new_cells(&self) -> Self::Cells {
@@ -75,49 +116,58 @@ macro_rules! impl_upstream_collector_tuple {
 
             #[allow(unused)]
             fn request<'s>(&self, ctx: Ctx<'_, 's>, cells: &Self::Cells, counter: &AtomicU32, downstream: &'s dyn Downstream) where Self: 's {
-                let mut count = $( one::<$t>() +)* 0;
-                counter.store(count, Ordering::Relaxed);
-
                 let ($($u,)*) = &self;
                 let ($($c,)*) = &cells;
+
+                let mut count = $( if $c.is_some() { 0 } else { 1 } +)* 0;
+                counter.store(count, Ordering::Relaxed);
 
                 let run_count = ctx.run_count;
 
                 $(
-                    count -= 1;
-                    let callback = unsafe {
-                         Callback::new(downstream, transmute::<&AtomicCell<Option<Cached<_>>>, &'s AtomicCell<Option<Cached<_>>>>($c))
-                    };
-                    if count == 0 {
-                        $u.request(ctx, callback);
-                    } else {
-                        let upstream = unsafe {
-                            transmute::<&$t, &'s $t>(&$u)
+                    if !$c.is_some() {
+                        count -= 1;
+                        let callback = unsafe {
+                             Callback::new(downstream, transmute::<&OutputCell<_>, &'s OutputCell<_>>($c))
                         };
-                        ctx.scope.spawn(move |scope| upstream.request(Ctx { scope, run_count }, callback))
+                        if count == 0 {
+                            $u.request(ctx, callback);
+                        } else {
+                            let upstream = unsafe {
+                                transmute::<&$t, &'s $t>(&$u)
+                            };
+                            ctx.scope.spawn(move |scope| upstream.request(Ctx { scope, run_count }, callback))
+                        }
                     }
                 )*
             }
 
-            fn get(&self, cells: &Self::Cells, factory: impl Fn() -> Invalidator) -> (Self::Result, CollectionStatus) {
-                let ($($c,)*) = &cells;
+            fn get<FUNC: FnOnce() + Send + 'static>(&self, cells: &Arc<Self::Cells>, factory: impl Fn() -> FUNC) -> (Self::Result, CollectionStatus) {
+                let ($($c,)*) = &**cells;
                 let mut constant = true;
                 let mut revalidate = true;
                 let tuple = ($(
                     {
-                        let mut cached = $c.take().unwrap();
-                        let result = match &mut cached {
+                        let cached = unsafe { $c.get_mut() };
+                        let result = match cached {
                             Cached::Constant(v) => v.clone(),
                             Cached::Variable { value, senders, revalidated } => {
                                 for sender in senders.drain(..) {
-                                    sender.send(factory()).unwrap();
+                                    let cells_weak = Arc::downgrade(cells);
+                                    let base_invalidator = factory();
+                                    let invalidator = move || {
+                                        base_invalidator();
+                                        if let Some(cells) = cells_weak.upgrade() {
+                                            cells.$index.clear();
+                                        }
+                                    };
+                                    sender.send(Box::new(invalidator)).unwrap();
                                 }
                                 constant = false;
                                 revalidate = revalidate && *revalidated;
                                 value.clone()
                             }
                         };
-                        $c.store(Some(cached));
                         result
                     },
                 )*);
@@ -135,29 +185,21 @@ macro_rules! impl_upstream_collector_tuple {
     };
 }
 
-/// I am a mad god of logic and these
-/// feeble macros cannot stop me.
-#[inline(always)]
-#[allow(clippy::extra_unused_type_parameters)]
-fn one<T>() -> u32 {
-    1
-}
-
-impl_upstream_collector_tuple!(A a_up a_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell, G g_up g_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell, G g_up g_cell, H h_up h_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell, G g_up g_cell, H h_up h_cell, I i_up i_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell, G g_up g_cell, H h_up h_cell, I i_up i_cell, J j_up j_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell, G g_up g_cell, H h_up h_cell, I i_up i_cell, J j_up j_cell, K k_up k_cell);
-impl_upstream_collector_tuple!(A a_up a_cell, B b_up b_cell, C c_up c_cell, D d_up d_cell, E e_up e_cell, F f_up f_cell, G g_up g_cell, H h_up h_cell, I i_up i_cell, J j_up j_cell, K k_up k_cell, L l_up l_cell);
+impl_upstream_collector_tuple!(A a_up a_cell 0);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5, G g_up g_cell 6);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5, G g_up g_cell 6, H h_up h_cell 7);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5, G g_up g_cell 6, H h_up h_cell 7, I i_up i_cell 8);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5, G g_up g_cell 6, H h_up h_cell 7, I i_up i_cell 8, J j_up j_cell 9);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5, G g_up g_cell 6, H h_up h_cell 7, I i_up i_cell 8, J j_up j_cell 9, K k_up k_cell 10);
+impl_upstream_collector_tuple!(A a_up a_cell 0, B b_up b_cell 1, C c_up c_cell 2, D d_up d_cell 3, E e_up e_cell 4, F f_up f_cell 5, G g_up g_cell 6, H h_up h_cell 7, I i_up i_cell 8, J j_up j_cell 9, K k_up k_cell 10, L l_up l_cell 11);
 
 impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for Vec<U> {
-    type Cells = Vec<AtomicCell<Option<Cached<O>>>>;
+    type Cells = Vec<OutputCell<O>>;
     type Result = Vec<O>;
 
     fn new_cells(&self) -> Self::Cells {
@@ -191,9 +233,7 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
             let callback = unsafe {
                 Callback::new(
                     downstream,
-                    transmute::<&AtomicCell<Option<Cached<_>>>, &'s AtomicCell<Option<Cached<_>>>>(
-                        &cells[i],
-                    ),
+                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[i]),
                 )
             };
             let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
@@ -204,25 +244,23 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
         first.request(ctx, unsafe {
             Callback::new(
                 downstream,
-                transmute::<&AtomicCell<Option<Cached<_>>>, &'s AtomicCell<Option<Cached<_>>>>(
-                    &cells[0],
-                ),
+                transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
             )
         });
     }
 
-    fn get(
+    fn get<F: FnOnce() + Send + 'static>(
         &self,
-        cells: &Self::Cells,
-        factory: impl Fn() -> Invalidator,
+        cells: &Arc<Self::Cells>,
+        factory: impl Fn() -> F,
     ) -> (Vec<O>, CollectionStatus) {
         let mut constant = true;
         let mut revalidate = true;
         let result = cells
             .iter()
             .map(|c| {
-                let mut cached = c.take().unwrap();
-                let result = match &mut cached {
+                let cached = unsafe { c.get_mut() };
+                match cached {
                     Cached::Constant(v) => v.clone(),
                     Cached::Variable {
                         value,
@@ -230,15 +268,13 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
                         revalidated,
                     } => {
                         for sender in senders.drain(..) {
-                            sender.send(factory()).unwrap();
+                            sender.send(Box::new(factory())).unwrap();
                         }
                         constant = false;
                         revalidate = revalidate && *revalidated;
                         value.clone()
                     }
-                };
-                c.store(Some(cached));
-                result
+                }
             })
             .collect();
 
@@ -256,11 +292,11 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
 impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector
     for [U; N]
 {
-    type Cells = [AtomicCell<Option<Cached<O>>>; N];
+    type Cells = [OutputCell<O>; N];
     type Result = [O; N];
 
     fn new_cells(&self) -> Self::Cells {
-        array_init(|_| AtomicCell::new(None))
+        array_init(|_| OutputCell::default())
     }
 
     fn request<'s>(
@@ -290,9 +326,7 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
             let callback = unsafe {
                 Callback::new(
                     downstream,
-                    transmute::<&AtomicCell<Option<Cached<_>>>, &'s AtomicCell<Option<Cached<_>>>>(
-                        &cells[i],
-                    ),
+                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[i]),
                 )
             };
             let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
@@ -303,23 +337,21 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
         first.request(ctx, unsafe {
             Callback::new(
                 downstream,
-                transmute::<&AtomicCell<Option<Cached<_>>>, &'s AtomicCell<Option<Cached<_>>>>(
-                    &cells[0],
-                ),
+                transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
             )
         });
     }
 
-    fn get(
+    fn get<F: FnOnce() + Send + 'static>(
         &self,
-        cells: &Self::Cells,
-        factory: impl Fn() -> Invalidator,
+        cells: &Arc<Self::Cells>,
+        factory: impl Fn() -> F,
     ) -> ([O; N], CollectionStatus) {
         let mut constant = true;
         let mut revalidate = true;
         let result = array_init(|i| {
-            let mut cached = cells[i].take().unwrap();
-            let result = match &mut cached {
+            let cached = unsafe { cells[i].get_mut() };
+            match cached {
                 Cached::Constant(v) => v.clone(),
                 Cached::Variable {
                     value,
@@ -327,15 +359,13 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
                     revalidated,
                 } => {
                     for sender in senders.drain(..) {
-                        sender.send(factory()).unwrap();
+                        sender.send(Box::new(factory())).unwrap();
                     }
                     constant = false;
                     revalidate = revalidate && *revalidated;
                     value.clone()
                 }
-            };
-            cells[i].store(Some(cached));
-            result
+            }
         });
 
         (

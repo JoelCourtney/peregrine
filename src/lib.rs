@@ -6,7 +6,6 @@ pub mod macro_prelude;
 
 use std::sync::atomic::AtomicU64;
 
-use crossbeam::atomic::AtomicCell;
 use data::Data;
 use graph::NodeId;
 pub use peregrine_macros::op;
@@ -14,7 +13,7 @@ pub use peregrine_macros::op;
 use cache::Cached;
 use forte::{Scope, ThreadPool};
 
-use crate::flow::Sink;
+use crate::{cache::collector::OutputCell, flow::Sink};
 
 pub trait Upstream: Send + Sync {
     type Output: Data;
@@ -43,9 +42,9 @@ trait CallbackOutput<O>: Send {
     fn store(self: Box<Self>, value: Cached<O>);
 }
 
-impl<O: Send + 'static> CallbackOutput<O> for &AtomicCell<Option<Cached<O>>> {
+impl<O: Send + 'static> CallbackOutput<O> for &OutputCell<O> {
     fn store(self: Box<Self>, value: Cached<O>) {
-        AtomicCell::store(&self, Some(value));
+        (*self).store(value);
     }
 }
 

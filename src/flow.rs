@@ -1,18 +1,19 @@
 use std::{mem::transmute, sync::atomic::AtomicU32};
 
-use crossbeam::atomic::AtomicCell;
-
-use crate::{Callback, Ctx, Downstream, cache::Cached};
+use crate::{
+    Callback, Ctx, Downstream,
+    cache::{Cached, collector::OutputCell},
+};
 
 pub(crate) struct Sink<O> {
-    output: AtomicCell<Option<Cached<O>>>,
+    output: OutputCell<O>,
     _counter: AtomicU32,
 }
 
-impl<O: Send + 'static> Sink<O> {
+impl<O: Clone + Send + 'static> Sink<O> {
     pub(crate) fn new() -> Self {
         Self {
-            output: AtomicCell::new(None),
+            output: OutputCell::default(),
             _counter: AtomicU32::new(0),
         }
     }
@@ -22,10 +23,7 @@ impl<O: Send + 'static> Sink<O> {
     }
 
     pub(crate) fn open(self) -> O {
-        self.output
-            .take()
-            .expect("Cannot open sink, no value was provided")
-            .open()
+        self.output.take().unwrap().open()
     }
 }
 

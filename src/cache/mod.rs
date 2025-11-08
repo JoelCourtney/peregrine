@@ -159,13 +159,13 @@ impl<T: Data> Cache<T> {
         send
     }
 
-    pub fn get_invalidator(self: &Arc<Self>) -> Invalidator {
+    pub fn get_invalidator(self: &Arc<Self>) -> impl FnOnce() + Send + use<T> {
         let weak = Arc::downgrade(self);
-        Box::new(move || {
+        move || {
             if let Some(c) = weak.upgrade() {
                 c.invalidate()
             }
-        })
+        }
     }
 }
 
@@ -262,7 +262,7 @@ mod tests {
 
         cache_a
             .get_invalidator_sender()
-            .send(cache_b.get_invalidator())
+            .send(Box::new(cache_b.get_invalidator()))
             .unwrap();
 
         assert!(matches!(b, Cached::Variable { .. }));

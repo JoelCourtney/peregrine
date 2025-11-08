@@ -17,7 +17,7 @@ use super::{Node, NodeId};
 pub struct Op<UC: UpstreamCollector, O: 'static, F> {
     node: Node,
     upstreams: UC,
-    collection_cells: UC::Cells,
+    collection_cells: Arc<UC::Cells>,
     counter: AtomicU32,
     func: F,
     callbacks: Mutex<Callbacks<O>>,
@@ -31,7 +31,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<U
         let node = Node::new();
         node.add_edges(node_ids);
         Op {
-            collection_cells: upstreams.new_cells(),
+            collection_cells: Arc::new(upstreams.new_cells()),
             upstreams,
             counter: AtomicU32::new(0),
             func,
