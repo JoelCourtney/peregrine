@@ -1,7 +1,6 @@
 use crate::graph::auto::UncachedMap;
-use crate::{Cached, Callback, Ctx, IntoUpstream, Upstream, graph::op::Op};
+use crate::{Callback, Ctx, IntoUpstream, Upstream, graph::op::Op};
 use array_init::array_init;
-use crossbeam::atomic::AtomicCell;
 use std::sync::Arc;
 
 use super::NodeId;
@@ -18,9 +17,9 @@ pub trait Merge<U> {
 
 macro_rules! impl_into_upstream_for_tuple {
     ($($t:ident $t_i:ident $f:tt),*) => {
-        impl<$($t: Upstream + 'static, $t_i: IntoUpstream<$t>),*> Merge<Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> for ($($t_i,)*) {
+        impl<$($t: Upstream, $t_i: IntoUpstream<$t>),*> Merge<Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> for ($($t_i,)*) {
             #[allow(non_snake_case)]
-            fn merge(self) -> Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)> {
+            fn merge(self) -> Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)> {
                 let ($($t_i,)*) = self;
 
                 let ($($t_i,)*) = ($($t_i.into_upstream()),*);
@@ -94,26 +93,12 @@ impl<A: Upstream> Upstream for UnaryTupleWrapper<A> {
     }
 }
 
-impl<U: Upstream + 'static, IU: IntoUpstream<U>>
-    Merge<
-        Op<
-            Vec<U>,
-            Vec<AtomicCell<Option<Cached<U::Output>>>>,
-            Vec<U::Output>,
-            fn(Vec<U::Output>) -> Vec<U::Output>,
-        >,
-    > for Vec<IU>
+impl<U: Upstream, IU: IntoUpstream<U>>
+    Merge<Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>>> for Vec<IU>
 where
     U::Output: Send + Clone + 'static,
 {
-    fn merge(
-        self,
-    ) -> Op<
-        Vec<U>,
-        Vec<AtomicCell<Option<Cached<U::Output>>>>,
-        Vec<U::Output>,
-        fn(Vec<U::Output>) -> Vec<U::Output>,
-    > {
+    fn merge(self) -> Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>> {
         let mut converted = Vec::with_capacity(self.len());
         let mut node_ids = Vec::with_capacity(self.len());
         for upstream in self {
@@ -128,26 +113,12 @@ where
     }
 }
 
-impl<const N: usize, U: Upstream + 'static, IU: IntoUpstream<U>>
-    Merge<
-        Op<
-            [U; N],
-            [AtomicCell<Option<Cached<U::Output>>>; N],
-            [U::Output; N],
-            fn([U::Output; N]) -> [U::Output; N],
-        >,
-    > for [IU; N]
+impl<const N: usize, U: Upstream, IU: IntoUpstream<U>>
+    Merge<Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]>> for [IU; N]
 where
     U::Output: Send + Clone + 'static,
 {
-    fn merge(
-        self,
-    ) -> Op<
-        [U; N],
-        [AtomicCell<Option<Cached<U::Output>>>; N],
-        [U::Output; N],
-        fn([U::Output; N]) -> [U::Output; N],
-    > {
+    fn merge(self) -> Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]> {
         let mut iter = self.into_iter();
         let converted = array_init(move |_| iter.next().unwrap().into_upstream());
         let node_ids: [_; N] = array_init(|i| converted[i].node_id());

@@ -7,34 +7,32 @@ use parking_lot::Mutex;
 
 use crate::{
     Callback, Ctx, Downstream, Upstream,
-    cache::{Cache, CheckResult},
+    cache::{Cache, CheckResult, collector::UpstreamCollector},
     data::Data,
-    flow::{Callbacks, UpstreamCollector, UpstreamCollectorExt},
+    flow::Callbacks,
 };
 
 use super::{Node, NodeId};
 
-pub struct Op<U, C, O: 'static, F> {
+pub struct Op<UC: UpstreamCollector, O: 'static, F> {
     node: Node,
-    collector: UpstreamCollector<U, C>,
+    upstreams: UC,
+    collection_cells: UC::Cells,
     counter: AtomicU32,
     func: F,
     callbacks: Mutex<Callbacks<O>>,
     cache: Arc<Cache<O>>,
 }
 
-type OpInput<U, C> = <UpstreamCollector<U, C> as UpstreamCollectorExt<U>>::Combined;
+type OpInput<UC> = <UC as UpstreamCollector>::Result;
 
-impl<U: Send + Sync, C: Send + Sync, O: Data, F: Fn(OpInput<U, C>) -> O + Send + Sync>
-    Op<U, C, O, F>
-where
-    UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
-{
-    pub fn new(upstreams: U, func: F, node_ids: impl IntoIterator<Item = NodeId>) -> Self {
+impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<UC, O, F> {
+    pub fn new(upstreams: UC, func: F, node_ids: impl IntoIterator<Item = NodeId>) -> Self {
         let node = Node::new();
         node.add_edges(node_ids);
         Op {
-            collector: UpstreamCollector::new(upstreams),
+            collection_cells: upstreams.new_cells(),
+            upstreams,
             counter: AtomicU32::new(0),
             func,
             callbacks: Default::default(),
@@ -44,10 +42,8 @@ where
     }
 }
 
-impl<U: Send + Sync, C: Send + Sync, O: Data, F: Fn(OpInput<U, C>) -> O + Send + Sync> Upstream
-    for Op<U, C, O, F>
-where
-    UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
+impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upstream
+    for Op<UC, O, F>
 {
     type Output = O;
 
@@ -84,18 +80,17 @@ where
             }
             CheckResult::YourProblem => {
                 self.callbacks.lock().add(callback, ctx.run_count);
-                self.collector.request(ctx, &self.counter, unsafe {
-                    transmute::<&dyn Downstream, &'static dyn Downstream>(self)
-                });
+                self.upstreams
+                    .request(ctx, &self.collection_cells, &self.counter, unsafe {
+                        transmute::<&dyn Downstream, &'static dyn Downstream>(self)
+                    });
             }
         }
     }
 }
 
-impl<U: Send + Sync, C: Send + Sync, O: Data, F: Fn(OpInput<U, C>) -> O + Send + Sync> Downstream
-    for Op<U, C, O, F>
-where
-    UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
+impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Downstream
+    for Op<UC, O, F>
 {
     fn should_run(&self) -> bool {
         let counter = self
@@ -106,8 +101,11 @@ where
     }
 
     fn run(&self, ctx: crate::Ctx) {
-        let inputs = self.collector.get();
-        let result_factory = self.cache.resolve(inputs, &self.func);
+        let (inputs, collection_status) = self
+            .upstreams
+            .get(&self.collection_cells, || self.cache.get_invalidator());
+        let result = (self.func)(inputs);
+        let result_factory = self.cache.resolve(result, collection_status);
         let callbacks = take(&mut *self.callbacks.lock());
         callbacks.run(ctx, result_factory);
     }

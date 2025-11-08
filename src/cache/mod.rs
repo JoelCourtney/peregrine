@@ -1,5 +1,8 @@
-use std::sync::Arc;
+pub(crate) mod collector;
 
+use std::{mem::take, sync::Arc};
+
+use collector::CollectionStatus;
 use oneshot::{Receiver, Sender, channel};
 use parking_lot::Mutex;
 use replace_with::replace_with_or_abort;
@@ -37,14 +40,8 @@ impl<T> DataState<T> {
 type Invalidator = Box<dyn FnOnce() + Send>;
 
 pub struct Cache<T> {
-    data: Mutex<DataState<T>>,
+    result: Mutex<DataState<T>>,
     invalidators: Mutex<Vec<Receiver<Invalidator>>>,
-}
-
-impl<T: Data> Default for Cache<T> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[allow(clippy::enum_variant_names)]
@@ -54,14 +51,21 @@ pub(crate) enum CheckResult<T> {
     YourProblem,
 }
 
+impl<T: Data> Default for Cache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Data> Cache<T> {
-    pub fn new() -> Cache<T> {
-        Cache {
-            data: Mutex::new(DataState::Empty),
+    pub fn new() -> Self {
+        Self {
+            result: Mutex::new(DataState::Empty),
             invalidators: Mutex::new(vec![]),
         }
     }
-    pub fn new_arc() -> Arc<Cache<T>> {
+
+    pub fn new_arc() -> Arc<Self> {
         Arc::new(Self::new())
     }
 
@@ -69,7 +73,7 @@ impl<T: Data> Cache<T> {
     where
         T: Clone,
     {
-        match &mut *self.data.lock() {
+        match &mut *self.result.lock() {
             DataState::Constant(v) => CheckResult::NoProblem(Cached::Constant(v.clone())),
             DataState::Variable {
                 value: v,
@@ -91,67 +95,50 @@ impl<T: Data> Cache<T> {
         }
     }
 
-    pub(crate) fn resolve<I>(
+    pub(crate) fn resolve(
         self: &Arc<Self>,
-        inputs: Cached<I>,
-        run: impl FnOnce(I) -> T,
+        result: T,
+        collection_status: CollectionStatus,
     ) -> Box<dyn FnMut() -> Cached<T> + '_>
     where
         T: Clone,
     {
-        let mut state = self.data.lock();
-        match inputs {
-            Cached::Constant(v) => {
-                let result = run(v);
+        let mut state = self.result.lock();
+        match (collection_status, take(&mut *state)) {
+            (CollectionStatus::Constant, _) => {
                 *state = DataState::Constant(result.clone());
                 Box::new(move || Cached::Constant(result.clone()))
             }
-            Cached::Variable {
-                value,
-                senders,
-                revalidated,
-            } => {
+            (CollectionStatus::Revalidated, DataState::Invalid(v)) => {
+                *state = DataState::Variable {
+                    value: v.clone(),
+                    revalidated: true,
+                };
                 let mut invalidators = self.invalidators.lock();
-                if revalidated && let DataState::Invalid(v) = std::mem::take(&mut *state) {
-                    *state = DataState::Variable {
-                        value: v.clone(),
-                        revalidated: true,
-                    };
-                    Box::new(move || {
-                        let (send, recv) = channel();
-                        invalidators.push(recv);
-                        Cached::variable(v.clone(), send, true)
-                    })
-                } else {
-                    let result = run(value);
-                    let revalidated = if let DataState::Invalid(v) = std::mem::take(&mut *state)
-                        && v == result
-                    {
-                        true
-                    } else {
-                        false
-                    };
-                    *state = DataState::Variable {
-                        value: result.clone(),
-                        revalidated,
-                    };
-                    for sender in senders {
-                        sender
-                            .send(Box::new(self.get_invalidator()))
-                            .expect("Could not send invalidator");
-                    }
-                    Box::new(move || {
-                        let (send, recv) = channel();
-                        invalidators.push(recv);
-                        Cached::variable(result.clone(), send, false)
-                    })
-                }
+                Box::new(move || {
+                    let (send, recv) = channel();
+                    invalidators.push(recv);
+                    Cached::variable(v.clone(), send, true)
+                })
+            }
+            (_, ds) => {
+                let revalidated = matches!(ds, DataState::Invalid(v) if v == result);
+                *state = DataState::Variable {
+                    value: result.clone(),
+                    revalidated,
+                };
+                let mut invalidators = self.invalidators.lock();
+                Box::new(move || {
+                    let (send, recv) = channel();
+                    invalidators.push(recv);
+                    Cached::variable(result.clone(), send, revalidated)
+                })
             }
         }
     }
 
     pub fn invalidate(&self) {
-        self.data.lock().invalidate();
+        self.result.lock().invalidate();
         for downstream in self.invalidators.lock().drain(..) {
             if let Ok(inv) = downstream.recv() {
                 inv();
@@ -161,7 +148,7 @@ impl<T: Data> Cache<T> {
 
     pub fn is_valid(&self) -> bool {
         matches!(
-            &*self.data.lock(),
+            &*self.result.lock(),
             DataState::Variable { .. } | DataState::Constant(_)
         )
     }
@@ -172,13 +159,13 @@ impl<T: Data> Cache<T> {
         send
     }
 
-    pub fn get_invalidator(self: &Arc<Self>) -> impl FnOnce() + Clone + 'static {
+    pub fn get_invalidator(self: &Arc<Self>) -> Invalidator {
         let weak = Arc::downgrade(self);
-        move || {
+        Box::new(move || {
             if let Some(c) = weak.upgrade() {
                 c.invalidate()
             }
-        }
+        })
     }
 }
 
@@ -261,26 +248,25 @@ impl<T> Cached<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cache::{Cache, Cached};
+    use crate::cache::{Cache, Cached, collector::CollectionStatus};
 
     #[test]
+    #[allow(unused_must_use)]
     fn test_cache_manual_invalidation() {
         let cache_a = Cache::<u32>::new_arc();
-        let a = cache_a.resolve(
-            Cached::Variable {
-                value: (),
-                senders: vec![],
-                revalidated: false,
-            },
-            |()| 42,
-        )();
+        cache_a.resolve(5, CollectionStatus::Variable);
 
         let cache_b = Cache::<String>::new_arc();
 
-        let b = cache_b.resolve(a, |a| format!("{a}"))();
+        let b = (cache_b.resolve(String::from("hello world"), CollectionStatus::Variable))();
+
+        cache_a
+            .get_invalidator_sender()
+            .send(cache_b.get_invalidator())
+            .unwrap();
 
         assert!(matches!(b, Cached::Variable { .. }));
-        assert_eq!(b.open(), "42");
+        assert_eq!(b.open(), "hello world");
 
         assert!(cache_b.is_valid());
 
