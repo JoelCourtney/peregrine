@@ -1,5 +1,4 @@
 pub mod dense;
-pub mod timeline;
 
 use crate::{IntoUpstream, Upstream, cache::Cache, data::Data, graph::NodeId};
 use parking_lot::Mutex;
@@ -27,7 +26,7 @@ pub struct SeriesProbe<'a, T, O> {
     cache: Cache<()>,
 }
 
-impl<'a, T: Copy + Ord, O: Send + 'static> Series<'a, T, O> {
+impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
     pub fn new<U: Upstream<Output = O> + 'a>(default: impl IntoUpstream<U>) -> Self {
         Series {
             list: Default::default(),
@@ -137,7 +136,7 @@ impl MontyHall {
     }
 }
 
-impl<'a, T: Ord, O: Send + 'static> SeriesProbe<'a, T, O> {
+impl<'a, T: Ord, O: Data> SeriesProbe<'a, T, O> {
     fn reconsider(
         &self,
         new_key: T,
@@ -164,7 +163,7 @@ impl<'a, T: Ord, O: Send + 'static> SeriesProbe<'a, T, O> {
     }
 }
 
-impl<'a, T: Send + Sync, O: Send + 'static> Upstream for SeriesProbe<'a, T, O> {
+impl<'a, T: Send + Sync, O: Data> Upstream for SeriesProbe<'a, T, O> {
     type Output = O;
 
     fn node_id(&self) -> Option<NodeId> {

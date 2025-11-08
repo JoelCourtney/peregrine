@@ -12,7 +12,7 @@ pub struct Var<'a, O: Send + 'static> {
     cache: Cache<()>,
 }
 
-impl<'a, O: Send> Var<'a, O> {
+impl<'a, O: Data> Var<'a, O> {
     pub fn new<U: Upstream<Output = O> + 'a>(node: impl IntoUpstream<U>) -> Var<'a, O> {
         let outer = Node::new();
         let inner = node.into_upstream();
@@ -38,7 +38,7 @@ impl<'a, O: Send> Var<'a, O> {
     }
 }
 
-impl<O: Send> Upstream for Var<'_, O> {
+impl<O: Data> Upstream for Var<'_, O> {
     type Output = O;
 
     fn node_id(&self) -> Option<super::NodeId> {

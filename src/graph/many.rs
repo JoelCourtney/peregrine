@@ -18,8 +18,7 @@ pub trait Merge<U> {
 
 macro_rules! impl_into_upstream_for_tuple {
     ($($t:ident $t_i:ident $f:tt),*) => {
-        impl<$($t: Upstream + 'static, $t_i: IntoUpstream<$t>),*> Merge<Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> for ($($t_i,)*)
-        where $($t::Output: Send + Clone + 'static, )* {
+        impl<$($t: Upstream + 'static, $t_i: IntoUpstream<$t>),*> Merge<Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> for ($($t_i,)*) {
             #[allow(non_snake_case)]
             fn merge(self) -> Op<($($t,)*), ($(AtomicCell<Option<Cached<$t::Output>>>,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)> {
                 let ($($t_i,)*) = self;

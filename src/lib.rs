@@ -7,6 +7,7 @@ pub mod macro_prelude;
 use std::sync::atomic::AtomicU64;
 
 use crossbeam::atomic::AtomicCell;
+use data::Data;
 use graph::NodeId;
 pub use peregrine_macros::op;
 
@@ -16,7 +17,7 @@ use forte::{Scope, ThreadPool};
 use crate::flow::Sink;
 
 pub trait Upstream: Send + Sync {
-    type Output: Send + 'static;
+    type Output: Data;
 
     fn node_id(&self) -> Option<NodeId>;
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)

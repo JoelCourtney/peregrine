@@ -4,6 +4,8 @@ use oneshot::{Receiver, Sender, channel};
 use parking_lot::Mutex;
 use replace_with::replace_with_or_abort;
 
+use crate::data::Data;
+
 #[derive(Default)]
 enum DataState<T> {
     Constant(T),
@@ -33,12 +35,13 @@ impl<T> DataState<T> {
 }
 
 type Invalidator = Box<dyn FnOnce() + Send>;
+
 pub struct Cache<T> {
     data: Mutex<DataState<T>>,
     invalidators: Mutex<Vec<Receiver<Invalidator>>>,
 }
 
-impl<T: Send + 'static> Default for Cache<T> {
+impl<T: Data> Default for Cache<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -51,7 +54,7 @@ pub(crate) enum CheckResult<T> {
     YourProblem,
 }
 
-impl<T: Send + 'static> Cache<T> {
+impl<T: Data> Cache<T> {
     pub fn new() -> Cache<T> {
         Cache {
             data: Mutex::new(DataState::Empty),
@@ -121,9 +124,16 @@ impl<T: Send + 'static> Cache<T> {
                     })
                 } else {
                     let result = run(value);
+                    let revalidated = if let DataState::Invalid(v) = std::mem::take(&mut *state)
+                        && v == result
+                    {
+                        true
+                    } else {
+                        false
+                    };
                     *state = DataState::Variable {
                         value: result.clone(),
-                        revalidated: false,
+                        revalidated,
                     };
                     for sender in senders {
                         sender
@@ -162,10 +172,7 @@ impl<T: Send + 'static> Cache<T> {
         send
     }
 
-    pub fn get_invalidator(self: &Arc<Self>) -> impl FnOnce() + Clone + 'static
-    where
-        T: 'static,
-    {
+    pub fn get_invalidator(self: &Arc<Self>) -> impl FnOnce() + Clone + 'static {
         let weak = Arc::downgrade(self);
         move || {
             if let Some(c) = weak.upgrade() {

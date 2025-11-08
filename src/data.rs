@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-pub trait Data: Clone + Send + Sync + 'static {}
+pub trait Data: PartialEq + Clone + Send + Sync + 'static {}
 
 macro_rules! impl_data {
     ($($t:ty),*) => {
@@ -22,6 +22,12 @@ macro_rules! impl_generic_data {
             impl<$d: $bound> Data for $t<$d> {}
         )*
     };
+}
+
+macro_rules! impl_tuple_data {
+    ($($t:ident),*) => {
+        impl<$($t: Data,)*> Data for ($($t,)*) {}
+    }
 }
 
 impl_data!(
@@ -62,3 +68,16 @@ impl_generic_data!(
 );
 
 impl<const N: usize, T: Data> Data for [T; N] {}
+
+impl_tuple_data!(A);
+impl_tuple_data!(A, B);
+impl_tuple_data!(A, B, C);
+impl_tuple_data!(A, B, C, D);
+impl_tuple_data!(A, B, C, D, E);
+impl_tuple_data!(A, B, C, D, E, F);
+impl_tuple_data!(A, B, C, D, E, F, G);
+impl_tuple_data!(A, B, C, D, E, F, G, H);
+impl_tuple_data!(A, B, C, D, E, F, G, H, I);
+impl_tuple_data!(A, B, C, D, E, F, G, H, I, J);
+impl_tuple_data!(A, B, C, D, E, F, G, H, I, J, K);
+impl_tuple_data!(A, B, C, D, E, F, G, H, I, J, K, L);

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     IntoUpstream, Upstream,
+    data::Data,
     graph::series::{Series, SeriesProbe},
 };
 
@@ -16,7 +17,7 @@ pub struct DenseSeries<'a, T, O> {
     counter: u64,
 }
 
-impl<'a, T: Ord + Copy, O: Send + 'static> DenseSeries<'a, T, O> {
+impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
     pub fn new<U: Upstream<Output = O> + 'a>(default: impl IntoUpstream<U>) -> Self {
         Self {
             series: Series::new(default),

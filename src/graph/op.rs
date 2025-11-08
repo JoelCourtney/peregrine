@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use crate::{
     Callback, Ctx, Downstream, Upstream,
     cache::{Cache, CheckResult},
+    data::Data,
     flow::{Callbacks, UpstreamCollector, UpstreamCollectorExt},
 };
 
@@ -24,7 +25,7 @@ pub struct Op<U, C, O: 'static, F> {
 
 type OpInput<U, C> = <UpstreamCollector<U, C> as UpstreamCollectorExt<U>>::Combined;
 
-impl<U: Send + Sync, C: Send + Sync, O: Send + Clone, F: Fn(OpInput<U, C>) -> O + Send + Sync>
+impl<U: Send + Sync, C: Send + Sync, O: Data, F: Fn(OpInput<U, C>) -> O + Send + Sync>
     Op<U, C, O, F>
 where
     UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
@@ -43,8 +44,8 @@ where
     }
 }
 
-impl<U: Send + Sync, C: Send + Sync, O: Send + Clone, F: Fn(OpInput<U, C>) -> O + Send + Sync>
-    Upstream for Op<U, C, O, F>
+impl<U: Send + Sync, C: Send + Sync, O: Data, F: Fn(OpInput<U, C>) -> O + Send + Sync> Upstream
+    for Op<U, C, O, F>
 where
     UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
 {
@@ -91,8 +92,8 @@ where
     }
 }
 
-impl<U: Send + Sync, C: Send + Sync, O: Send + Clone, F: Fn(OpInput<U, C>) -> O + Send + Sync>
-    Downstream for Op<U, C, O, F>
+impl<U: Send + Sync, C: Send + Sync, O: Data, F: Fn(OpInput<U, C>) -> O + Send + Sync> Downstream
+    for Op<U, C, O, F>
 where
     UpstreamCollector<U, C>: UpstreamCollectorExt<U>,
 {

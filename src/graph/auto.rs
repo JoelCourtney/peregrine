@@ -80,7 +80,7 @@ impl<O: Data> IntoUpstream<DataWrapper<O>> for O {
 #[derive(Debug)]
 pub struct FnWrapper<F>(F);
 
-impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> Upstream for FnWrapper<F> {
+impl<O: Data, F: Fn() -> Cached<O> + Send + Sync> Upstream for FnWrapper<F> {
     type Output = O;
 
     fn node_id(&self) -> Option<NodeId> {
@@ -95,7 +95,7 @@ impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> Upstream for FnWrapp
     }
 }
 
-impl<O: Send + 'static, F: Fn() -> Cached<O> + Send + Sync> IntoUpstream<FnWrapper<F>> for F {
+impl<O: Data, F: Fn() -> Cached<O> + Send + Sync> IntoUpstream<FnWrapper<F>> for F {
     fn into_upstream(self) -> FnWrapper<F> {
         FnWrapper(self)
     }
@@ -123,7 +123,7 @@ pub struct UncachedMap<U: Upstream, O> {
     pub(crate) func: fn(U::Output) -> O,
 }
 
-impl<U: Upstream, O: Send + 'static> Upstream for UncachedMap<U, O> {
+impl<U: Upstream, O: Data> Upstream for UncachedMap<U, O> {
     type Output = O;
 
     fn node_id(&self) -> Option<NodeId> {

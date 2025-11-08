@@ -12,7 +12,7 @@ pub struct Stack<'a, O> {
     cache: Cache<()>,
 }
 
-impl<'a, O: Clone + Send + 'static> Stack<'a, O> {
+impl<'a, O: Data> Stack<'a, O> {
     pub fn new<U: Upstream<Output = O> + 'a>(run: impl IntoUpstream<U>) -> Stack<'a, O> {
         let node = Node::new();
         let inner = run.into_upstream();
@@ -77,7 +77,7 @@ impl<'a, O: Clone + Send + 'static> Stack<'a, O> {
     }
 }
 
-impl<O: Send + 'static> Upstream for Stack<'_, O> {
+impl<O: Data> Upstream for Stack<'_, O> {
     type Output = O;
 
     fn node_id(&self) -> Option<NodeId> {
@@ -97,7 +97,7 @@ impl<O: Send + 'static> Upstream for Stack<'_, O> {
     }
 }
 
-impl<O: Data + Default + Send> Default for Stack<'_, O> {
+impl<O: Data + Default> Default for Stack<'_, O> {
     fn default() -> Self {
         Stack {
             node: Node::new(),
