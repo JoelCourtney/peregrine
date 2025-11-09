@@ -2,14 +2,13 @@ pub(crate) mod collector;
 
 use std::{mem::take, sync::Arc};
 
-use collector::CollectionStatus;
 use oneshot::{Receiver, Sender, channel};
 use parking_lot::Mutex;
 use replace_with::replace_with_or_abort;
 
 use crate::data::Data;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 enum DataState<T> {
     Constant(T),
     Variable {
@@ -48,7 +47,7 @@ pub struct Cache<T> {
 pub(crate) enum CheckResult<T> {
     NoProblem(Cached<T>),
     SomeoneElsesProblem,
-    YourProblem,
+    YourProblem { can_be_revalidated: bool },
 }
 
 impl<T: Data> Default for Cache<T> {
@@ -84,32 +83,56 @@ impl<T: Data> Cache<T> {
                 CheckResult::NoProblem(Cached::variable(v.clone(), send, *revalidated))
             }
             DataState::Working(_) => CheckResult::SomeoneElsesProblem,
-            ds @ (DataState::Invalid(_) | DataState::Empty) => {
+            ds @ DataState::Invalid(_) => {
                 replace_with_or_abort(ds, |ds| match ds {
                     DataState::Invalid(v) => DataState::Working(Some(v)),
-                    DataState::Empty => DataState::Empty,
                     _ => unreachable!(),
                 });
-                CheckResult::YourProblem
+                CheckResult::YourProblem {
+                    can_be_revalidated: true,
+                }
             }
+            DataState::Empty => CheckResult::YourProblem {
+                can_be_revalidated: false,
+            },
         }
     }
 
     pub(crate) fn resolve(
         self: &Arc<Self>,
         result: T,
-        collection_status: CollectionStatus,
+        is_constant: bool,
     ) -> Box<dyn FnMut() -> Cached<T> + '_>
     where
         T: Clone,
     {
         let mut state = self.result.lock();
-        match (collection_status, take(&mut *state)) {
-            (CollectionStatus::Constant, _) => {
-                *state = DataState::Constant(result.clone());
-                Box::new(move || Cached::Constant(result.clone()))
-            }
-            (CollectionStatus::Revalidated, DataState::Invalid(v)) => {
+        if is_constant {
+            *state = DataState::Constant(result.clone());
+            Box::new(move || Cached::Constant(result.clone()))
+        } else {
+            let revalidated =
+                matches!(take(&mut *state), DataState::Working(Some(v)) if v == result);
+            *state = DataState::Variable {
+                value: result.clone(),
+                revalidated,
+            };
+            let mut invalidators = self.invalidators.lock();
+            Box::new(move || {
+                let (send, recv) = channel();
+                invalidators.push(recv);
+                Cached::variable(result.clone(), send, revalidated)
+            })
+        }
+    }
+
+    pub fn revalidate(&self) -> Box<dyn FnMut() -> Cached<T> + '_>
+    where
+        T: Clone,
+    {
+        let mut state = self.result.lock();
+        match take(&mut *state) {
+            DataState::Working(Some(v)) => {
                 *state = DataState::Variable {
                     value: v.clone(),
                     revalidated: true,
@@ -121,19 +144,7 @@ impl<T: Data> Cache<T> {
                     Cached::variable(v.clone(), send, true)
                 })
             }
-            (_, ds) => {
-                let revalidated = matches!(ds, DataState::Invalid(v) if v == result);
-                *state = DataState::Variable {
-                    value: result.clone(),
-                    revalidated,
-                };
-                let mut invalidators = self.invalidators.lock();
-                Box::new(move || {
-                    let (send, recv) = channel();
-                    invalidators.push(recv);
-                    Cached::variable(result.clone(), send, revalidated)
-                })
-            }
+            _ => unreachable!(),
         }
     }
 
@@ -248,17 +259,25 @@ impl<T> Cached<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cache::{Cache, Cached, collector::CollectionStatus};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use peregrine_macros::op;
+
+    use crate::{self as peregrine, run};
+    use crate::{
+        cache::{Cache, Cached},
+        graph::variable::Var,
+    };
 
     #[test]
     #[allow(unused_must_use)]
     fn test_cache_manual_invalidation() {
         let cache_a = Cache::<u32>::new_arc();
-        cache_a.resolve(5, CollectionStatus::Variable);
+        cache_a.resolve(5, false);
 
         let cache_b = Cache::<String>::new_arc();
 
-        let b = (cache_b.resolve(String::from("hello world"), CollectionStatus::Variable))();
+        let b = (cache_b.resolve(String::from("hello world"), false))();
 
         cache_a
             .get_invalidator_sender()
@@ -272,5 +291,51 @@ mod tests {
 
         cache_a.invalidate();
         assert!(!cache_b.is_valid());
+    }
+
+    #[test]
+    fn revalidation() {
+        let a_counter = &AtomicU32::new(0);
+        let a = Var::new(op! {
+            a_counter.fetch_add(1, Ordering::Relaxed);
+            0
+        });
+
+        let b_counter = &AtomicU32::new(0);
+        let b = op! {
+            b_counter.fetch_add(1, Ordering::Relaxed);
+            i!(&a) + 1
+        };
+
+        let c_counter = &AtomicU32::new(0);
+        let c = op! {
+            c_counter.fetch_add(1, Ordering::Relaxed);
+            i!(&b) + 1
+        };
+
+        assert_eq!(run(&c), 2);
+        assert_eq!(a_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(b_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(c_counter.load(Ordering::Relaxed), 1);
+
+        a.set(op! {
+            a_counter.fetch_add(1, Ordering::Relaxed);
+            10
+        });
+
+        assert_eq!(run(&c), 12);
+        assert_eq!(a_counter.load(Ordering::Relaxed), 2);
+        assert_eq!(b_counter.load(Ordering::Relaxed), 2);
+        assert_eq!(c_counter.load(Ordering::Relaxed), 2);
+
+        a.set(op! {
+            a_counter.fetch_add(1, Ordering::Relaxed);
+            10
+        });
+
+        assert_eq!(run(&c), 12);
+        assert_eq!(a_counter.load(Ordering::Relaxed), 3);
+        assert_eq!(b_counter.load(Ordering::Relaxed), 3);
+        assert_eq!(c_counter.load(Ordering::Relaxed), 2);
     }
 }

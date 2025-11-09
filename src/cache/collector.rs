@@ -32,6 +32,7 @@ pub trait UpstreamCollector: Send + Sync {
     ) -> (Self::Result, CollectionStatus);
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum CollectionStatus {
     Constant,
     Variable,
@@ -134,7 +135,7 @@ macro_rules! impl_upstream_collector_tuple {
                             $u.request(ctx, callback);
                         } else {
                             let upstream = unsafe {
-                                transmute::<&$t, &'s $t>(&$u)
+                                transmute::<&$t, &'s $t>($u)
                             };
                             ctx.scope.spawn(move |scope| upstream.request(Ctx { scope, run_count }, callback))
                         }
@@ -149,7 +150,7 @@ macro_rules! impl_upstream_collector_tuple {
                 let tuple = ($(
                     {
                         let cached = unsafe { $c.get_mut() };
-                        let result = match cached {
+                        match cached {
                             Cached::Constant(v) => v.clone(),
                             Cached::Variable { value, senders, revalidated } => {
                                 for sender in senders.drain(..) {
@@ -167,8 +168,7 @@ macro_rules! impl_upstream_collector_tuple {
                                 revalidate = revalidate && *revalidated;
                                 value.clone()
                             }
-                        };
-                        result
+                        }
                     },
                 )*);
 

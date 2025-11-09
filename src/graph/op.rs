@@ -1,13 +1,19 @@
 use std::{
     mem::{take, transmute},
-    sync::{Arc, atomic::AtomicU32},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
 };
 
 use parking_lot::Mutex;
 
 use crate::{
     Callback, Ctx, Downstream, Upstream,
-    cache::{Cache, CheckResult, collector::UpstreamCollector},
+    cache::{
+        Cache, CheckResult,
+        collector::{CollectionStatus, UpstreamCollector},
+    },
     data::Data,
     flow::Callbacks,
 };
@@ -22,6 +28,7 @@ pub struct Op<UC: UpstreamCollector, O: 'static, F> {
     func: F,
     callbacks: Mutex<Callbacks<O>>,
     cache: Arc<Cache<O>>,
+    can_be_revalidated: AtomicBool,
 }
 
 type OpInput<UC> = <UC as UpstreamCollector>::Result;
@@ -38,6 +45,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<U
             callbacks: Default::default(),
             cache: Cache::new_arc(),
             node,
+            can_be_revalidated: AtomicBool::new(false),
         }
     }
 }
@@ -75,10 +83,12 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upst
                     CheckResult::SomeoneElsesProblem => {
                         callbacks.add(callback, ctx.run_count);
                     }
-                    CheckResult::YourProblem => unreachable!(),
+                    CheckResult::YourProblem { .. } => unreachable!(),
                 }
             }
-            CheckResult::YourProblem => {
+            CheckResult::YourProblem { can_be_revalidated } => {
+                self.can_be_revalidated
+                    .store(can_be_revalidated, Ordering::Relaxed);
                 self.callbacks.lock().add(callback, ctx.run_count);
                 self.upstreams
                     .request(ctx, &self.collection_cells, &self.counter, unsafe {
@@ -104,8 +114,18 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Down
         let (inputs, collection_status) = self
             .upstreams
             .get(&self.collection_cells, || self.cache.get_invalidator());
-        let result = (self.func)(inputs);
-        let result_factory = self.cache.resolve(result, collection_status);
+        let result_factory = match collection_status {
+            CollectionStatus::Revalidated if self.can_be_revalidated.load(Ordering::Relaxed) => {
+                self.cache.revalidate()
+            }
+            _ => {
+                let result = (self.func)(inputs);
+                self.cache.resolve(
+                    result,
+                    matches!(collection_status, CollectionStatus::Constant),
+                )
+            }
+        };
         let callbacks = take(&mut *self.callbacks.lock());
         callbacks.run(ctx, result_factory);
     }
