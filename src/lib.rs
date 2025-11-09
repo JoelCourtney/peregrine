@@ -7,8 +7,8 @@ pub mod macro_prelude;
 use std::sync::atomic::AtomicU64;
 
 use data::Data;
+pub use desparrow_macros::op;
 use graph::NodeId;
-pub use peregrine_macros::op;
 
 use cache::Cached;
 use forte::{Scope, ThreadPool};

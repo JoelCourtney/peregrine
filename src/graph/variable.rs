@@ -73,7 +73,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate as peregrine;
+    use crate as desparrow;
     use crate::*;
 
     #[test]

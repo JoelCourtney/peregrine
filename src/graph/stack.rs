@@ -112,7 +112,7 @@ impl<O: Data + Default> Default for Stack<'_, O> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate as peregrine;
+    use crate as desparrow;
     use crate::graph::variable::Var;
     use crate::*;
 

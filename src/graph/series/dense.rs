@@ -71,7 +71,7 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
 
 #[cfg(test)]
 mod tests {
-    use crate as peregrine;
+    use crate as desparrow;
     use crate::{graph::series::dense::DenseSeries, op, run};
 
     #[test]

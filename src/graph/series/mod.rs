@@ -197,7 +197,7 @@ impl<'a, T, O: Data + Default + Send> Default for Series<'a, T, O> {
 
 #[cfg(test)]
 mod tests {
-    use crate as peregrine;
+    use crate as desparrow;
     use crate::{graph::series::Series, op, run};
 
     #[test]

@@ -1,4 +1,4 @@
-use peregrine::{op, run};
+use desparrow::{op, run};
 
 #[test]
 fn test_basic() {
