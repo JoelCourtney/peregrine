@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cache, data::Data, graph::Node};
+use crate::{Callback, Ctx, Data, IntoUpstream, Upstream, cache::Cache, graph::Node};
 
 use super::NodeId;
 

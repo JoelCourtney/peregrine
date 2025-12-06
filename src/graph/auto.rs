@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{Callback, Ctx, IntoUpstream, Upstream, cache::Cached, data::Data};
+use crate::{Callback, Ctx, Data, IntoUpstream, Upstream, cache::Cached};
 
 use super::NodeId;
 

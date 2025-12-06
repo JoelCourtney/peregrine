@@ -1,12 +1,10 @@
 pub mod cache;
-pub mod data;
 pub mod flow;
 pub mod graph;
 pub mod macro_prelude;
 
 use std::sync::atomic::AtomicU64;
 
-use data::Data;
 pub use desparrow_macros::op;
 use graph::NodeId;
 
@@ -23,6 +21,13 @@ pub trait Upstream: Send + Sync {
     where
         Self: 's;
 }
+
+/// A marker trait for types that can be used as the output of a node.
+///
+/// Auto-implemented for all types that satisfy the required bounds.
+/// You don't need to implement this trait manually.
+pub trait Data: PartialEq + Clone + Send + Sync + 'static {}
+impl<T> Data for T where T: PartialEq + Clone + Send + Sync + 'static {}
 
 pub struct Callback<'s, I> {
     downstream: &'s dyn Downstream,

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    IntoUpstream, Upstream,
-    data::Data,
+    Data, IntoUpstream, Upstream,
     graph::series::{Series, SeriesProbe},
 };
 

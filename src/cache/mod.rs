@@ -6,7 +6,7 @@ use oneshot::{Receiver, Sender, channel};
 use parking_lot::Mutex;
 use replace_with::replace_with_or_abort;
 
-use crate::data::Data;
+use crate::Data;
 
 #[derive(Default, Debug)]
 enum DataState<T> {

@@ -9,12 +9,11 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    Callback, Ctx, Downstream, Upstream,
+    Callback, Ctx, Data, Downstream, Upstream,
     cache::{
         Cache, CheckResult,
         collector::{CollectionStatus, UpstreamCollector},
     },
-    data::Data,
     flow::Callbacks,
 };
 
