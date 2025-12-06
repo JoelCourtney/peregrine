@@ -1,6 +1,7 @@
 pub mod dense;
+pub mod fuzzy;
 
-use crate::{IntoUpstream, Upstream, cache::Cache, data::Data, graph::NodeId};
+use crate::{Data, IntoUpstream, Upstream, cache::Cache, graph::NodeId};
 use parking_lot::Mutex;
 use std::{
     collections::BTreeMap,
@@ -11,8 +12,9 @@ use std::{
 use super::Node;
 
 pub struct Series<'a, T, O> {
+    node: Node,
     list: Mutex<BTreeMap<T, ProbedNode<'a, T, O>>>,
-    default: (Arc<dyn Upstream<Output = O> + 'a>, ProbeList<'a, T, O>),
+    default: ProbedNode<'a, T, O>,
 }
 
 type ProbedNode<'a, T, O> = (Arc<dyn Upstream<Output = O> + 'a>, ProbeList<'a, T, O>);
@@ -28,9 +30,13 @@ pub struct SeriesProbe<'a, T, O> {
 
 impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
     pub fn new<U: Upstream<Output = O> + 'a>(default: impl IntoUpstream<U>) -> Self {
+        let node = Node::new();
+        let default = default.into_upstream();
+        node.add_edges(default.node_id());
         Series {
             list: Default::default(),
-            default: (Arc::new(default.into_upstream()), ProbeList::new()),
+            default: (Arc::new(default), ProbeList::new()),
+            node,
         }
     }
 
@@ -55,7 +61,12 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
             })
             .collect();
 
-        list.insert(index, (upstream, new_probes));
+        let new_node_id = upstream.node_id();
+        let removed = list.insert(index, (upstream, new_probes));
+        if let Some((old_node, _)) = removed {
+            self.node.remove_edges(old_node.node_id());
+        }
+        self.node.add_edges(new_node_id);
     }
 
     pub fn remove(&mut self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
@@ -73,6 +84,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
                     prev_probes.push(weak);
                 }
             }
+            self.node.remove_edges(old_node_id);
             Some(old_node)
         } else {
             None
@@ -183,15 +195,9 @@ impl<'a, T: Send + Sync, O: Data> Upstream for SeriesProbe<'a, T, O> {
     }
 }
 
-impl<'a, T, O: Data + Default + Send> Default for Series<'a, T, O> {
+impl<'a, T: Copy + Ord, O: Data + Default + Send> Default for Series<'a, T, O> {
     fn default() -> Self {
-        Series {
-            list: Default::default(),
-            default: (
-                Arc::new(O::default().into_upstream()) as Arc<dyn Upstream<Output = O>>,
-                vec![],
-            ),
-        }
+        Series::new(O::default())
     }
 }
 
@@ -284,5 +290,18 @@ mod tests {
 
         s.remove(2);
         assert_eq!(run(s.get_inclusive(3)), 0);
+    }
+
+    #[test]
+    fn overwrite() {
+        let mut s = Series::default();
+        s.set(5, 5);
+
+        let probe_6 = s.get_inclusive(5);
+
+        assert_eq!(run(&probe_6), 5);
+
+        s.set(5, 10);
+        assert_eq!(run(&probe_6), 10);
     }
 }
