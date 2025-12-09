@@ -2,6 +2,7 @@ pub mod cache;
 pub mod flow;
 pub mod graph;
 pub mod macro_prelude;
+pub mod plan;
 
 use std::sync::atomic::AtomicU64;
 
