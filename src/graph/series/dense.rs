@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
+use derive_more::Deref;
+use slotmap::{SlotMap, new_key_type};
+
 use crate::{
     Data, IntoUpstream, Upstream,
     graph::series::{Series, SeriesProbe},
+    undo::{IntoAnonIterator, Undo},
 };
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Ord, Eq, Hash, Debug)]
@@ -38,11 +42,11 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         index
     }
 
-    pub fn get(&mut self, index: T) -> Arc<SeriesProbe<'a, Dense<T>, O>> {
+    pub fn get(&self, index: T) -> Arc<SeriesProbe<'a, Dense<T>, O>> {
         self.series.get(Dense { index, order: 0 })
     }
 
-    pub fn get_inclusive(&mut self, index: T) -> Arc<SeriesProbe<'a, Dense<T>, O>> {
+    pub fn get_inclusive(&self, index: T) -> Arc<SeriesProbe<'a, Dense<T>, O>> {
         self.series.get_inclusive(Dense {
             index,
             order: u64::MAX,
@@ -65,6 +69,73 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         self.counter += 1;
         self.series.mutate(index, f);
         index
+    }
+}
+
+new_key_type! { pub struct DenseSeriesRecordKey; }
+
+#[derive(Deref)]
+pub struct DenseSeriesRecorder<'a, 'm, T, O> {
+    #[deref]
+    series: &'a mut DenseSeries<'m, T, O>,
+    records: SlotMap<DenseSeriesRecordKey, Dense<T>>,
+}
+
+impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
+    pub fn set<U: Upstream<Output = O> + 'a>(
+        &mut self,
+        index: T,
+        value: impl IntoUpstream<U>,
+    ) -> DenseSeriesRecordKey {
+        let index = self.series.set(index, value);
+        self.records.insert(index)
+    }
+
+    pub fn remove(
+        &mut self,
+        key: DenseSeriesRecordKey,
+    ) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
+        if let Some(index) = self.records.remove(key) {
+            self.series.remove(index)
+        } else {
+            None
+        }
+    }
+
+    pub fn mutate<U: Upstream<Output = O> + 'a, IU: IntoUpstream<U>>(
+        &mut self,
+        index: T,
+        f: impl FnOnce(Arc<SeriesProbe<'a, Dense<T>, O>>) -> IU,
+    ) -> DenseSeriesRecordKey {
+        let index = self.series.mutate(index, f);
+        self.records.insert(index)
+    }
+}
+
+impl<'a, 'm, T, O> IntoAnonIterator for DenseSeriesRecorder<'a, 'm, T, O> {
+    type Item = Dense<T>;
+
+    fn into_anon_iter(self) -> impl Iterator<Item = Dense<T>> {
+        self.records.into_iter().map(|(_, v)| v)
+    }
+}
+
+impl<'m, T: Ord + Copy, O: Data> Undo for DenseSeries<'m, T, O> {
+    type Recorder<'a>
+        = DenseSeriesRecorder<'a, 'm, T, O>
+    where
+        Self: 'a;
+    type RecordId = Dense<T>;
+
+    fn recorder(&mut self) -> Self::Recorder<'_> {
+        DenseSeriesRecorder {
+            series: self,
+            records: SlotMap::with_key(),
+        }
+    }
+
+    fn remove_record(&mut self, id: Dense<T>) {
+        self.remove(id);
     }
 }
 

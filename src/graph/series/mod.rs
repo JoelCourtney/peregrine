@@ -13,12 +13,18 @@ use super::Node;
 
 pub struct Series<'a, T, O> {
     node: Node,
-    list: Mutex<BTreeMap<T, ProbedNode<'a, T, O>>>,
-    default: ProbedNode<'a, T, O>,
+    entries: Mutex<SeriesEntries<'a, T, O>>,
 }
 
-type ProbedNode<'a, T, O> = (Arc<dyn Upstream<Output = O> + 'a>, ProbeList<'a, T, O>);
-type ProbeList<'a, T, O> = Vec<Weak<SeriesProbe<'a, T, O>>>;
+struct SeriesEntries<'a, T, O> {
+    default: ProbedUpstream<'a, T, O>,
+    map: BTreeMap<T, ProbedUpstream<'a, T, O>>,
+}
+
+struct ProbedUpstream<'a, T, O> {
+    upstream: Arc<dyn Upstream<Output = O> + 'a>,
+    probes: Vec<Weak<SeriesProbe<'a, T, O>>>,
+}
 
 pub struct SeriesProbe<'a, T, O> {
     node: Node,
@@ -34,23 +40,29 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         let default = default.into_upstream();
         node.add_edges(default.node_id());
         Series {
-            list: Default::default(),
-            default: (Arc::new(default), ProbeList::new()),
+            entries: Mutex::new(SeriesEntries {
+                default: ProbedUpstream {
+                    upstream: Arc::new(default),
+                    probes: vec![],
+                },
+                map: Default::default(),
+            }),
             node,
         }
     }
 
     pub fn set<U: Upstream<Output = O> + 'a>(&mut self, index: T, upstream: impl IntoUpstream<U>) {
         let upstream = Arc::new(upstream.into_upstream()) as Arc<dyn Upstream<Output = O>>;
-        let mut list = self.list.lock();
-        let (prev_node, probes) = list
+        let SeriesEntries { default, map } = &mut *self.entries.lock();
+        let probed = map
             .range_mut(..=index)
             .next_back()
             .map(|(_, v)| v)
-            .unwrap_or(&mut self.default);
+            .unwrap_or(default);
 
-        let prev_node_id = prev_node.node_id();
-        let new_probes = probes
+        let prev_node_id = probed.upstream.node_id();
+        let new_probes = probed
+            .probes
             .extract_if(.., |weak| {
                 let Some(probe) = weak.upgrade() else {
                     return false;
@@ -62,26 +74,39 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
             .collect();
 
         let new_node_id = upstream.node_id();
-        let removed = list.insert(index, (upstream, new_probes));
-        if let Some((old_node, _)) = removed {
+        let removed = map.insert(
+            index,
+            ProbedUpstream {
+                upstream,
+                probes: new_probes,
+            },
+        );
+        if let Some(ProbedUpstream {
+            upstream: old_node, ..
+        }) = removed
+        {
             self.node.remove_edges(old_node.node_id());
         }
         self.node.add_edges(new_node_id);
     }
 
     pub fn remove(&mut self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
-        let mut list = self.list.lock();
-        if let Some((old_node, probes)) = list.remove(&index) {
-            let (prev_node, prev_probes) = list
-                .range_mut(..index)
+        let SeriesEntries { default, map } = &mut *self.entries.lock();
+        if let Some(ProbedUpstream {
+            upstream: old_node,
+            probes,
+        }) = map.remove(&index)
+        {
+            let probed = map
+                .range_mut(..=index)
                 .next_back()
                 .map(|(_, v)| v)
-                .unwrap_or(&mut self.default);
+                .unwrap_or(default);
             let old_node_id = old_node.node_id();
             for weak in probes.into_iter() {
                 if let Some(probe) = weak.upgrade() {
-                    probe.switch(old_node_id, prev_node);
-                    prev_probes.push(weak);
+                    probe.switch(old_node_id, &probed.upstream);
+                    probed.probes.push(weak);
                 }
             }
             self.node.remove_edges(old_node_id);
@@ -91,36 +116,36 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         }
     }
 
-    fn get_internal(&mut self, index: T, inclusive: bool) -> Arc<SeriesProbe<'a, T, O>> {
+    fn get_internal(&self, index: T, inclusive: bool) -> Arc<SeriesProbe<'a, T, O>> {
         let bound = if inclusive {
             Bound::Included(index)
         } else {
             Bound::Excluded(index)
         };
-        let mut list = self.list.lock();
-        let (target, probes) = list
+        let SeriesEntries { default, map } = &mut *self.entries.lock();
+        let probed = map
             .range_mut((Bound::Unbounded, bound))
             .next_back()
             .map(|(_, v)| v)
-            .unwrap_or(&mut self.default);
+            .unwrap_or(default);
         let node = Node::new();
-        node.add_edges(target.node_id());
+        node.add_edges(probed.upstream.node_id());
         let probe = Arc::new(SeriesProbe {
             node,
             at: index,
             inclusive,
-            upstream: Mutex::new(target.clone()),
+            upstream: Mutex::new(probed.upstream.clone()),
             cache: Cache::new(),
         });
-        probes.push(Arc::downgrade(&probe));
+        probed.probes.push(Arc::downgrade(&probe));
         probe
     }
 
-    pub fn get(&mut self, index: T) -> Arc<SeriesProbe<'a, T, O>> {
+    pub fn get(&self, index: T) -> Arc<SeriesProbe<'a, T, O>> {
         self.get_internal(index, false)
     }
 
-    pub fn get_inclusive(&mut self, index: T) -> Arc<SeriesProbe<'a, T, O>> {
+    pub fn get_inclusive(&self, index: T) -> Arc<SeriesProbe<'a, T, O>> {
         self.get_internal(index, true)
     }
 

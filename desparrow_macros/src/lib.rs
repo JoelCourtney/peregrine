@@ -1,4 +1,5 @@
 mod op;
+mod undo;
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -11,4 +12,9 @@ pub fn op(input: TokenStream) -> TokenStream {
     let input_expr = syn::parse2(wrapped_tokens).expect("Failed to parse wrapped input");
 
     op::process_op(input_expr)
+}
+
+#[proc_macro_derive(Undo, attributes(undo))]
+pub fn derive_undo(input: TokenStream) -> TokenStream {
+    undo::derive_undo(input)
 }
