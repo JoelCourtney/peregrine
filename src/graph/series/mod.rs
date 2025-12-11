@@ -1,7 +1,7 @@
 pub mod dense;
 pub mod fuzzy;
 
-use crate::{Data, IntoUpstream, Upstream, cache::Cache, graph::NodeId};
+use crate::{Data, Upstream, cache::Cache, graph::NodeId, node::Node};
 use parking_lot::Mutex;
 use std::{
     collections::BTreeMap,
@@ -9,10 +9,10 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use super::Node;
+use super::NodeTracker;
 
 pub struct Series<'a, T, O> {
-    node: Node,
+    node: NodeTracker,
     entries: Mutex<SeriesEntries<'a, T, O>>,
 }
 
@@ -27,7 +27,7 @@ struct ProbedUpstream<'a, T, O> {
 }
 
 pub struct SeriesProbe<'a, T, O> {
-    node: Node,
+    node: NodeTracker,
     at: T,
     inclusive: bool,
     upstream: Mutex<Arc<dyn Upstream<Output = O> + 'a>>,
@@ -35,9 +35,8 @@ pub struct SeriesProbe<'a, T, O> {
 }
 
 impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
-    pub fn new<U: Upstream<Output = O> + 'a>(default: impl IntoUpstream<U>) -> Self {
-        let node = Node::new();
-        let default = default.into_upstream();
+    pub fn new(default: impl Upstream<Output = O> + 'a) -> Self {
+        let node = NodeTracker::new();
         node.add_edges(default.node_id());
         Series {
             entries: Mutex::new(SeriesEntries {
@@ -51,8 +50,8 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         }
     }
 
-    pub fn set<U: Upstream<Output = O> + 'a>(&mut self, index: T, upstream: impl IntoUpstream<U>) {
-        let upstream = Arc::new(upstream.into_upstream()) as Arc<dyn Upstream<Output = O>>;
+    pub fn set(&mut self, index: T, upstream: impl Upstream<Output = O> + 'a) {
+        let upstream = Arc::new(upstream) as Arc<dyn Upstream<Output = O>>;
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         let probed = map
             .range_mut(..=index)
@@ -128,7 +127,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
             .next_back()
             .map(|(_, v)| v)
             .unwrap_or(default);
-        let node = Node::new();
+        let node = NodeTracker::new();
         node.add_edges(probed.upstream.node_id());
         let probe = Arc::new(SeriesProbe {
             node,
@@ -141,18 +140,18 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         probe
     }
 
-    pub fn get(&self, index: T) -> Arc<SeriesProbe<'a, T, O>> {
-        self.get_internal(index, false)
+    pub fn get(&self, index: T) -> Node<Arc<SeriesProbe<'a, T, O>>> {
+        Node(self.get_internal(index, false))
     }
 
-    pub fn get_inclusive(&self, index: T) -> Arc<SeriesProbe<'a, T, O>> {
-        self.get_internal(index, true)
+    pub fn get_inclusive(&self, index: T) -> Node<Arc<SeriesProbe<'a, T, O>>> {
+        Node(self.get_internal(index, true))
     }
 
-    pub fn mutate<U: Upstream<Output = O> + 'a, IU: IntoUpstream<U>>(
+    pub fn mutate<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
-        f: impl FnOnce(Arc<SeriesProbe<'a, T, O>>) -> IU,
+        f: impl FnOnce(Node<Arc<SeriesProbe<'a, T, O>>>) -> U,
     ) {
         let result = f(self.get(index));
         self.set(index, result);
@@ -220,7 +219,7 @@ impl<'a, T: Send + Sync, O: Data> Upstream for SeriesProbe<'a, T, O> {
     }
 }
 
-impl<'a, T: Copy + Ord, O: Data + Default + Send> Default for Series<'a, T, O> {
+impl<'a, T: Copy + Ord, O: Upstream<Output = O> + Default + Data> Default for Series<'a, T, O> {
     fn default() -> Self {
         Series::new(O::default())
     }

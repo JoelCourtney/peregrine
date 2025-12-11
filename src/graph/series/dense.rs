@@ -4,8 +4,9 @@ use derive_more::Deref;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
-    Data, IntoUpstream, Upstream,
+    Data, Upstream,
     graph::series::{Series, SeriesProbe},
+    node::Node,
     undo::{IntoAnonIterator, Undo},
 };
 
@@ -21,18 +22,14 @@ pub struct DenseSeries<'a, T, O> {
 }
 
 impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
-    pub fn new<U: Upstream<Output = O> + 'a>(default: impl IntoUpstream<U>) -> Self {
+    pub fn new(default: impl Upstream<Output = O> + 'a) -> Self {
         Self {
             series: Series::new(default),
             counter: 0,
         }
     }
 
-    pub fn set<U: Upstream<Output = O> + 'a>(
-        &mut self,
-        index: T,
-        value: impl IntoUpstream<U>,
-    ) -> Dense<T> {
+    pub fn set(&mut self, index: T, value: impl Upstream<Output = O> + 'a) -> Dense<T> {
         let index = Dense {
             index,
             order: self.counter,
@@ -42,11 +39,11 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         index
     }
 
-    pub fn get(&self, index: T) -> Arc<SeriesProbe<'a, Dense<T>, O>> {
+    pub fn get(&self, index: T) -> Node<Arc<SeriesProbe<'a, Dense<T>, O>>> {
         self.series.get(Dense { index, order: 0 })
     }
 
-    pub fn get_inclusive(&self, index: T) -> Arc<SeriesProbe<'a, Dense<T>, O>> {
+    pub fn get_inclusive(&self, index: T) -> Node<Arc<SeriesProbe<'a, Dense<T>, O>>> {
         self.series.get_inclusive(Dense {
             index,
             order: u64::MAX,
@@ -57,10 +54,10 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         self.series.remove(index)
     }
 
-    pub fn mutate<U: Upstream<Output = O> + 'a, IU: IntoUpstream<U>>(
+    pub fn mutate<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
-        f: impl FnOnce(Arc<SeriesProbe<'a, Dense<T>, O>>) -> IU,
+        f: impl FnOnce(Node<Arc<SeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> Dense<T> {
         let index = Dense {
             index,
@@ -82,11 +79,7 @@ pub struct DenseSeriesRecorder<'a, 'm, T, O> {
 }
 
 impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
-    pub fn set<U: Upstream<Output = O> + 'a>(
-        &mut self,
-        index: T,
-        value: impl IntoUpstream<U>,
-    ) -> DenseSeriesRecordKey {
+    pub fn set(&mut self, index: T, value: impl Upstream<Output = O> + 'a) -> DenseSeriesRecordKey {
         let index = self.series.set(index, value);
         self.records.insert(index)
     }
@@ -102,10 +95,10 @@ impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
         }
     }
 
-    pub fn mutate<U: Upstream<Output = O> + 'a, IU: IntoUpstream<U>>(
+    pub fn mutate<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
-        f: impl FnOnce(Arc<SeriesProbe<'a, Dense<T>, O>>) -> IU,
+        f: impl FnOnce(Node<Arc<SeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         let index = self.series.mutate(index, f);
         self.records.insert(index)

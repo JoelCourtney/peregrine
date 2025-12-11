@@ -80,11 +80,9 @@ pub enum Never {}
 
 #[cfg(test)]
 mod tests {
-    use desparrow_macros::Undo;
-
     use crate as desparrow;
     use crate::graph::series::dense::DenseSeries;
-    use crate::{op, run};
+    use crate::{Undo, run};
 
     use super::*;
 
@@ -100,8 +98,8 @@ mod tests {
     #[test]
     fn make_plan() {
         let model = MyModel {
-            x: DenseSeries::new(5.0),
-            y: DenseSeries::new(6.0),
+            x: DenseSeries::new(5.0f32),
+            y: DenseSeries::new(6.0f32),
             z: 10.0,
         };
 
@@ -114,9 +112,7 @@ mod tests {
             model.x.set(start, *model.z);
             model.x.set(end, model.x.get(start));
 
-            model
-                .y
-                .mutate(end, |y| op! { i!(y) + i!(model.x.get(end)) });
+            model.y.mutate(end, |y| y + model.x.get(end));
         });
 
         assert_eq!(run(model.x.get(4)), 5.0);

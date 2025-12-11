@@ -2,42 +2,41 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{Callback, Ctx, Data, IntoUpstream, Upstream, cache::Cache, graph::Node};
+use crate::{Callback, Ctx, Data, Upstream, cache::Cache, graph::NodeTracker, node::Node};
 
 use super::NodeId;
 
 pub struct Stack<'a, O> {
-    node: Node,
+    node: NodeTracker,
     nodes: RwLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
     cache: Cache<()>,
 }
 
 impl<'a, O: Data> Stack<'a, O> {
-    pub fn new<U: Upstream<Output = O> + 'a>(run: impl IntoUpstream<U>) -> Stack<'a, O> {
-        let node = Node::new();
-        let inner = run.into_upstream();
-        node.add_edges(inner.node_id());
+    pub fn new(run: impl Upstream<Output = O> + 'a) -> Stack<'a, O> {
+        let node = NodeTracker::new();
+        node.add_edges(run.node_id());
         Stack {
-            nodes: RwLock::new(vec![Arc::new(inner)]),
+            nodes: RwLock::new(vec![Arc::new(run)]),
             cache: Cache::new(),
             node,
         }
     }
 
-    pub fn push<U: Upstream<Output = O> + 'a, IR: IntoUpstream<U>>(
+    pub fn push<U: Upstream<Output = O> + 'a>(
         &self,
-        f: impl FnOnce(Arc<dyn Upstream<Output = O> + 'a>) -> IR,
+        f: impl FnOnce(Arc<dyn Upstream<Output = O> + 'a>) -> U,
     ) {
         let mut nodes = self.nodes.write();
         let prev = nodes.last().unwrap().clone();
         self.node.remove_edges(prev.node_id());
-        let ir = f(prev).into_upstream();
-        self.node.add_edges(ir.node_id());
-        nodes.push(Arc::new(ir));
+        let upstream = f(prev);
+        self.node.add_edges(upstream.node_id());
+        nodes.push(Arc::new(upstream));
         self.cache.invalidate()
     }
 
-    pub fn pop(&self) -> Option<Arc<dyn Upstream<Output = O> + 'a>>
+    pub fn pop(&self) -> Option<Node<Arc<dyn Upstream<Output = O> + 'a>>>
     where
         O: 'static,
     {
@@ -47,24 +46,24 @@ impl<'a, O: Data> Stack<'a, O> {
             let node = nodes.pop().unwrap();
             self.node.remove_edges(node.node_id());
             self.node.add_edges(nodes.last().unwrap().node_id());
-            Some(node)
+            Some(Node(node))
         } else {
             None
         }
     }
 
-    pub fn freeze(&self) -> Arc<dyn Upstream<Output = O> + 'a>
+    pub fn freeze(&self) -> Node<Arc<dyn Upstream<Output = O> + 'a>>
     where
         O: 'static,
     {
-        self.nodes.read().last().unwrap().clone()
+        Node(self.nodes.read().last().unwrap().clone())
     }
 
     pub fn fork(&self) -> Stack<'a, O>
     where
         O: Send + Clone + 'static,
     {
-        let node = Node::new();
+        let node = NodeTracker::new();
         let vec = self.nodes.read();
 
         node.add_edges(vec.iter().filter_map(|n| n.node_id()));
@@ -97,13 +96,11 @@ impl<O: Data> Upstream for Stack<'_, O> {
     }
 }
 
-impl<O: Data + Default> Default for Stack<'_, O> {
+impl<O: Upstream<Output = O> + Default + 'static> Default for Stack<'_, O> {
     fn default() -> Self {
         Stack {
-            node: Node::new(),
-            nodes: RwLock::new(vec![
-                Arc::new(O::default().into_upstream()) as Arc<dyn Upstream<Output = O>>
-            ]),
+            node: NodeTracker::new(),
+            nodes: RwLock::new(vec![Arc::new(O::default()) as Arc<dyn Upstream<Output = O>>]),
             cache: Cache::new(),
         }
     }

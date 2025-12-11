@@ -2,17 +2,19 @@ pub mod cache;
 pub mod flow;
 pub mod graph;
 pub mod macro_prelude;
+pub mod node;
 pub mod undo;
+pub mod data;
 
 use std::sync::atomic::AtomicU64;
 
-pub use desparrow_macros::op;
+pub use desparrow_macros::{Undo, op};
 use graph::NodeId;
 
 use cache::Cached;
 use forte::{Scope, ThreadPool};
 
-use crate::{cache::collector::OutputCell, flow::Sink};
+use crate::{cache::collector::OutputCell, data::Data, flow::Sink};
 
 pub trait Upstream: Send + Sync {
     type Output: Data;
@@ -23,12 +25,6 @@ pub trait Upstream: Send + Sync {
         Self: 's;
 }
 
-/// A marker trait for types that can be used as the output of a node.
-///
-/// Auto-implemented for all types that satisfy the required bounds.
-/// You don't need to implement this trait manually.
-pub trait Data: PartialEq + Clone + Send + Sync + 'static {}
-impl<T> Data for T where T: PartialEq + Clone + Send + Sync + 'static {}
 
 pub struct Callback<'s, I> {
     downstream: &'s dyn Downstream,
@@ -99,11 +95,7 @@ pub struct Ctx<'a, 's> {
     pub run_count: u64,
 }
 
-pub trait IntoUpstream<U: Upstream> {
-    fn into_upstream(self) -> U;
-}
-
-pub fn run<U: Upstream>(u: impl IntoUpstream<U>) -> U::Output {
+pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
     static COMPUTE: ThreadPool = ThreadPool::new();
     static RUN_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -111,7 +103,6 @@ pub fn run<U: Upstream>(u: impl IntoUpstream<U>) -> U::Output {
 
     let sink = Sink::new();
 
-    let upstream = u.into_upstream();
     let run_count = RUN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     COMPUTE.scope(|scope| {

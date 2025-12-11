@@ -15,12 +15,13 @@ use crate::{
         collector::{CollectionStatus, UpstreamCollector},
     },
     flow::Callbacks,
+    node::Node,
 };
 
-use super::{Node, NodeId};
+use super::{NodeId, NodeTracker};
 
 pub struct Op<UC: UpstreamCollector, O: 'static, F> {
-    node: Node,
+    node: NodeTracker,
     upstreams: UC,
     collection_cells: Arc<UC::Cells>,
     counter: AtomicU32,
@@ -33,10 +34,10 @@ pub struct Op<UC: UpstreamCollector, O: 'static, F> {
 type OpInput<UC> = <UC as UpstreamCollector>::Result;
 
 impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<UC, O, F> {
-    pub fn new(upstreams: UC, func: F, node_ids: impl IntoIterator<Item = NodeId>) -> Self {
-        let node = Node::new();
+    pub fn new(upstreams: UC, func: F, node_ids: impl IntoIterator<Item = NodeId>) -> Node<Self> {
+        let node = NodeTracker::new();
         node.add_edges(node_ids);
-        Op {
+        Node(Op {
             collection_cells: Arc::new(upstreams.new_cells()),
             upstreams,
             counter: AtomicU32::new(0),
@@ -45,7 +46,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<U
             cache: Cache::new_arc(),
             node,
             can_be_revalidated: AtomicBool::new(false),
-        }
+        })
     }
 }
 

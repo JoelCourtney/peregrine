@@ -1,9 +1,8 @@
 use crate::graph::auto::UncachedMap;
-use crate::{Callback, Ctx, IntoUpstream, Upstream, graph::op::Op};
+use crate::node::Node;
+use crate::{Upstream, graph::op::Op};
 use array_init::array_init;
 use std::sync::Arc;
-
-use super::NodeId;
 
 pub trait Split<U> {
     type Result;
@@ -15,17 +14,16 @@ pub trait Merge<U> {
     fn merge(self) -> U;
 }
 
-macro_rules! impl_into_upstream_for_tuple {
-    ($($t:ident $t_i:ident $f:tt),*) => {
-        impl<$($t: Upstream, $t_i: IntoUpstream<$t>),*> Merge<Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> for ($($t_i,)*) {
+macro_rules! impl_merge_and_split {
+    ($($t:ident $f:tt),*) => {
+        impl<$($t: Upstream),*> Merge<Node<Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>>> for ($($t,)*) {
             #[allow(non_snake_case)]
-            fn merge(self) -> Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)> {
-                let ($($t_i,)*) = self;
+            fn merge(self) -> Node<Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> {
+                let ($($t,)*) = self;
 
-                let ($($t_i,)*) = ($($t_i.into_upstream()),*);
-                let node_ids = [$($t_i.node_id(),)*].into_iter().filter_map(|i| i);
+                let node_ids = [$($t.node_id(),)*].into_iter().filter_map(|i| i);
 
-                Op::new(($($t_i,)*), identity, node_ids)
+                Op::new(($($t,)*), identity, node_ids)
             }
         }
 
@@ -33,7 +31,7 @@ macro_rules! impl_into_upstream_for_tuple {
             type Result = ($(UncachedMap<Arc<U>, $t>,)*);
 
             fn split(self) -> Self::Result {
-                let upstream = Arc::new(self.into_upstream());
+                let upstream = Arc::new(self);
                 ($(
                     UncachedMap {
                         upstream: upstream.clone(),
@@ -49,7 +47,7 @@ impl<A, U: Upstream<Output = (A,)>> Split<U> for U {
     type Result = (UncachedMap<U, A>,);
     fn split(self) -> Self::Result {
         (UncachedMap {
-            upstream: self.into_upstream(),
+            upstream: self,
             func: |(a,)| a,
         },)
     }
@@ -59,50 +57,33 @@ fn identity<T>(value: T) -> T {
     value
 }
 
-impl_into_upstream_for_tuple!(A AI 0, B BI 1);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5, G GI 6);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5, G GI 6, H HI 7);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5, G GI 6, H HI 7, I II 8);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5, G GI 6, H HI 7, I II 8, J JI 9);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5, G GI 6, H HI 7, I II 8, J JI 9, K KI 10);
-impl_into_upstream_for_tuple!(A AI 0, B BI 1, C CI 2, D DI 3, E EI 4, F FI 5, G GI 6, H HI 7, I II 8, J JI 9, K KI 10, L LI 11);
+impl_merge_and_split!(A 0, B 1);
+impl_merge_and_split!(A 0, B 1, C 2);
+impl_merge_and_split!(A 0, B 1, C 2, D 3);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5, G 6);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
+impl_merge_and_split!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
 
-pub struct UnaryTupleWrapper<A: Upstream>(A);
-
-impl<A: Upstream, AI: IntoUpstream<A>> Merge<UnaryTupleWrapper<A>> for (AI,) {
-    fn merge(self) -> UnaryTupleWrapper<A> {
-        UnaryTupleWrapper(self.0.into_upstream())
+impl<A: Upstream> Merge<(A,)> for (A,) {
+    fn merge(self) -> (A,) {
+        self
     }
 }
 
-impl<A: Upstream> Upstream for UnaryTupleWrapper<A> {
-    type Output = (A::Output,);
-
-    fn node_id(&self) -> Option<NodeId> {
-        self.0.node_id()
-    }
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, (A::Output,)>)
-    where
-        Self: 's,
-    {
-        self.0.request(ctx, callback.map(|o| o.map(|o| (o,))))
-    }
-}
-
-impl<U: Upstream, IU: IntoUpstream<U>>
-    Merge<Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>>> for Vec<IU>
+impl<U: Upstream> Merge<Node<Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>>>>
+    for Vec<U>
 where
     U::Output: Send + Clone + 'static,
 {
-    fn merge(self) -> Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>> {
+    fn merge(self) -> Node<Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>>> {
         let mut converted = Vec::with_capacity(self.len());
         let mut node_ids = Vec::with_capacity(self.len());
         for upstream in self {
-            let upstream = upstream.into_upstream();
             if let Some(id) = upstream.node_id() {
                 node_ids.push(id);
             }
@@ -113,14 +94,14 @@ where
     }
 }
 
-impl<const N: usize, U: Upstream, IU: IntoUpstream<U>>
-    Merge<Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]>> for [IU; N]
+impl<const N: usize, U: Upstream>
+    Merge<Node<Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]>>> for [U; N]
 where
     U::Output: Send + Clone + 'static,
 {
-    fn merge(self) -> Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]> {
+    fn merge(self) -> Node<Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]>> {
         let mut iter = self.into_iter();
-        let converted = array_init(move |_| iter.next().unwrap().into_upstream());
+        let converted = array_init(move |_| iter.next().unwrap());
         let node_ids: [_; N] = array_init(|i| converted[i].node_id());
 
         Op::new(converted, identity, node_ids.into_iter().flatten())

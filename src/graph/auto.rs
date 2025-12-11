@@ -1,14 +1,8 @@
 use std::sync::Arc;
 
-use crate::{Callback, Ctx, Data, IntoUpstream, Upstream, cache::Cached};
+use crate::{Callback, Ctx, Data, Upstream, cache::Cached};
 
 use super::NodeId;
-
-impl<U: Upstream> IntoUpstream<U> for U {
-    fn into_upstream(self) -> Self {
-        self
-    }
-}
 
 impl<U: Upstream + ?Sized> Upstream for &U {
     type Output = U::Output;
@@ -49,55 +43,6 @@ impl<U: Upstream + ?Sized> Upstream for Arc<U> {
         Self: 's,
     {
         (**self).request(ctx, callback)
-    }
-}
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct DataWrapper<O>(O);
-
-impl<O: Data> Upstream for DataWrapper<O> {
-    type Output = O;
-
-    fn node_id(&self) -> Option<NodeId> {
-        None
-    }
-    #[inline(always)]
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
-    where
-        Self: 's,
-    {
-        callback.call(Cached::Constant(self.0.clone()), ctx);
-    }
-}
-
-impl<O: Data> IntoUpstream<DataWrapper<O>> for O {
-    fn into_upstream(self) -> DataWrapper<O> {
-        DataWrapper(self)
-    }
-}
-
-#[derive(Debug)]
-pub struct FnWrapper<F>(F);
-
-impl<O: Data, F: Fn() -> Cached<O> + Send + Sync> Upstream for FnWrapper<F> {
-    type Output = O;
-
-    fn node_id(&self) -> Option<NodeId> {
-        None
-    }
-    #[inline(always)]
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
-    where
-        Self: 's,
-    {
-        callback.call(self.0(), ctx);
-    }
-}
-
-impl<O: Data, F: Fn() -> Cached<O> + Send + Sync> IntoUpstream<FnWrapper<F>> for F {
-    fn into_upstream(self) -> FnWrapper<F> {
-        FnWrapper(self)
     }
 }
 

@@ -18,15 +18,15 @@ lazy_static! {
     pub(crate) static ref GRAPH: Mutex<Acyclic<StableDiGraph<(), ()>>> = Mutex::new(Acyclic::new());
 }
 
-pub struct Node {
+pub struct NodeTracker {
     id: NodeId,
 }
 
 pub type NodeId = <StableDiGraph<(), ()> as GraphBase>::NodeId;
 
-impl Node {
-    fn new() -> Node {
-        Node {
+impl NodeTracker {
+    fn new() -> NodeTracker {
+        NodeTracker {
             id: GRAPH.lock().unwrap().add_node(()),
         }
     }
@@ -53,7 +53,7 @@ impl Node {
     }
 }
 
-impl Drop for Node {
+impl Drop for NodeTracker {
     fn drop(&mut self) {
         let mut lock = GRAPH.lock().unwrap();
         if cfg!(debug_assertions) && !std::thread::panicking() {
@@ -92,13 +92,13 @@ mod tests {
 
     use crate::graph::GRAPH;
 
-    use super::Node;
+    use super::NodeTracker;
 
     #[test]
     #[should_panic]
     fn panic_on_cycle() {
-        let a = Node::new();
-        let b = Node::new();
+        let a = NodeTracker::new();
+        let b = NodeTracker::new();
 
         a.add_edges([b.id]);
         b.add_edges([a.id]);
@@ -106,8 +106,8 @@ mod tests {
 
     #[test]
     fn add_to_graph() {
-        let b = Node::new();
-        let a = Node::new();
+        let b = NodeTracker::new();
+        let a = NodeTracker::new();
 
         a.add_edges([b.id]);
 

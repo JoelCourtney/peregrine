@@ -1,4 +1,4 @@
-use std::{mem::transmute, sync::atomic::AtomicU32};
+use std::mem::transmute;
 
 use crate::{
     Callback, Ctx, Downstream,
@@ -7,14 +7,12 @@ use crate::{
 
 pub(crate) struct Sink<O> {
     output: OutputCell<O>,
-    _counter: AtomicU32,
 }
 
 impl<O: Clone + Send + 'static> Sink<O> {
     pub(crate) fn new() -> Self {
         Self {
             output: OutputCell::default(),
-            _counter: AtomicU32::new(0),
         }
     }
 

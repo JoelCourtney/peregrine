@@ -32,13 +32,13 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
             for (input_name, input_expr) in inputs {
                 input_names.push(input_name);
                 upstreams.push(quote! {
-                    (#input_expr).into_upstream()
+                    #input_expr
                 });
             }
 
             let expanded = quote! {
                 {
-                    use desparrow::{Upstream, IntoUpstream};
+                    use desparrow::Upstream;
 
                     let (#(#input_names,)*) = (#(#upstreams,)*);
                     let node_ids = [#(#input_names.node_id(),)*].into_iter().filter_map(|i| i);

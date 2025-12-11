@@ -15,5 +15,4 @@ what the project is about.
 
 ## Todo
 
-- [ ] Caches should first check whether their inputs have actually changed before dropping the cache.
 - [ ] Sim and maybe plan objects should provide a timeline of revisions so that sims can fork

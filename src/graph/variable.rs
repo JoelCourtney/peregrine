@@ -2,39 +2,38 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{Callback, Ctx, Data, IntoUpstream, Upstream, cache::Cache};
+use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
 
-use super::Node;
+use super::NodeTracker;
 
 pub struct Var<'a, O: Send + 'static> {
-    node: Node,
+    node: NodeTracker,
     cell: RwLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
 }
 
 impl<'a, O: Data> Var<'a, O> {
-    pub fn new<U: Upstream<Output = O> + 'a>(node: impl IntoUpstream<U>) -> Var<'a, O> {
-        let outer = Node::new();
-        let inner = node.into_upstream();
-        outer.add_edges(inner.node_id());
+    pub fn new(node: impl Upstream<Output = O> + 'a) -> Var<'a, O> {
+        let outer = NodeTracker::new();
+        outer.add_edges(node.node_id());
         Var {
-            cell: RwLock::new(Arc::new(inner)),
+            cell: RwLock::new(Arc::new(node)),
             cache: Cache::new(),
             node: outer,
         }
     }
 
-    pub fn set<U: Upstream<Output = O> + 'a>(&self, node: impl IntoUpstream<U>) {
+    pub fn set(&self, node: impl Upstream<Output = O> + 'a) {
         let mut write = self.cell.write();
         self.node.remove_edges(write.node_id());
-        let new_node = Arc::new(node.into_upstream());
+        let new_node = Arc::new(node);
         self.node.add_edges(new_node.node_id());
         self.cache.invalidate();
         *write = new_node;
     }
 
-    pub fn freeze(&self) -> Arc<dyn Upstream<Output = O> + 'a> {
-        (*self.cell.read()).clone()
+    pub fn freeze(&self) -> Node<Arc<dyn Upstream<Output = O> + 'a>> {
+        Node((*self.cell.read()).clone())
     }
 }
 
@@ -58,11 +57,11 @@ impl<O: Data> Upstream for Var<'_, O> {
     }
 }
 
-impl<O: Data + Default + Send> Default for Var<'_, O> {
+impl<O: Upstream<Output = O> + Default + Send + 'static> Default for Var<'_, O> {
     fn default() -> Self {
         Var {
-            node: Node::new(),
-            cell: RwLock::new(Arc::new(O::default().into_upstream())),
+            node: NodeTracker::new(),
+            cell: RwLock::new(Arc::new(O::default())),
             cache: Cache::new(),
         }
     }
