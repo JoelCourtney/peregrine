@@ -1,3 +1,4 @@
+mod auto_source;
 mod op;
 mod undo;
 
@@ -17,4 +18,9 @@ pub fn op(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Undo, attributes(undo))]
 pub fn derive_undo(input: TokenStream) -> TokenStream {
     undo::derive_undo(input)
+}
+
+#[proc_macro_derive(AutoSource)]
+pub fn derive_auto_source(input: TokenStream) -> TokenStream {
+    auto_source::derive_auto_source(input)
 }
