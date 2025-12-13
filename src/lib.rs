@@ -10,7 +10,7 @@ pub mod plan;
 
 use std::sync::atomic::AtomicU64;
 
-pub use desparrow_macros::{AutoSource, Undo, op};
+pub use desparrow_macros::{AutoSource, Undo, op, activity};
 use graph::NodeId;
 
 use cache::Cached;

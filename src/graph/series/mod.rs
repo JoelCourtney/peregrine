@@ -1,5 +1,5 @@
 pub mod dense;
-pub mod fuzzy;
+// pub mod fuzzy;
 
 use crate::{Data, Upstream, cache::Cache, graph::NodeId, node::Node};
 use parking_lot::Mutex;

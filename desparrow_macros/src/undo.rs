@@ -140,7 +140,7 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
             #(#record_id_variants,)*
             _Phantom {
                 types: std::marker::PhantomData<#struct_name<#generic_params>>,
-                never: Never
+                never: desparrow::undo::Never
             }
         }
 
