@@ -169,6 +169,8 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
                 }
             }
         }
+
+        impl<#generic_params> desparrow::undo::ErasedRecorder for #recorder_name<'_, #generic_params> {}
     };
 
     TokenStream::from(expanded)

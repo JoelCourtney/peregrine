@@ -1,14 +1,16 @@
 pub mod cache;
+pub mod data;
 pub mod flow;
 pub mod graph;
 pub mod macro_prelude;
 pub mod node;
 pub mod undo;
-pub mod data;
+
+pub mod plan;
 
 use std::sync::atomic::AtomicU64;
 
-pub use desparrow_macros::{Undo, op};
+pub use desparrow_macros::{AutoSource, Undo, op};
 use graph::NodeId;
 
 use cache::Cached;
@@ -24,7 +26,6 @@ pub trait Upstream: Send + Sync {
     where
         Self: 's;
 }
-
 
 pub struct Callback<'s, I> {
     downstream: &'s dyn Downstream,

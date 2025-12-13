@@ -1,4 +1,7 @@
-use std::{ffi::{CStr, CString}, time::{Duration, Instant}};
+use std::{
+    ffi::{CStr, CString},
+    time::{Duration, Instant},
+};
 
 use crate::{Callback, Ctx, Upstream, cache::Cached, graph::NodeId};
 
@@ -123,29 +126,28 @@ impl<T: Data, const N: usize> Upstream for [T; N] {
 mod tests {
     use std::sync::Arc;
 
-    use desparrow_macros::AutoSource;
-    use crate::{graph::variable::Var, run};
     use super::*;
     use crate as desparrow;
-    
+    use crate::{graph::variable::Var, run};
+    use desparrow_macros::AutoSource;
+
     #[derive(PartialEq, Debug)]
     struct NonUpstream;
-   
+
     #[test]
     fn source() {
         let v = Var::new(Source(Arc::new(NonUpstream)));
-        
+
         assert_eq!(run(v), Arc::new(NonUpstream));
     }
-    
+
     #[derive(AutoSource, Copy, Clone, PartialEq, Debug)]
     struct MakeAutoSourcePlease;
-    
+
     #[test]
     fn auto_source() {
         let v = Var::new(MakeAutoSourcePlease);
-        
+
         assert_eq!(run(v), MakeAutoSourcePlease);
     }
 }
-

@@ -7,7 +7,7 @@ use crate::{
     Data, Upstream,
     graph::series::{Series, SeriesProbe},
     node::Node,
-    undo::{IntoAnonIterator, Undo},
+    undo::{ErasedRecorder, IntoAnonIterator, Undo},
 };
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Ord, Eq, Hash, Debug)]
@@ -104,6 +104,8 @@ impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
         self.records.insert(index)
     }
 }
+
+impl<'a, 'm, T, O> ErasedRecorder for DenseSeriesRecorder<'a, 'm, T, O> {}
 
 impl<'a, 'm, T, O> IntoAnonIterator for DenseSeriesRecorder<'a, 'm, T, O> {
     type Item = Dense<T>;

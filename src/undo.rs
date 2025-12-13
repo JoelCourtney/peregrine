@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use derive_more::Deref;
+use slotmap::{SlotMap, new_key_type};
 
 pub trait Undo {
-    type Recorder<'a>: IntoAnonIterator<Item = Self::RecordId>
+    type Recorder<'a>: IntoAnonIterator<Item = Self::RecordId> + ErasedRecorder
     where
         Self: 'a;
     type RecordId;
@@ -11,6 +10,8 @@ pub trait Undo {
     fn recorder(&mut self) -> Self::Recorder<'_>;
     fn remove_record(&mut self, id: Self::RecordId);
 }
+
+pub trait ErasedRecorder {}
 
 pub trait IntoAnonIterator {
     type Item;
@@ -30,34 +31,28 @@ impl<T: IntoIterator> IntoAnonIterator for T {
 pub struct Undoer<M: Undo> {
     #[deref]
     model: M,
-    records: HashMap<BatchId, Vec<M::RecordId>>,
-    batch_id_counter: u64,
+    records: SlotMap<BatchId, Vec<M::RecordId>>,
 }
+
+new_key_type! { pub struct BatchId; }
 
 impl<M: Undo> Undoer<M> {
     pub fn new(model: M) -> Self {
         Self {
             model,
-            records: HashMap::new(),
-            batch_id_counter: 0,
+            records: SlotMap::with_key(),
         }
     }
 
     pub fn update(&mut self, f: impl FnOnce(Record<M>)) -> BatchId {
-        let id = BatchId {
-            id: self.batch_id_counter,
-        };
-        self.batch_id_counter += 1;
-
         let mut recorder = self.model.recorder();
         f(&mut recorder);
         let records: Vec<M::RecordId> = recorder.into_anon_iter().collect();
-        self.records.insert(id, records);
-        id
+        self.records.insert(records)
     }
 
     pub fn undo(&mut self, id: BatchId) {
-        if let Some(records) = self.records.remove(&id) {
+        if let Some(records) = self.records.remove(id) {
             for record in records {
                 self.model.remove_record(record);
             }
@@ -67,11 +62,6 @@ impl<M: Undo> Undoer<M> {
     pub fn into_inner(self) -> M {
         self.model
     }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct BatchId {
-    id: u64,
 }
 
 pub type Record<'a, 'm, M> = &'a mut <M as Undo>::Recorder<'m>;
@@ -96,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn make_plan() {
+    fn undo() {
         let model = MyModel {
             x: DenseSeries::new(5.0f32),
             y: DenseSeries::new(6.0f32),

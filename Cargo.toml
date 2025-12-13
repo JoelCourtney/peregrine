@@ -25,6 +25,8 @@ crossbeam = { version = "0.8.4", default-features = false }
 array-init = "2.1.0"
 derive_more = { version = "2.1.0", features = ["deref", "deref_mut"] }
 slotmap = "1.1.1"
+typetag = "0.2.21"
+hifitime = { version = "4.2.3" }
 
 [dev-dependencies]
 

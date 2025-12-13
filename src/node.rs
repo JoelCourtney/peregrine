@@ -6,7 +6,7 @@ use crate::graph::auto::UncachedMap;
 use crate::op;
 use crate::{Data, Upstream, graph::op::Op};
 
-#[derive(Copy, Clone, Debug, Deref, DerefMut)]
+#[derive(Copy, Clone, Debug, Deref, DerefMut, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Node<T>(pub T);
 
 impl<T> Upstream for Node<T>
@@ -112,7 +112,7 @@ mod tests {
         let result = node1 + node2 - 4;
         assert_eq!(run(result), 4);
     }
-    
+
     #[test]
     fn node_unary_ops() {
         let node = op! { 1 + 2 };
