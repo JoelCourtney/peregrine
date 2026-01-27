@@ -1,8 +1,8 @@
 # Claude context
 
-I am creating a discrete event simulator called Desparrow, which is a successor to Merlin.
-I'm converting the aerie-lander demo model from Java into Rust to use as a demo for Desparrow,
-and I'm adding new features to Desparrow as I go.
+I am creating a discrete event simulator called Peregrine, which is a successor to Merlin.
+I'm converting the aerie-lander demo model from Java into Rust to use as a demo for Peregrine,
+and I'm adding new features to Peregrine as I go.
 
 ## Bash commands
 

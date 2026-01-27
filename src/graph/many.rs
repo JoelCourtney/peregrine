@@ -113,7 +113,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::graph::many::Merge;
     use crate::{op, run};
 

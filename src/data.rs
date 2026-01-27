@@ -127,9 +127,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::{graph::variable::Var, run};
-    use desparrow_macros::AutoSource;
+    use peregrine_macros::AutoSource;
 
     #[derive(PartialEq, Debug)]
     struct NonUpstream;

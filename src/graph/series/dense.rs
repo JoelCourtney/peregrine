@@ -136,7 +136,7 @@ impl<'m, T: Ord + Copy, O: Data> Undo for DenseSeries<'m, T, O> {
 
 #[cfg(test)]
 mod tests {
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::{graph::series::dense::DenseSeries, op, run};
 
     #[test]

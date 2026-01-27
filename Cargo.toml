@@ -1,12 +1,12 @@
 [package]
-name = "desparrow"
+name = "peregrine"
 version = "0.2.0"
 edition = "2024"
 
 authors = ["Joel Courtney <joel.e.courtney@gmail.com>"]
 description = "A discrete event simulation engine similar to NASA-AMMOS's Aerie-Merlin."
 readme = "README.md"
-repository = "https://github.com/JoelCourtney/desparrow"
+repository = "https://github.com/JoelCourtney/peregrine"
 license = "MIT OR Apache-2.0"
 keywords = ["simulation"]
 categories = ["aerospace::simulation", "simulation"]
@@ -16,7 +16,7 @@ categories = ["aerospace::simulation", "simulation"]
 [dependencies]
 forte = "1.0.0-alpha.4"
 parking_lot = { version = "0.12" }
-desparrow_macros = { path = "desparrow_macros" }
+peregrine_macros = { path = "peregrine_macros" }
 oneshot = "0.1.11"
 replace_with = "0.1.8"
 petgraph = { version = "0.8.3", default-features = false, features = ["stable_graph"] }
@@ -32,4 +32,4 @@ serde = "1.0.228"
 [dev-dependencies]
 
 [workspace]
-members = [".", "desparrow_macros"]
+members = [".", "peregrine_macros"]

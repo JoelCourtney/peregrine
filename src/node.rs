@@ -45,7 +45,7 @@ macro_rules! impl_binary_op {
             >;
 
             fn $fun(self, other: U) -> Self::Output {
-                use crate as desparrow;
+                use crate as peregrine;
                 op! {
                     i!(self) $sym i!(other)
                 }
@@ -99,7 +99,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::graph::variable::Var;
     use crate::run;
 

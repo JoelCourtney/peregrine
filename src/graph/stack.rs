@@ -109,7 +109,7 @@ impl<O: Upstream<Output = O> + Default + 'static> Default for Stack<'_, O> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::graph::variable::Var;
     use crate::*;
 

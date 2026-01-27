@@ -65,12 +65,12 @@ pub type Resource<T> = DenseSeries<'static, Time, T>;
 
 #[cfg(test)]
 mod tests {
-    use desparrow_macros::activity;
+    use peregrine_macros::activity;
     use hifitime::Duration;
     use serde::{Deserialize, Serialize};
 
     use crate::{Undo, run};
-    use crate as desparrow;
+    use crate as peregrine;
 
     use super::*;
     

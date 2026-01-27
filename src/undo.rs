@@ -70,7 +70,7 @@ pub enum Never {}
 
 #[cfg(test)]
 mod tests {
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::graph::series::dense::DenseSeries;
     use crate::{Undo, run};
 

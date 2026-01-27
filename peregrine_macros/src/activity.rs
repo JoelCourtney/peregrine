@@ -125,9 +125,9 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
         let accessor = &mapping.accessor;
 
         quote! {
-            impl #impl_gen desparrow::plan::Activity<#target_model> for #self_ty #where_clause {
-                fn apply(&self, time: desparrow::plan::Time, model: desparrow::undo::Record<#target_model>) {
-                    <Self as desparrow::plan::Activity<#model_type>>::apply(self, time, &mut #accessor);
+            impl #impl_gen peregrine::plan::Activity<#target_model> for #self_ty #where_clause {
+                fn apply(&self, time: peregrine::plan::Time, model: peregrine::undo::Record<#target_model>) {
+                    <Self as peregrine::plan::Activity<#model_type>>::apply(self, time, &mut #accessor);
                 }
             }
         }
@@ -148,11 +148,11 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
                 // It is the responsibility of the caller to provide the correct recorder
                 // corresponding to the model type id.
                 let recorder = unsafe {
-                    &mut *(model as *mut dyn desparrow::undo::ErasedRecorder
-                        as *mut <#model_ty as desparrow::undo::Undo>::Recorder<'_>)
+                    &mut *(model as *mut dyn peregrine::undo::ErasedRecorder
+                        as *mut <#model_ty as peregrine::undo::Undo>::Recorder<'_>)
                 };
 
-                <Self as desparrow::plan::Activity<#model_ty>>::apply(self, time, recorder);
+                <Self as peregrine::plan::Activity<#model_ty>>::apply(self, time, recorder);
                 return;
             }
         }
@@ -161,16 +161,16 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Generate the ErasedActivity implementation
     let erased_impl = quote! {
         #[typetag::serde]
-        impl #impl_gen desparrow::plan::ErasedActivity for #self_ty #where_clause {
+        impl #impl_gen peregrine::plan::ErasedActivity for #self_ty #where_clause {
             fn model_type_ids(&self) -> ::std::vec::Vec<::std::any::TypeId> {
                 vec![#(::std::any::TypeId::of::<#all_model_types>()),*]
             }
 
             unsafe fn apply_by_id(
                 &self,
-                time: desparrow::plan::Time,
+                time: peregrine::plan::Time,
                 model_type_id: ::std::any::TypeId,
-                model: &mut dyn desparrow::undo::ErasedRecorder,
+                model: &mut dyn peregrine::undo::ErasedRecorder,
             ) {
                 #(#apply_by_id_arms)*
 

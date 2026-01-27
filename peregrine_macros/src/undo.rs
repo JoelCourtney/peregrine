@@ -140,11 +140,11 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
             #(#record_id_variants,)*
             _Phantom {
                 types: std::marker::PhantomData<#struct_name<#generic_params>>,
-                never: desparrow::undo::Never
+                never: peregrine::undo::Never
             }
         }
 
-        impl<#generic_params> desparrow::undo::IntoAnonIterator for #recorder_name<'_, #generic_params> {
+        impl<#generic_params> peregrine::undo::IntoAnonIterator for #recorder_name<'_, #generic_params> {
             type Item = #record_id_name<#generic_params>;
 
             fn into_anon_iter(self) -> impl Iterator<Item = Self::Item> {
@@ -152,7 +152,7 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl #impl_generics desparrow::undo::Undo for #struct_name #ty_generics #where_clause {
+        impl #impl_generics peregrine::undo::Undo for #struct_name #ty_generics #where_clause {
             type Recorder<'rec> = #recorder_name<'rec, #generic_params> where Self: 'rec;
             type RecordId = #record_id_name<#generic_params>;
 
@@ -170,7 +170,7 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl<#generic_params> desparrow::undo::ErasedRecorder for #recorder_name<'_, #generic_params> {}
+        impl<#generic_params> peregrine::undo::ErasedRecorder for #recorder_name<'_, #generic_params> {}
     };
 
     TokenStream::from(expanded)

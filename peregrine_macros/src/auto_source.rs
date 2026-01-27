@@ -13,25 +13,25 @@ pub fn derive_auto_source(input: TokenStream) -> TokenStream {
 
     // Add Self: Data bound to the where clause
     let where_clause = if let Some(clause) = where_clause {
-        quote! { #clause, Self: desparrow::data::Data }
+        quote! { #clause, Self: peregrine::data::Data }
     } else {
-        quote! { where Self: desparrow::data::Data }
+        quote! { where Self: peregrine::data::Data }
     };
 
     let expanded = quote! {
-        impl #impl_generics desparrow::Upstream for #name #ty_generics #where_clause {
+        impl #impl_generics peregrine::Upstream for #name #ty_generics #where_clause {
             type Output = Self;
 
-            fn node_id(&self) -> Option<desparrow::graph::NodeId> {
+            fn node_id(&self) -> Option<peregrine::graph::NodeId> {
                 None
             }
 
             #[inline(always)]
-            fn request<'s>(&self, ctx: desparrow::Ctx<'_, 's>, callback: desparrow::Callback<'s, Self::Output>)
+            fn request<'s>(&self, ctx: peregrine::Ctx<'_, 's>, callback: peregrine::Callback<'s, Self::Output>)
             where
                 Self: 's,
             {
-                callback.call(desparrow::cache::Cached::Constant(self.clone()), ctx);
+                callback.call(peregrine::cache::Cached::Constant(self.clone()), ctx);
             }
         }
     };

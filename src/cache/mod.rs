@@ -261,9 +261,9 @@ impl<T> Cached<T> {
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    use desparrow_macros::op;
+    use peregrine_macros::op;
 
-    use crate::{self as desparrow, run};
+    use crate::{self as peregrine, run};
     use crate::{
         cache::{Cache, Cached},
         graph::variable::Var,

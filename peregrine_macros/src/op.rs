@@ -38,11 +38,11 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
 
             let expanded = quote! {
                 {
-                    use desparrow::Upstream;
+                    use peregrine::Upstream;
 
                     let (#(#input_names,)*) = (#(#upstreams,)*);
                     let node_ids = [#(#input_names.node_id(),)*].into_iter().filter_map(|i| i);
-                    desparrow::graph::op::Op::new(
+                    peregrine::graph::op::Op::new(
                         (#(#input_names,)*),
                         move |(#(#input_names,)*)| {
                             #processed
@@ -68,7 +68,7 @@ fn collect_inputs(expr: &mut Expr, collected_inputs: &mut Vec<(Ident, Expr)>) ->
         }) => {
             if is_i_macro(path) {
                 let input_index = collected_inputs.len();
-                let var_ident = format_ident!("desparrow_internal_op_input_{input_index}");
+                let var_ident = format_ident!("peregrine_internal_op_input_{input_index}");
 
                 // Parse the tokens inside i!() as an expression
                 let input_expr: Expr = syn::parse2(tokens.clone())?;

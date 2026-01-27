@@ -227,7 +227,7 @@ impl<'a, T: Copy + Ord, O: Upstream<Output = O> + Default + Data> Default for Se
 
 #[cfg(test)]
 mod tests {
-    use crate as desparrow;
+    use crate as peregrine;
     use crate::{graph::series::Series, op, run};
 
     #[test]
