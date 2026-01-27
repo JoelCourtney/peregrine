@@ -14,7 +14,7 @@ pub use peregrine_macros::{AutoSource, Undo, op, activity};
 use graph::NodeId;
 
 use cache::Cached;
-use forte::{Scope, ThreadPool};
+use rayon::Scope;
 
 use crate::{cache::collector::OutputCell, data::Data, flow::Sink};
 
@@ -97,16 +97,13 @@ pub struct Ctx<'a, 's> {
 }
 
 pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
-    static COMPUTE: ThreadPool = ThreadPool::new();
     static RUN_COUNT: AtomicU64 = AtomicU64::new(0);
-
-    COMPUTE.resize_to_available();
 
     let sink = Sink::new();
 
     let run_count = RUN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    COMPUTE.scope(|scope| {
+    rayon::scope(|scope| {
         let ctx = Ctx { scope, run_count };
         upstream.request(ctx, sink.as_callback());
     });
