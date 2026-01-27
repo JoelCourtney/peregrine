@@ -5,11 +5,11 @@ use slotmap::{Key, SecondaryMap, new_key_type};
 
 use crate::{
     graph::series::dense::DenseSeries,
-    undo::{ErasedRecorder, Record, Undo, Undoer},
+    undo::{ErasedRecorder, Record, Undo, BatchUndo},
 };
 
 pub struct Plan<M: Undo> {
-    model: Undoer<M>,
+    model: BatchUndo<M>,
     activities: SecondaryMap<ActivityId, (Time, Box<dyn ErasedActivity>)>,
 }
 
@@ -18,7 +18,7 @@ new_key_type! { pub struct ActivityId; }
 impl<M: Undo> Plan<M> {
     pub fn new(model: M) -> Self {
         Self {
-            model: Undoer::new(model),
+            model: BatchUndo::new(model),
             activities: SecondaryMap::new(),
         }
     }
@@ -76,12 +76,12 @@ mod tests {
     
     #[derive(Undo)]
     struct Model {
-        #[undo] sub_model: SubModel
+        sub_model: SubModel
     }
     
     #[derive(Undo)]
     struct SubModel {
-        #[undo] x: Resource<i32>,
+        x: Resource<i32>,
     }
     
     #[derive(Serialize, Deserialize)]

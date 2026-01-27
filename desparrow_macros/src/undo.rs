@@ -46,11 +46,11 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
                         (format_ident!("{index}"), format_ident!("Field{index}"))
                     };
 
-                    // Check if field has #[undo] attribute
-                    let has_undo_attr = field.attrs.iter().any(|attr| attr.path().is_ident("undo"));
+                    // Check if field has #[no_undo] attribute
+                    let has_no_undo_attr = field.attrs.iter().any(|attr| attr.path().is_ident("no_undo"));
 
-                    if has_undo_attr {
-                        // Field is annotated with #[undo]
+                    if !has_no_undo_attr {
+                        // Field is not annotated with #[no_undo]
                         recorder_fields.push(quote! {
                             #field_vis #field_name: <#field_type as Undo>::Recorder<'rec>
                         });
@@ -75,7 +75,7 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
                             self.#field_name.into_anon_iter().map(#record_id_name::#variant_name)
                         });
                     } else {
-                        // Field is NOT annotated
+                        // Field IS no_undo
                         recorder_fields.push(quote! {
                             #field_vis #field_name: &'rec #field_type
                         });

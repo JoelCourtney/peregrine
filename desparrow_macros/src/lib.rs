@@ -16,7 +16,7 @@ pub fn op(input: TokenStream) -> TokenStream {
     op::process_op(input_expr)
 }
 
-#[proc_macro_derive(Undo, attributes(undo))]
+#[proc_macro_derive(Undo, attributes(no_undo))]
 pub fn derive_undo(input: TokenStream) -> TokenStream {
     undo::derive_undo(input)
 }

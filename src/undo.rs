@@ -28,7 +28,7 @@ impl<T: IntoIterator> IntoAnonIterator for T {
 }
 
 #[derive(Deref)]
-pub struct Undoer<M: Undo> {
+pub struct BatchUndo<M: Undo> {
     #[deref]
     model: M,
     records: SlotMap<BatchId, Vec<M::RecordId>>,
@@ -36,7 +36,7 @@ pub struct Undoer<M: Undo> {
 
 new_key_type! { pub struct BatchId; }
 
-impl<M: Undo> Undoer<M> {
+impl<M: Undo> BatchUndo<M> {
     pub fn new(model: M) -> Self {
         Self {
             model,
@@ -78,11 +78,9 @@ mod tests {
 
     #[derive(Undo)]
     struct MyModel {
-        #[undo]
         x: DenseSeries<'static, u32, f32>,
-        #[undo]
         y: DenseSeries<'static, u32, f32>,
-        z: f32,
+        #[no_undo] z: f32,
     }
 
     #[test]
@@ -93,7 +91,7 @@ mod tests {
             z: 10.0,
         };
 
-        let mut model = Undoer::new(model);
+        let mut model = BatchUndo::new(model);
 
         let id = model.update(|model| {
             let start = 5;
