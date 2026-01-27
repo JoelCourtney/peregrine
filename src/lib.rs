@@ -6,11 +6,11 @@ pub mod macro_prelude;
 pub mod node;
 pub mod undo;
 
-pub mod plan;
+pub mod specification;
 
 use std::sync::atomic::AtomicU64;
 
-pub use peregrine_macros::{AutoSource, Undo, op, activity};
+pub use peregrine_macros::{AutoSource, Undo, op, action};
 use graph::NodeId;
 
 use cache::Cached;

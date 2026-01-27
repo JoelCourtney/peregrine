@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use hifitime::Epoch;
+
 use crate::{Callback, Ctx, Upstream, cache::Cached, graph::NodeId};
 
 /// A marker trait for types that can be used as the output of a node.
@@ -58,7 +60,8 @@ impl_upstream_for_data! {
     f32, f64,
     String, char, &'static str,
     CString, &'static CStr,
-    Duration, Instant
+    Duration, Instant,
+    Epoch, hifitime::Duration
 }
 
 macro_rules! impl_upstream_for_tuple {

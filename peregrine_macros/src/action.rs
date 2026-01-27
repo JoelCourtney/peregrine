@@ -23,14 +23,14 @@ impl Parse for ModelMapping {
     }
 }
 
-struct ActivityAttr {
+struct ActionAttr {
     mappings: Vec<ModelMapping>,
 }
 
-impl Parse for ActivityAttr {
+impl Parse for ActionAttr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.is_empty() {
-            return Ok(ActivityAttr { mappings: Vec::new() });
+            return Ok(ActionAttr { mappings: Vec::new() });
         }
 
         // Parse "apply_to"
@@ -49,31 +49,31 @@ impl Parse for ActivityAttr {
         // Parse comma-separated list of mappings
         let parsed_mappings = Punctuated::<ModelMapping, Token![,]>::parse_terminated(&content)?;
 
-        Ok(ActivityAttr {
+        Ok(ActionAttr {
             mappings: parsed_mappings.into_iter().collect(),
         })
     }
 }
 
-pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn action_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
-    let attr = parse_macro_input!(attr as ActivityAttr);
+    let attr = parse_macro_input!(attr as ActionAttr);
 
-    // Validate that this is an impl block for Activity trait
+    // Validate that this is an impl block for Action trait
     let trait_path = match &input.trait_ {
         Some((_, path, _)) => path,
         None => {
-            return Error::new_spanned(&input, "The #[activity] attribute can only be applied to trait impl blocks")
+            return Error::new_spanned(&input, "The #[action] attribute can only be applied to trait impl blocks")
                 .to_compile_error()
                 .into();
         }
     };
 
-    // Check if it's implementing the Activity trait
+    // Check if it's implementing the Action trait
     let last_segment = match trait_path.segments.last() {
-        Some(seg) if seg.ident == "Activity" => seg,
+        Some(seg) if seg.ident == "Action" => seg,
         _ => {
-            return Error::new_spanned(trait_path, "The #[activity] attribute can only be applied to Activity trait implementations")
+            return Error::new_spanned(trait_path, "The #[action] attribute can only be applied to Action trait implementations")
                 .to_compile_error()
                 .into();
         }
@@ -82,13 +82,13 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Extract the type being implemented
     let self_ty = &input.self_ty;
 
-    // Extract the Model type from the generic parameter Activity<Model>
+    // Extract the Model type from the generic parameter Action<Model>
     let model_type = match &last_segment.arguments {
         PathArguments::AngleBracketed(args) => {
             if args.args.len() != 1 {
                 return Error::new_spanned(
                     &last_segment.arguments,
-                    "Activity trait should have exactly one generic parameter"
+                    "Action trait should have exactly one generic parameter"
                 )
                 .to_compile_error()
                 .into();
@@ -98,7 +98,7 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
                 _ => {
                     return Error::new_spanned(
                         &last_segment.arguments,
-                        "Activity trait parameter should be a type"
+                        "Action trait parameter should be a type"
                     )
                     .to_compile_error()
                     .into();
@@ -108,7 +108,7 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
         _ => {
             return Error::new_spanned(
                 last_segment,
-                "Activity trait must have a generic parameter, e.g., Activity<MyModel>"
+                "Action trait must have a generic parameter, e.g., Action<MyModel>"
             )
             .to_compile_error()
             .into();
@@ -119,15 +119,15 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
     let impl_generics = &input.generics;
     let (impl_gen, _, where_clause) = impl_generics.split_for_impl();
 
-    // Generate delegating Activity implementations for each mapping
+    // Generate delegating Action implementations for each mapping
     let delegating_impls = attr.mappings.iter().map(|mapping| {
         let target_model = &mapping.model_type;
         let accessor = &mapping.accessor;
 
         quote! {
-            impl #impl_gen peregrine::plan::Activity<#target_model> for #self_ty #where_clause {
-                fn apply(&self, time: peregrine::plan::Time, model: peregrine::undo::Record<#target_model>) {
-                    <Self as peregrine::plan::Activity<#model_type>>::apply(self, time, &mut #accessor);
+            impl #impl_gen peregrine::specification::Action<#target_model> for #self_ty #where_clause {
+                fn apply(&self, model: peregrine::undo::Record<#target_model>) {
+                    <Self as peregrine::specification::Action<#model_type>>::apply(self, &mut #accessor);
                 }
             }
         }
@@ -152,23 +152,22 @@ pub fn activity_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
                         as *mut <#model_ty as peregrine::undo::Undo>::Recorder<'_>)
                 };
 
-                <Self as peregrine::plan::Activity<#model_ty>>::apply(self, time, recorder);
+                <Self as peregrine::specification::Action<#model_ty>>::apply(self, recorder);
                 return;
             }
         }
     });
 
-    // Generate the ErasedActivity implementation
+    // Generate the ErasedAction implementation
     let erased_impl = quote! {
-        #[typetag::serde]
-        impl #impl_gen peregrine::plan::ErasedActivity for #self_ty #where_clause {
+        #[peregrine::macro_prelude::typetag::serde]
+        impl #impl_gen peregrine::specification::ErasedAction for #self_ty #where_clause {
             fn model_type_ids(&self) -> ::std::vec::Vec<::std::any::TypeId> {
                 vec![#(::std::any::TypeId::of::<#all_model_types>()),*]
             }
 
             unsafe fn apply_by_id(
                 &self,
-                time: peregrine::plan::Time,
                 model_type_id: ::std::any::TypeId,
                 model: &mut dyn peregrine::undo::ErasedRecorder,
             ) {

@@ -1,4 +1,4 @@
-mod activity;
+mod action;
 mod auto_source;
 mod op;
 mod undo;
@@ -27,6 +27,6 @@ pub fn derive_auto_source(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn activity(attr: TokenStream, item: TokenStream) -> TokenStream {
-    activity::activity_attribute(attr, item)
+pub fn action(attr: TokenStream, item: TokenStream) -> TokenStream {
+    action::action_attribute(attr, item)
 }
