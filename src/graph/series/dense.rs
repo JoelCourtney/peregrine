@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use derive_more::Deref;
 use slotmap::{SlotMap, new_key_type};
@@ -7,6 +7,7 @@ use crate::{
     Data, Upstream,
     graph::series::{Series, SeriesProbe},
     node::Node,
+    plan::{Chronological, ErasedChronoRecorder, Time},
     undo::{ErasedRecorder, IntoAnonIterator, Undo},
 };
 
@@ -131,6 +132,62 @@ impl<'m, T: Ord + Copy, O: Data> Undo for DenseSeries<'m, T, O> {
 
     fn remove_record(&mut self, id: Dense<T>) {
         self.remove(id);
+    }
+}
+
+pub struct DenseSeriesChronoRecorder<'r, 'i, 'm, O> {
+    time_tracker: Rc<Cell<Time>>,
+    recorder: &'r mut DenseSeriesRecorder<'i, 'm, Time, O>,
+}
+
+impl<'m, O: Data> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
+    pub fn set(&mut self, value: impl Upstream<Output = O> + 'm) -> DenseSeriesRecordKey {
+        self.recorder.set(self.time_tracker.get(), value)
+    }
+
+    pub fn remove(
+        &mut self,
+        key: DenseSeriesRecordKey,
+    ) -> Option<Arc<dyn Upstream<Output = O> + 'm>> {
+        self.recorder.remove(key)
+    }
+
+    pub fn mutate<U: Upstream<Output = O> + 'm>(
+        &mut self,
+        f: impl FnOnce(Node<Arc<SeriesProbe<'m, Dense<Time>, O>>>) -> U,
+    ) -> DenseSeriesRecordKey {
+        self.recorder.mutate(self.time_tracker.get(), f)
+    }
+
+    pub fn get(&self) -> Node<Arc<SeriesProbe<'m, Dense<Time>, O>>> {
+        self.recorder.get(self.time_tracker.get())
+    }
+
+    pub fn get_inclusive(&self) -> Node<Arc<SeriesProbe<'m, Dense<Time>, O>>> {
+        self.recorder.get_inclusive(self.time_tracker.get())
+    }
+}
+
+impl<O> ErasedChronoRecorder for DenseSeriesChronoRecorder<'_, '_, '_, O> {}
+
+impl<'m, O: Data> Chronological for DenseSeries<'m, Time, O> {
+    type ChronoRecorder<'r, 'i>
+        = DenseSeriesChronoRecorder<'r, 'i, 'm, O>
+    where
+        Self: 'r + 'i,
+        'i: 'r;
+
+    fn chrono_recorder<'r, 'i>(
+        time: &Rc<Cell<Time>>,
+        recorder: &'r mut DenseSeriesRecorder<'i, 'm, Time, O>,
+    ) -> Self::ChronoRecorder<'r, 'i>
+    where
+        'i: 'r,
+    {
+        DenseSeriesChronoRecorder::<'r, 'i, 'm, O> {
+            time_tracker: time.clone(),
+            recorder,
+        }
     }
 }
 

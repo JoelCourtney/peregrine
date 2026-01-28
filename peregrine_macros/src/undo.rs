@@ -47,7 +47,10 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
                     };
 
                     // Check if field has #[no_undo] attribute
-                    let has_no_undo_attr = field.attrs.iter().any(|attr| attr.path().is_ident("no_undo"));
+                    let has_no_undo_attr = field
+                        .attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("no_undo"));
 
                     if !has_no_undo_attr {
                         // Field is not annotated with #[no_undo]

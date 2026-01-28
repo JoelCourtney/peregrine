@@ -1,5 +1,6 @@
 mod action;
 mod auto_source;
+mod chronological;
 mod op;
 mod undo;
 
@@ -21,6 +22,11 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
     undo::derive_undo(input)
 }
 
+#[proc_macro_derive(Chronological, attributes(no_chrono))]
+pub fn derive_chronological(input: TokenStream) -> TokenStream {
+    chronological::derive_chronological(input)
+}
+
 #[proc_macro_derive(AutoSource)]
 pub fn derive_auto_source(input: TokenStream) -> TokenStream {
     auto_source::derive_auto_source(input)
@@ -28,5 +34,10 @@ pub fn derive_auto_source(input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn action(attr: TokenStream, item: TokenStream) -> TokenStream {
-    action::action_attribute(attr, item)
+    action::act_attribute(attr, item, action::ActType::Action)
+}
+
+#[proc_macro_attribute]
+pub fn activity(attr: TokenStream, item: TokenStream) -> TokenStream {
+    action::act_attribute(attr, item, action::ActType::Activity)
 }
