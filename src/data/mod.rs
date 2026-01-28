@@ -1,3 +1,6 @@
+pub mod evolving;
+pub mod polynomial;
+
 use std::{
     ffi::{CStr, CString},
     time::{Duration, Instant},

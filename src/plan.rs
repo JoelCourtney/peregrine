@@ -150,12 +150,12 @@ mod tests {
     }
 
     #[derive(Serialize, Deserialize)]
-    struct MyAction {
+    struct MyActivity {
         value: i32,
     }
 
     #[activity(apply_to = { Model => m.sub_model })]
-    impl Activity<SubModel> for MyAction {
+    impl Activity<SubModel> for MyActivity {
         fn apply(&self, mut m: Planner<SubModel>) {
             let original = m.x.get();
             m.x.set(self.value);
@@ -171,7 +171,7 @@ mod tests {
         });
 
         let plan_start = Time::from_tai_seconds(0.0);
-        let id = plan.insert(plan_start, MyAction { value: 42 });
+        let id = plan.insert(plan_start, MyActivity { value: 42 });
         let result1 = plan.x.get(Time::from_tai_seconds(1.0));
         let result2 = plan.x.get(Time::from_tai_seconds(10.0));
 
@@ -192,7 +192,7 @@ mod tests {
         });
 
         let plan_start = Time::from_tai_seconds(0.0);
-        let id = plan.insert(plan_start, MyAction { value: 42 });
+        let id = plan.insert(plan_start, MyActivity { value: 42 });
         let result1 = plan.sub_model.x.get(Time::from_tai_seconds(1.0));
         let result2 = plan.sub_model.x.get(Time::from_tai_seconds(10.0));
 
