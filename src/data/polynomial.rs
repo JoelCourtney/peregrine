@@ -1,11 +1,14 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
 use hifitime::Duration;
-use num::Zero;
+use num::{NumCast, ToPrimitive, Zero};
+use peregrine_macros::AutoSource;
 
-use crate::data::{Data, evolving::Evolving};
+use crate::data::{Data, Evolving};
 
-#[derive(Copy, Clone, PartialEq)]
+use crate as peregrine;
+
+#[derive(Copy, Clone, PartialEq, Debug, AutoSource)]
 pub struct Polynomial<const N: usize, I, T> {
     intercept: T,
     higher_coefficients: [T; N],
@@ -57,6 +60,18 @@ impl_constant_constructors![
     Duration => Duration::from_seconds(1.0);
     f32 => 1.0;
     f64 => 1.0;
+    i8 => 1;
+    i16 => 1;
+    i32 => 1;
+    i64 => 1;
+    i128 => 1;
+    isize => 1;
+    u8 => 1;
+    u16 => 1;
+    u32 => 1;
+    u64 => 1;
+    u128 => 1;
+    usize => 1;
 ];
 
 impl<const N: usize, I, T> Index<usize> for Polynomial<N, I, T> {
@@ -246,6 +261,18 @@ macro_rules! impl_evolving {
 impl_evolving! {
     f32 => identity -> f32;
     f64 => identity -> f64;
+    u8 => to_f64 -> f64;
+    u16 => to_f64 -> f64;
+    u32 => to_f64 -> f64;
+    u64 => to_f64 -> f64;
+    u128 => to_f64 -> f64;
+    usize => to_f64 -> f64;
+    i8 => to_f64 -> f64;
+    i16 => to_f64 -> f64;
+    i32 => to_f64 -> f64;
+    i64 => to_f64 -> f64;
+    i128 => to_f64 -> f64;
+    isize => to_f64 -> f64;
     Duration => duration_to_seconds -> f64;
 }
 
@@ -253,6 +280,30 @@ fn identity<T>(value: T) -> T {
     value
 }
 
+fn to_f64<T: ToPrimitive>(value: T) -> f64 {
+    <f64 as NumCast>::from(value).unwrap()
+}
+
 fn duration_to_seconds(duration: Duration) -> f64 {
     duration.to_seconds()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn polynomial_evolution() {
+        let poly = Polynomial::<2, _, _>::new(1.0, 1.0, 2.0, 3.0);
+        let evolved = poly.evolve(0.0, 1.0);
+        assert_eq!(evolved[2], 3.0);
+        assert_eq!(evolved[1], 5.0);
+        assert_eq!(evolved[0], 6.0);
+    }
+
+    #[test]
+    fn polynomial_sample() {
+        let poly = Polynomial::<2, _, _>::new(1.0, 1.0, 2.0, 3.0);
+        assert_eq!(poly.sample(0.0, 2.0), 17.0);
+    }
 }

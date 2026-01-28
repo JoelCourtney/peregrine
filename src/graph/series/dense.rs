@@ -5,7 +5,7 @@ use slotmap::{SlotMap, new_key_type};
 
 use crate::{
     Data, Upstream,
-    graph::series::{Series, SeriesProbe},
+    graph::series::{ConstantSeriesProbe, Series},
     node::Node,
     plan::{Chronological, ErasedChronoRecorder, Time},
     undo::{ErasedRecorder, IntoAnonIterator, Undo},
@@ -40,11 +40,11 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         index
     }
 
-    pub fn get(&self, index: T) -> Node<Arc<SeriesProbe<'a, Dense<T>, O>>> {
+    pub fn get(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>> {
         self.series.get(Dense { index, order: 0 })
     }
 
-    pub fn get_inclusive(&self, index: T) -> Node<Arc<SeriesProbe<'a, Dense<T>, O>>> {
+    pub fn get_inclusive(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>> {
         self.series.get_inclusive(Dense {
             index,
             order: u64::MAX,
@@ -58,7 +58,7 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
     pub fn mutate<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
-        f: impl FnOnce(Node<Arc<SeriesProbe<'a, Dense<T>, O>>>) -> U,
+        f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> Dense<T> {
         let index = Dense {
             index,
@@ -99,7 +99,7 @@ impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
     pub fn mutate<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
-        f: impl FnOnce(Node<Arc<SeriesProbe<'a, Dense<T>, O>>>) -> U,
+        f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         let index = self.series.mutate(index, f);
         self.records.insert(index)
@@ -154,16 +154,16 @@ impl<'m, O: Data> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
 
     pub fn mutate<U: Upstream<Output = O> + 'm>(
         &mut self,
-        f: impl FnOnce(Node<Arc<SeriesProbe<'m, Dense<Time>, O>>>) -> U,
+        f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         self.recorder.mutate(self.time_tracker.get(), f)
     }
 
-    pub fn get(&self) -> Node<Arc<SeriesProbe<'m, Dense<Time>, O>>> {
+    pub fn get(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.get(self.time_tracker.get())
     }
 
-    pub fn get_inclusive(&self) -> Node<Arc<SeriesProbe<'m, Dense<Time>, O>>> {
+    pub fn get_inclusive(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.get_inclusive(self.time_tracker.get())
     }
 }

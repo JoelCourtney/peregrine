@@ -1,4 +1,3 @@
-pub mod evolving;
 pub mod polynomial;
 
 use std::{
@@ -16,6 +15,13 @@ use crate::{Callback, Ctx, Upstream, cache::Cached, graph::NodeId};
 /// You don't need to implement this trait manually.
 pub trait Data: PartialEq + Clone + Send + Sync + 'static {}
 impl<T> Data for T where T: PartialEq + Clone + Send + Sync + 'static {}
+
+pub trait Evolving<I>: Data {
+    type Sample: Data;
+
+    fn evolve(&self, from: I, to: I) -> Self;
+    fn sample(&self, start: I, sample_at: I) -> Self::Sample;
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Source<T>(pub T);
