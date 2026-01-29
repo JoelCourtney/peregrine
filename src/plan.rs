@@ -131,6 +131,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use peregrine_macros::sync;
     use serde::{Deserialize, Serialize};
 
     use crate as peregrine;
@@ -154,6 +155,11 @@ mod tests {
         value: i32,
     }
 
+    #[derive(Serialize, Deserialize)]
+    struct SyncActivity {
+        value: i32,
+    }
+
     #[activity(apply_to = { Model => m.sub_model })]
     impl Activity<SubModel> for MyActivity {
         fn apply(&self, mut m: Planner<SubModel>) {
@@ -161,6 +167,24 @@ mod tests {
             m.x.set(self.value);
             m.wait(Duration::from_seconds(1.0));
             m.x.set(original + 1);
+        }
+    }
+
+    #[activity]
+    impl Activity<SubModel> for SyncActivity {
+        fn apply(&self, mut m: Planner<SubModel>) {
+            let mut internal_counter = Resource::new(0);
+            sync!(internal_counter: Resource<i32> => m);
+
+            let original = m.x.get();
+            m.x.set(self.value);
+            m.wait(Duration::from_seconds(1.0));
+
+            internal_counter.set(m.x.get() + 5);
+            m.x.set(original + 1);
+
+            m.wait(Duration::from_seconds(1.0));
+            m.x.set(internal_counter.get() + 1);
         }
     }
 
@@ -198,6 +222,25 @@ mod tests {
 
         assert_eq!(run(&result1), 42);
         assert_eq!(run(&result2), 1);
+
+        plan.remove(id);
+        assert_eq!(run(&result1), 0);
+        assert_eq!(run(&result2), 0);
+    }
+
+    #[test]
+    fn activity_with_internal_resource() {
+        let mut plan = Plan::new(SubModel {
+            x: Resource::new(0),
+        });
+
+        let plan_start = Time::from_tai_seconds(0.0);
+        let id = plan.insert(plan_start, SyncActivity { value: 42 });
+        let result1 = plan.x.get(Time::from_tai_seconds(1.0));
+        let result2 = plan.x.get(Time::from_tai_seconds(10.0));
+
+        assert_eq!(run(&result1), 42);
+        assert_eq!(run(&result2), 48);
 
         plan.remove(id);
         assert_eq!(run(&result1), 0);

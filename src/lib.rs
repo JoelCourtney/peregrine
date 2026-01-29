@@ -12,7 +12,7 @@ pub mod specification;
 use std::sync::atomic::AtomicU64;
 
 use graph::NodeId;
-pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op};
+pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op, sync};
 
 use cache::Cached;
 use rayon::Scope;
