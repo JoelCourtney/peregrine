@@ -1,6 +1,5 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
-use crate::graph::series::dense::Dense;
 use hifitime::Duration;
 use num::{NumCast, ToPrimitive, Zero};
 use peregrine_macros::AutoSource;
@@ -242,29 +241,6 @@ macro_rules! impl_evolving {
 
                 fn evolve(&self, from: $basis, to: $basis) -> Self {
                     let measure = $basis_div_transform(to - from) / $basis_div_transform(self.basis);
-                    let mut result = self.clone();
-
-                    let mut acc = result.higher_coefficients[N - 1].clone();
-                    for i in (0..N - 1).rev() {
-                        let old = self.higher_coefficients[i].clone();
-                        let diff = acc * measure;
-                        result.higher_coefficients[i] = self.higher_coefficients[i].clone() + diff.clone();
-                        acc = diff + old;
-                    }
-                    result.intercept = result.intercept + acc * measure;
-                    result
-                }
-            }
-
-            impl<const N: usize, T: Data + Mul<$measure_type, Output=T> + Add<T, Output=T>> Evolving<Dense<$basis>> for Polynomial<N, $basis, T> {
-                type Sample = T;
-
-                fn sample(&self, start: Dense<$basis>, sample_at: Dense<$basis>) -> Self::Sample {
-                    self.sample(start.index, sample_at.index)
-                }
-
-                fn evolve(&self, from: Dense<$basis>, to: Dense<$basis>) -> Self {
-                    let measure = $basis_div_transform(to.index - from.index) / $basis_div_transform(self.basis);
                     let mut result = self.clone();
 
                     let mut acc = result.higher_coefficients[N - 1].clone();

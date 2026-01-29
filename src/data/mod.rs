@@ -134,30 +134,6 @@ impl<T: Data, const N: usize> Upstream for [T; N] {
     }
 }
 
-macro_rules! impl_evolving_for_clone_constant {
-    ($($D:ty),*) => {
-        $(
-            impl<T> Evolving<T> for $D {
-                type Sample = Self;
-                fn sample(&self, _upstream_at: T, _at: T) -> Self {
-                    self.clone()
-                }
-                fn evolve(&self, _from: T, _to: T) -> Self {
-                    self.clone()
-                }
-            }
-        )*
-    };
-}
-
-impl_evolving_for_clone_constant! {
-    u8, u16, u32, u64, u128, usize,
-    i8, i16, i32, i64, i128, isize,
-    f32, f64,
-    bool, char, String, &'static str,
-    Duration, hifitime::Duration, Epoch, Instant
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
