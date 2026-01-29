@@ -293,6 +293,15 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         let result = f(self.get_evolved(index));
         self.set(index, result);
     }
+
+    pub fn mutate_sample<U: Upstream<Output = O> + 'a>(
+        &mut self,
+        index: T,
+        f: impl FnOnce(Node<Arc<SamplingSeriesProbe<'a, T, O>>>) -> U,
+    ) {
+        let result = f(self.sample(index));
+        self.set(index, result);
+    }
 }
 
 enum MontyHall {
@@ -388,7 +397,7 @@ impl<'a, T: Send + Sync, O: Data> Upstream for ConstantSeriesProbe<'a, T, O> {
     }
 }
 
-impl<'a, T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
+impl<'a, T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
     for EvolvingSeriesProbe<'a, T, O>
 {
     type Output = O;
@@ -404,10 +413,17 @@ impl<'a, T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
         let sender = self.inner.cache.get_invalidator_sender();
         let upstream_at = self.upstream_at.lock().clone();
         let at = self.inner.at.clone();
-        let callback = callback.map(|mut c| {
-            c.push_sender(sender, false);
-            c.map(|v: O| v.evolve(upstream_at, at))
-        });
+        let callback = if upstream_at != at {
+            callback.map(|mut c| {
+                c.push_sender(sender, false);
+                c.map(|v: O| v.evolve(upstream_at, at))
+            })
+        } else {
+            callback.map(|mut c| {
+                c.push_sender(sender, false);
+                c
+            })
+        };
         self.inner.upstream.lock().request(ctx, callback);
     }
 }
