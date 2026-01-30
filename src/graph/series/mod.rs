@@ -221,7 +221,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         )
     }
 
-    pub fn get_inclusive(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
+    pub fn get_inc(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
         Node(
             self.get_internal(index, true, |_, probe| {
                 StrongSeriesProbe::Constant(Arc::new(probe))
@@ -252,7 +252,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_sampling())
     }
 
-    pub fn sample_inclusive(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, T, O>>> {
+    pub fn sample_inc(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             true,
@@ -263,7 +263,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_sampling())
     }
 
-    pub fn get_evolved(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
+    pub fn evolve(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             false,
@@ -274,7 +274,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_evolving ())
     }
 
-    pub fn get_evolved_inclusive(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
+    pub fn evolve_inc(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             true,
@@ -285,12 +285,12 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_evolving())
     }
 
-    pub fn mutate_evolved<U: Upstream<Output = O> + 'a>(
+    pub fn mutate_evolve<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, T, O>>>) -> U,
     ) {
-        let result = f(self.get_evolved(index));
+        let result = f(self.evolve(index));
         self.set(index, result);
     }
 
@@ -469,9 +469,9 @@ mod tests {
         let mut s = Series::default();
         s.set(5, 5);
 
-        let probe_0 = s.get_inclusive(0);
-        let probe_5 = s.get_inclusive(5);
-        let probe_10 = s.get_inclusive(10);
+        let probe_0 = s.get_inc(0);
+        let probe_5 = s.get_inc(5);
+        let probe_10 = s.get_inc(10);
 
         assert_eq!(run(&probe_0), 0);
         assert_eq!(run(&probe_5), 5);
@@ -530,10 +530,10 @@ mod tests {
 
         s.mutate(3, |p| op!(i!(p) * 2));
 
-        assert_eq!(run(s.get_inclusive(3)), 4);
+        assert_eq!(run(s.get_inc(3)), 4);
 
         s.remove(2);
-        assert_eq!(run(s.get_inclusive(3)), 0);
+        assert_eq!(run(s.get_inc(3)), 0);
     }
 
     #[test]
@@ -544,10 +544,10 @@ mod tests {
         s.set(3, 10);
         s.mutate(3, |p| op!(i!(p) * 2));
 
-        assert_eq!(run(s.get_inclusive(3)), 4);
+        assert_eq!(run(s.get_inc(3)), 4);
 
         s.remove(2);
-        assert_eq!(run(s.get_inclusive(3)), 0);
+        assert_eq!(run(s.get_inc(3)), 0);
     }
 
     #[test]
@@ -555,7 +555,7 @@ mod tests {
         let mut s = Series::default();
         s.set(5, 5);
 
-        let probe_6 = s.get_inclusive(5);
+        let probe_6 = s.get_inc(5);
 
         assert_eq!(run(&probe_6), 5);
 
@@ -568,7 +568,7 @@ mod tests {
         let mut s = Series::new(Polynomial::<2, i32, f64>::constant(1.0));
         s.set(0, Polynomial::<2, _, _>::new(1, 1.0, 2.0, 3.0));
 
-        let probe = s.get_evolved(1);
+        let probe = s.evolve(1);
         assert_eq!(run(&probe), Polynomial::<2, _, _>::new(1, 6.0, 5.0, 3.0));
     }
 

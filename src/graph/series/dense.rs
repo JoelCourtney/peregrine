@@ -45,8 +45,8 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         self.series.get(Dense { index, order: 0 })
     }
 
-    pub fn get_inclusive(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>> {
-        self.series.get_inclusive(Dense {
+    pub fn get_inc(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>> {
+        self.series.get_inc(Dense {
             index,
             order: u64::MAX,
         })
@@ -76,28 +76,28 @@ impl<'a, T: Copy + Ord, O: Evolving<Dense<T>>> DenseSeries<'a, T, O> {
         self.series.sample(Dense { index, order: 0 })
     }
 
-    pub fn sample_inclusive(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, Dense<T>, O>>> {
-        self.series.sample_inclusive(Dense {
+    pub fn sample_inc(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, Dense<T>, O>>> {
+        self.series.sample_inc(Dense {
             index,
             order: u64::MAX,
         })
     }
 
-    pub fn get_evolved(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>> {
-        self.series.get_evolved(Dense { index, order: 0 })
+    pub fn evolve(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>> {
+        self.series.evolve(Dense { index, order: 0 })
     }
 
-    pub fn get_evolved_inclusive(
+    pub fn evolve_inc(
         &self,
         index: T,
     ) -> Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>> {
-        self.series.get_evolved_inclusive(Dense {
+        self.series.evolve_inc(Dense {
             index,
             order: u64::MAX,
         })
     }
 
-    pub fn mutate_evolved<U: Upstream<Output = O> + 'a>(
+    pub fn mutate_evolve<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>>) -> U,
@@ -107,7 +107,7 @@ impl<'a, T: Copy + Ord, O: Evolving<Dense<T>>> DenseSeries<'a, T, O> {
             order: self.counter,
         };
         self.counter += 1;
-        self.series.mutate_evolved(index, f);
+        self.series.mutate_evolve(index, f);
         index
     }
 
@@ -172,12 +172,12 @@ impl<'a, T: Copy + Ord, O: Evolving<Dense<T>>> DenseSeriesRecorder<'_, 'a, T, O>
         self.records.insert(index)
     }
 
-    pub fn mutate_evolved<U: Upstream<Output = O> + 'a>(
+    pub fn mutate_evolve<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
-        let index = self.series.mutate_evolved(index, f);
+        let index = self.series.mutate_evolve(index, f);
         self.records.insert(index)
     }
 }
@@ -239,8 +239,8 @@ impl<'m, O: Data> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
         self.recorder.get(self.time_tracker.get())
     }
 
-    pub fn get_inclusive(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
-        self.recorder.get_inclusive(self.time_tracker.get())
+    pub fn get_inc(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
+        self.recorder.get_inc(self.time_tracker.get())
     }
 }
 
@@ -249,16 +249,16 @@ impl<'m, O: Evolving<Dense<Time>>> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
         self.recorder.sample(self.time_tracker.get())
     }
 
-    pub fn sample_inclusive(&self) -> Node<Arc<SamplingSeriesProbe<'m, Dense<Time>, O>>> {
-        self.recorder.sample_inclusive(self.time_tracker.get())
+    pub fn sample_inc(&self) -> Node<Arc<SamplingSeriesProbe<'m, Dense<Time>, O>>> {
+        self.recorder.sample_inc(self.time_tracker.get())
     }
 
-    pub fn get_evolved(&self) -> Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>> {
-        self.recorder.get_evolved(self.time_tracker.get())
+    pub fn evolve(&self) -> Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>> {
+        self.recorder.evolve(self.time_tracker.get())
     }
 
-    pub fn get_evolved_inclusive(&self) -> Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>> {
-        self.recorder.get_evolved_inclusive(self.time_tracker.get())
+    pub fn evolve_inc(&self) -> Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>> {
+        self.recorder.evolve_inc(self.time_tracker.get())
     }
 
     pub fn mutate_sample<U: Upstream<Output = O> + 'm>(
@@ -268,11 +268,11 @@ impl<'m, O: Evolving<Dense<Time>>> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
         self.recorder.mutate_sample(self.time_tracker.get(), f)
     }
 
-    pub fn mutate_evolved<U: Upstream<Output = O> + 'm>(
+    pub fn mutate_evolve<U: Upstream<Output = O> + 'm>(
         &mut self,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
-        self.recorder.mutate_evolved(self.time_tracker.get(), f)
+        self.recorder.mutate_evolve(self.time_tracker.get(), f)
     }
 }
 
