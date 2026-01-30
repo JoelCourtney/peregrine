@@ -1,7 +1,7 @@
 pub mod dense;
 // pub mod fuzzy;
 
-use crate::{Data, Upstream, cache::Cache, data::Evolving, graph::NodeId, node::Node};
+use crate::{Data, Upstream, cache::Cache, data::evolving::Evolving, graph::NodeId, node::Node};
 use parking_lot::Mutex;
 use std::{
     collections::BTreeMap,

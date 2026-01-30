@@ -4,7 +4,8 @@ use hifitime::Duration;
 use num::{NumCast, ToPrimitive, Zero};
 use peregrine_macros::AutoSource;
 
-use crate::data::{Data, Evolving};
+use crate::data::Data;
+use crate::data::evolving::Evolving;
 
 use crate as peregrine;
 

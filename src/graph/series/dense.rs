@@ -1,16 +1,11 @@
-use std::{
-    cell::Cell,
-    rc::Rc,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use derive_more::Deref;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
     Data, Upstream,
-    data::Evolving,
+    data::evolving::Evolving,
     graph::series::{ConstantSeriesProbe, EvolvingSeriesProbe, SamplingSeriesProbe, Series},
     node::Node,
     plan::{Chronological, ErasedChronoRecorder, Time},
@@ -21,29 +16,6 @@ use crate::{
 pub struct Dense<T> {
     pub index: T,
     pub order: u64,
-}
-
-macro_rules! impl_evolving_over_dense {
-    ($($t:ty),*) => {
-        $(
-            impl<D: Evolving<$t>> Evolving<Dense<$t>> for D {
-                type Sample = <D as Evolving<$t>>::Sample;
-                fn sample(&self, upstream_at: Dense<$t>, at: Dense<$t>) -> Self::Sample {
-                    <D as Evolving<$t>>::sample(self, upstream_at.index, at.index)
-                }
-                fn evolve(&self, from: Dense<$t>, to: Dense<$t>) -> Self {
-                    <D as Evolving<$t>>::evolve(self, from.index, to.index)
-                }
-            }
-        )*
-    };
-}
-
-impl_evolving_over_dense! {
-    u8, u16, u32, u64, u128, usize,
-    i8, i16, i32, i64, i128, isize,
-    f32, f64,
-    Duration, hifitime::Duration, Time, Instant
 }
 
 pub struct DenseSeries<'a, T, O> {
