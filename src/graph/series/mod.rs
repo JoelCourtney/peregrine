@@ -116,7 +116,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         }
     }
 
-    pub fn set(&mut self, index: T, upstream: impl Upstream<Output = O> + 'a) {
+    pub fn set_at(&mut self, index: T, upstream: impl Upstream<Output = O> + 'a) {
         let upstream = Arc::new(upstream) as Arc<dyn Upstream<Output = O>>;
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         let probed = map
@@ -212,7 +212,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         mapped
     }
 
-    pub fn get(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
+    pub fn get_at(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
         Node(
             self.get_internal(index, false, |_, probe| {
                 StrongSeriesProbe::Constant(Arc::new(probe))
@@ -221,7 +221,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         )
     }
 
-    pub fn get_inc(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
+    pub fn get_at_inc(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
         Node(
             self.get_internal(index, true, |_, probe| {
                 StrongSeriesProbe::Constant(Arc::new(probe))
@@ -230,18 +230,18 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         )
     }
 
-    pub fn mutate<U: Upstream<Output = O> + 'a>(
+    pub fn mutate_at<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
         f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'a, T, O>>>) -> U,
     ) {
-        let result = f(self.get(index));
-        self.set(index, result);
+        let result = f(self.get_at(index));
+        self.set_at(index, result);
     }
 }
 
 impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
-    pub fn sample(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, T, O>>> {
+    pub fn sample_at(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             false,
@@ -252,7 +252,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_sampling())
     }
 
-    pub fn sample_inc(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, T, O>>> {
+    pub fn sample_at_inc(&self, index: T) -> Node<Arc<SamplingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             true,
@@ -263,7 +263,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_sampling())
     }
 
-    pub fn evolve(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
+    pub fn evolve_at(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             false,
@@ -274,7 +274,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_evolving ())
     }
 
-    pub fn evolve_inc(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
+    pub fn evolve_at_inc(&self, index: T) -> Node<Arc<EvolvingSeriesProbe<'a, T, O>>> {
         Node(self.get_internal(
             index,
             true,
@@ -285,22 +285,22 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
         ).unwrap_evolving())
     }
 
-    pub fn mutate_evolve<U: Upstream<Output = O> + 'a>(
+    pub fn mutate_evolve_at<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, T, O>>>) -> U,
     ) {
-        let result = f(self.evolve(index));
-        self.set(index, result);
+        let result = f(self.evolve_at(index));
+        self.set_at(index, result);
     }
 
-    pub fn mutate_sample<U: Upstream<Output = O> + 'a>(
+    pub fn mutate_sample_at<U: Upstream<Output = O> + 'a>(
         &mut self,
         index: T,
         f: impl FnOnce(Node<Arc<SamplingSeriesProbe<'a, T, O>>>) -> U,
     ) {
-        let result = f(self.sample(index));
-        self.set(index, result);
+        let result = f(self.sample_at(index));
+        self.set_at(index, result);
     }
 }
 
@@ -467,11 +467,11 @@ mod tests {
     #[test]
     fn set_inclusive() {
         let mut s = Series::default();
-        s.set(5, 5);
+        s.set_at(5, 5);
 
-        let probe_0 = s.get_inc(0);
-        let probe_5 = s.get_inc(5);
-        let probe_10 = s.get_inc(10);
+        let probe_0 = s.get_at_inc(0);
+        let probe_5 = s.get_at_inc(5);
+        let probe_10 = s.get_at_inc(10);
 
         assert_eq!(run(&probe_0), 0);
         assert_eq!(run(&probe_5), 5);
@@ -481,23 +481,23 @@ mod tests {
     #[test]
     fn set_exclusive() {
         let mut s = Series::new(0);
-        s.set(5, 5);
+        s.set_at(5, 5);
 
-        let probe_0 = s.get(0);
-        let probe_5 = s.get(5);
-        let probe_10 = s.get(10);
+        let probe_0 = s.get_at(0);
+        let probe_5 = s.get_at(5);
+        let probe_10 = s.get_at(10);
 
         assert_eq!(run(&probe_0), 0);
         assert_eq!(run(&probe_5), 0);
         assert_eq!(run(&probe_10), 5);
 
-        s.set(7, 7);
+        s.set_at(7, 7);
 
         assert_eq!(run(&probe_0), 0);
         assert_eq!(run(&probe_5), 0);
         assert_eq!(run(&probe_10), 7);
 
-        s.set(3, 3);
+        s.set_at(3, 3);
 
         assert_eq!(run(probe_0), 0);
         assert_eq!(run(probe_5), 3);
@@ -507,11 +507,11 @@ mod tests {
     #[test]
     fn remove() {
         let mut s = Series::new(0);
-        s.set(3, 3);
-        s.set(5, 5);
+        s.set_at(3, 3);
+        s.set_at(5, 5);
 
-        let probe_4 = s.get(4);
-        let probe_6 = s.get(6);
+        let probe_4 = s.get_at(4);
+        let probe_6 = s.get_at(6);
 
         assert_eq!(run(&probe_4), 3);
         assert_eq!(run(&probe_6), 5);
@@ -526,61 +526,61 @@ mod tests {
     #[test]
     fn mutate() {
         let mut s = Series::new(0);
-        s.set(2, 2);
+        s.set_at(2, 2);
 
-        s.mutate(3, |p| op!(i!(p) * 2));
+        s.mutate_at(3, |p| op!(i!(p) * 2));
 
-        assert_eq!(run(s.get_inc(3)), 4);
+        assert_eq!(run(s.get_at_inc(3)), 4);
 
         s.remove(2);
-        assert_eq!(run(s.get_inc(3)), 0);
+        assert_eq!(run(s.get_at_inc(3)), 0);
     }
 
     #[test]
     fn mutate_overwrite() {
         let mut s = Series::new(0);
-        s.set(2, 2);
+        s.set_at(2, 2);
 
-        s.set(3, 10);
-        s.mutate(3, |p| op!(i!(p) * 2));
+        s.set_at(3, 10);
+        s.mutate_at(3, |p| op!(i!(p) * 2));
 
-        assert_eq!(run(s.get_inc(3)), 4);
+        assert_eq!(run(s.get_at_inc(3)), 4);
 
         s.remove(2);
-        assert_eq!(run(s.get_inc(3)), 0);
+        assert_eq!(run(s.get_at_inc(3)), 0);
     }
 
     #[test]
     fn overwrite() {
         let mut s = Series::default();
-        s.set(5, 5);
+        s.set_at(5, 5);
 
-        let probe_6 = s.get_inc(5);
+        let probe_6 = s.get_at_inc(5);
 
         assert_eq!(run(&probe_6), 5);
 
-        s.set(5, 10);
+        s.set_at(5, 10);
         assert_eq!(run(&probe_6), 10);
     }
 
     #[test]
     fn evolve() {
         let mut s = Series::new(Polynomial::<2, i32, f64>::constant(1.0));
-        s.set(0, Polynomial::<2, _, _>::new(1, 1.0, 2.0, 3.0));
+        s.set_at(0, Polynomial::<2, _, _>::new(1, 1.0, 2.0, 3.0));
 
-        let probe = s.evolve(1);
+        let probe = s.evolve_at(1);
         assert_eq!(run(&probe), Polynomial::<2, _, _>::new(1, 6.0, 5.0, 3.0));
     }
 
     #[test]
     fn sample() {
         let mut s = Series::new(Polynomial::<1, i32, f64>::constant(1.0));
-        s.set(0, Polynomial::<1, _, _>::new(1, 1.0, 2.0));
+        s.set_at(0, Polynomial::<1, _, _>::new(1, 1.0, 2.0));
 
-        let probe = s.sample(5);
+        let probe = s.sample_at(5);
         assert_eq!(run(&probe), 11.0);
 
-        s.set(2, Polynomial::<1, _, _>::new(1, -20.0, 5.0));
+        s.set_at(2, Polynomial::<1, _, _>::new(1, -20.0, 5.0));
 
         assert_eq!(run(&probe), -5.0);
     }

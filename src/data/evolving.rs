@@ -287,18 +287,18 @@ mod tests {
             step_counter: step_counter.clone(),
         };
         let mut s = Series::new(Evolution::new(lorenz.clone()));
-        s.set(OrderedFloat(0.0), Evolution::new(lorenz));
+        s.set_at(OrderedFloat(0.0), Evolution::new(lorenz));
 
-        run(s.sample(OrderedFloat(5.0)));
+        run(s.sample_at(OrderedFloat(5.0)));
 
         // 501 instead of 500 because floating point math
         assert_eq!(501, step_counter.load(Ordering::Relaxed));
 
-        run(s.sample(6.0.into()));
+        run(s.sample_at(6.0.into()));
 
         assert_eq!(601, step_counter.load(Ordering::Relaxed));
 
-        run(s.sample(3.0.into()));
+        run(s.sample_at(3.0.into()));
 
         assert_eq!(601, step_counter.load(Ordering::Relaxed));
     }

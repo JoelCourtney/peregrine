@@ -98,22 +98,22 @@ mod tests {
             let start = 5;
             let end = start + 3;
 
-            model.x.set(start, *model.z);
-            model.x.set(end, model.x.get(start));
+            model.x.set_at(start, *model.z);
+            model.x.set_at(end, model.x.get_at(start));
 
-            model.y.mutate(end, |y| y + model.x.get(end));
+            model.y.mutate_at(end, |y| y + model.x.get_at(end));
         });
 
-        assert_eq!(run(model.x.get(4)), 5.0);
-        assert_eq!(run(model.x.get(6)), 10.0);
-        assert_eq!(run(model.y.get(10)), 16.0);
-        assert_eq!(run(model.x.get(10)), 5.0);
+        assert_eq!(run(model.x.get_at(4)), 5.0);
+        assert_eq!(run(model.x.get_at(6)), 10.0);
+        assert_eq!(run(model.y.get_at(10)), 16.0);
+        assert_eq!(run(model.x.get_at(10)), 5.0);
 
         model.undo(id);
 
-        assert_eq!(run(model.x.get(4)), 5.0);
-        assert_eq!(run(model.x.get(6)), 5.0);
-        assert_eq!(run(model.y.get(10)), 6.0);
-        assert_eq!(run(model.x.get(10)), 5.0);
+        assert_eq!(run(model.x.get_at(4)), 5.0);
+        assert_eq!(run(model.x.get_at(6)), 5.0);
+        assert_eq!(run(model.y.get_at(10)), 6.0);
+        assert_eq!(run(model.x.get_at(10)), 5.0);
     }
 }

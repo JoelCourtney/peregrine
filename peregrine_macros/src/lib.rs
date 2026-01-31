@@ -28,6 +28,11 @@ pub fn derive_chronological(input: TokenStream) -> TokenStream {
     chronological::derive_chronological(input)
 }
 
+#[proc_macro_attribute]
+pub fn chronological(attr: TokenStream, item: TokenStream) -> TokenStream {
+    chronological::chronological_attribute(attr, item)
+}
+
 #[proc_macro_derive(AutoSource)]
 pub fn derive_auto_source(input: TokenStream) -> TokenStream {
     auto_source::derive_auto_source(input)

@@ -131,11 +131,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use peregrine_macros::sync;
+    use peregrine_macros::{chronological, op, sync};
     use serde::{Deserialize, Serialize};
 
-    use crate as peregrine;
+    use crate::node::Node;
     use crate::plan::{Resource, Time};
+    use crate::{self as peregrine, Upstream};
     use crate::{Chronological, Undo, activity, run};
 
     use super::*;
@@ -150,6 +151,17 @@ mod tests {
         x: Resource<i32>,
     }
 
+    #[chronological]
+    impl SubModel {
+        #[allow(unused)]
+        fn x_sq(&self, #[sync] at: Time) -> Node<impl Upstream<Output = i32> + use<>> {
+            op! {
+                let x = i!(self.x.get_at(at));
+                x * x
+            }
+        }
+    }
+
     #[derive(Serialize, Deserialize)]
     struct MyActivity {
         value: i32,
@@ -157,6 +169,11 @@ mod tests {
 
     #[derive(Serialize, Deserialize)]
     struct SyncActivity {
+        value: i32,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct SyncedModelActivity {
         value: i32,
     }
 
@@ -188,6 +205,16 @@ mod tests {
         }
     }
 
+    #[activity]
+    impl Activity<SubModel> for SyncedModelActivity {
+        fn apply(&self, mut m: Planner<SubModel>) {
+            m.x.set(self.value);
+            m.wait(Duration::from_seconds(2.0));
+            let x_sq = m.x_sq();
+            m.x.set(x_sq);
+        }
+    }
+
     #[test]
     fn activity() {
         let mut plan = Plan::new(SubModel {
@@ -196,8 +223,8 @@ mod tests {
 
         let plan_start = Time::from_tai_seconds(0.0);
         let id = plan.insert(plan_start, MyActivity { value: 42 });
-        let result1 = plan.x.get(Time::from_tai_seconds(1.0));
-        let result2 = plan.x.get(Time::from_tai_seconds(10.0));
+        let result1 = plan.x.get_at(Time::from_tai_seconds(1.0));
+        let result2 = plan.x.get_at(Time::from_tai_seconds(10.0));
 
         assert_eq!(run(&result1), 42);
         assert_eq!(run(&result2), 1);
@@ -217,8 +244,8 @@ mod tests {
 
         let plan_start = Time::from_tai_seconds(0.0);
         let id = plan.insert(plan_start, MyActivity { value: 42 });
-        let result1 = plan.sub_model.x.get(Time::from_tai_seconds(1.0));
-        let result2 = plan.sub_model.x.get(Time::from_tai_seconds(10.0));
+        let result1 = plan.sub_model.x.get_at(Time::from_tai_seconds(1.0));
+        let result2 = plan.sub_model.x.get_at(Time::from_tai_seconds(10.0));
 
         assert_eq!(run(&result1), 42);
         assert_eq!(run(&result2), 1);
@@ -236,11 +263,30 @@ mod tests {
 
         let plan_start = Time::from_tai_seconds(0.0);
         let id = plan.insert(plan_start, SyncActivity { value: 42 });
-        let result1 = plan.x.get(Time::from_tai_seconds(1.0));
-        let result2 = plan.x.get(Time::from_tai_seconds(10.0));
+        let result1 = plan.x.get_at(Time::from_tai_seconds(1.0));
+        let result2 = plan.x.get_at(Time::from_tai_seconds(10.0));
 
         assert_eq!(run(&result1), 42);
         assert_eq!(run(&result2), 48);
+
+        plan.remove(id);
+        assert_eq!(run(&result1), 0);
+        assert_eq!(run(&result2), 0);
+    }
+
+    #[test]
+    fn model_with_synced_function() {
+        let mut plan = Plan::new(SubModel {
+            x: Resource::new(0),
+        });
+
+        let plan_start = Time::from_tai_seconds(0.0);
+        let id = plan.insert(plan_start, SyncedModelActivity { value: 3 });
+        let result1 = plan.x.get_at(Time::from_tai_seconds(1.0));
+        let result2 = plan.x.get_at(Time::from_tai_seconds(10.0));
+
+        assert_eq!(run(&result1), 3);
+        assert_eq!(run(&result2), 9);
 
         plan.remove(id);
         assert_eq!(run(&result1), 0);

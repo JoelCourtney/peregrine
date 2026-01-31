@@ -86,7 +86,7 @@ mod tests {
     impl Action<SubModel> for MyAction {
         fn apply(&self, model: Record<SubModel>) {
             let time = Time::from_tai_seconds(0.0);
-            model.x.set(time, self.value);
+            model.x.set_at(time, self.value);
         }
     }
 
@@ -97,7 +97,7 @@ mod tests {
         });
 
         let id = spec.insert(MyAction { value: 42 });
-        let result = spec.x.get(Time::from_tai_seconds(1.0));
+        let result = spec.x.get_at(Time::from_tai_seconds(1.0));
 
         assert_eq!(run(&result), 42);
 
@@ -114,7 +114,7 @@ mod tests {
         });
 
         let id = spec.insert(MyAction { value: 42 });
-        let result = spec.sub_model.x.get(Time::from_tai_seconds(1.0));
+        let result = spec.sub_model.x.get_at(Time::from_tai_seconds(1.0));
 
         assert_eq!(run(&result), 42);
 
