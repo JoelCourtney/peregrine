@@ -55,12 +55,12 @@ pub fn derive_undo(input: TokenStream) -> TokenStream {
                     if !has_no_undo_attr {
                         // Field is not annotated with #[no_undo]
                         recorder_fields.push(quote! {
-                            #field_vis #field_name: <#field_type as Undo>::Recorder<'rec>
+                            #field_vis #field_name: <#field_type as peregrine::undo::Undo>::Recorder<'rec>
                         });
 
                         // Add variant to RecordId enum
                         record_id_variants.push(quote! {
-                            #variant_name(<#field_type as Undo>::RecordId)
+                            #variant_name(<#field_type as peregrine::undo::Undo>::RecordId)
                         });
 
                         // Add recorder initialization (call .recorder() on the field)

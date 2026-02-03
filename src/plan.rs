@@ -129,6 +129,32 @@ where
     }
 }
 
+/// ```compile_fail
+/// use serde::{Deserialize, Serialize};
+/// use peregrine::{Undo, Chronological, activity, plan::{Activity, Resource, Time, Planner}};
+/// use hifitime::Duration;
+/// #[derive(Undo, Chronological)]
+/// struct SubModel {
+///     x: Resource<i32>,
+/// }
+/// #[derive(Serialize, Deserialize)]
+/// struct SyncedModelActivity {
+///     value: i32,
+/// }
+/// #[activity]
+/// impl Activity<SubModel> for SyncedModelActivity {
+///     fn apply(&self, mut m: Planner<SubModel>) {
+///         m.x.set(self.value);
+///         m.wait(Duration::from_seconds(2.0));
+///
+///         m.x.set(m.x.get());
+///         todo!("Make the line above pass!");
+///     }
+/// }
+/// ```
+#[allow(unused)]
+struct CompileFailTest;
+
 #[cfg(test)]
 mod tests {
     use peregrine_macros::{chronological, op, sync};
