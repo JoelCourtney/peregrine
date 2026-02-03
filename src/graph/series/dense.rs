@@ -1,4 +1,11 @@
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use derive_more::Deref;
 use slotmap::{SlotMap, new_key_type};
@@ -20,24 +27,23 @@ pub struct Dense<T> {
 
 pub struct DenseSeries<'a, T, O> {
     series: Series<'a, Dense<T>, O>,
-    counter: u64,
+    counter: AtomicU64,
 }
 
 impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
     pub fn new(default: impl Upstream<Output = O> + 'a) -> Self {
         Self {
             series: Series::new(default),
-            counter: 0,
+            counter: AtomicU64::new(0),
         }
     }
 
-    pub fn set_at(&mut self, index: T, value: impl Upstream<Output = O> + 'a) -> Dense<T> {
+    pub fn set_at(&self, index: T, value: impl Upstream<Output = O> + 'a) -> Dense<T> {
         let index = Dense {
             index,
-            order: self.counter,
+            order: self.counter.fetch_add(1, Ordering::Relaxed),
         };
         self.series.set_at(index, value);
-        self.counter += 1;
         index
     }
 
@@ -52,20 +58,19 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         })
     }
 
-    pub fn remove(&mut self, index: Dense<T>) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
+    pub fn remove(&self, index: Dense<T>) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
         self.series.remove(index)
     }
 
     pub fn mutate_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> Dense<T> {
         let index = Dense {
             index,
-            order: self.counter,
+            order: self.counter.fetch_add(1, Ordering::Relaxed),
         };
-        self.counter += 1;
         self.series.mutate_at(index, f);
         index
     }
@@ -95,29 +100,27 @@ impl<'a, T: Copy + Ord, O: Evolving<Dense<T>>> DenseSeries<'a, T, O> {
     }
 
     pub fn mutate_evolve_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> Dense<T> {
         let index = Dense {
             index,
-            order: self.counter,
+            order: self.counter.fetch_add(1, Ordering::Relaxed),
         };
-        self.counter += 1;
         self.series.mutate_evolve_at(index, f);
         index
     }
 
     pub fn mutate_sample_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<SamplingSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> Dense<T> {
         let index = Dense {
             index,
-            order: self.counter,
+            order: self.counter.fetch_add(1, Ordering::Relaxed),
         };
-        self.counter += 1;
         self.series.mutate_sample_at(index, f);
         index
     }
@@ -128,25 +131,18 @@ new_key_type! { pub struct DenseSeriesRecordKey; }
 #[derive(Deref)]
 pub struct DenseSeriesRecorder<'a, 'm, T, O> {
     #[deref]
-    series: &'a mut DenseSeries<'m, T, O>,
-    records: SlotMap<DenseSeriesRecordKey, Dense<T>>,
+    series: &'a DenseSeries<'m, T, O>,
+    records: RefCell<SlotMap<DenseSeriesRecordKey, Dense<T>>>,
 }
 
 impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
-    pub fn set_at(
-        &mut self,
-        index: T,
-        value: impl Upstream<Output = O> + 'a,
-    ) -> DenseSeriesRecordKey {
+    pub fn set_at(&self, index: T, value: impl Upstream<Output = O> + 'a) -> DenseSeriesRecordKey {
         let index = self.series.set_at(index, value);
-        self.records.insert(index)
+        self.records.borrow_mut().insert(index)
     }
 
-    pub fn remove(
-        &mut self,
-        key: DenseSeriesRecordKey,
-    ) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
-        if let Some(index) = self.records.remove(key) {
+    pub fn remove(&self, key: DenseSeriesRecordKey) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
+        if let Some(index) = self.records.borrow_mut().remove(key) {
             self.series.remove(index)
         } else {
             None
@@ -154,32 +150,32 @@ impl<'a, T: Copy + Ord, O: Data> DenseSeriesRecorder<'_, 'a, T, O> {
     }
 
     pub fn mutate_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         let index = self.series.mutate_at(index, f);
-        self.records.insert(index)
+        self.records.borrow_mut().insert(index)
     }
 }
 
 impl<'a, T: Copy + Ord, O: Evolving<Dense<T>>> DenseSeriesRecorder<'_, 'a, T, O> {
     pub fn mutate_sample_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<SamplingSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         let index = self.series.mutate_sample_at(index, f);
-        self.records.insert(index)
+        self.records.borrow_mut().insert(index)
     }
 
     pub fn mutate_evolve_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, Dense<T>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         let index = self.series.mutate_evolve_at(index, f);
-        self.records.insert(index)
+        self.records.borrow_mut().insert(index)
     }
 }
 
@@ -189,7 +185,7 @@ impl<'a, 'm, T, O> IntoAnonIterator for DenseSeriesRecorder<'a, 'm, T, O> {
     type Item = Dense<T>;
 
     fn into_anon_iter(self) -> impl Iterator<Item = Dense<T>> {
-        self.records.into_iter().map(|(_, v)| v)
+        self.records.into_inner().into_iter().map(|(_, v)| v)
     }
 }
 
@@ -203,7 +199,7 @@ impl<'m, T: Ord + Copy, O: Data> Undo for DenseSeries<'m, T, O> {
     fn recorder(&mut self) -> Self::Recorder<'_> {
         DenseSeriesRecorder {
             series: self,
-            records: SlotMap::with_key(),
+            records: RefCell::new(SlotMap::with_key()),
         }
     }
 
@@ -216,16 +212,16 @@ impl<'m, T: Ord + Copy, O: Data> Undo for DenseSeries<'m, T, O> {
 pub struct DenseSeriesChronoRecorder<'r, 'i, 'm, O> {
     time_tracker: Rc<Cell<Time>>,
     #[deref]
-    recorder: &'r mut DenseSeriesRecorder<'i, 'm, Time, O>,
+    recorder: &'r DenseSeriesRecorder<'i, 'm, Time, O>,
 }
 
 impl<'m, O: Data> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
-    pub fn set(&mut self, value: impl Upstream<Output = O> + 'm) -> DenseSeriesRecordKey {
+    pub fn set(&self, value: impl Upstream<Output = O> + 'm) -> DenseSeriesRecordKey {
         self.recorder.set_at(self.time_tracker.get(), value)
     }
 
     pub fn mutate<U: Upstream<Output = O> + 'm>(
-        &mut self,
+        &self,
         f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         self.recorder.mutate_at(self.time_tracker.get(), f)
@@ -258,14 +254,14 @@ impl<'m, O: Evolving<Dense<Time>>> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
     }
 
     pub fn mutate_sample<U: Upstream<Output = O> + 'm>(
-        &mut self,
+        &self,
         f: impl FnOnce(Node<Arc<SamplingSeriesProbe<'m, Dense<Time>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         self.recorder.mutate_sample_at(self.time_tracker.get(), f)
     }
 
     pub fn mutate_evolve<U: Upstream<Output = O> + 'm>(
-        &mut self,
+        &self,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>>) -> U,
     ) -> DenseSeriesRecordKey {
         self.recorder.mutate_evolve_at(self.time_tracker.get(), f)
@@ -302,7 +298,7 @@ mod tests {
 
     #[test]
     fn dense_set_remove() {
-        let mut s = DenseSeries::new(0);
+        let s = DenseSeries::new(0);
         s.set_at(1, 1);
         s.set_at(1, 2);
         let idx = s.set_at(1, 3);
@@ -318,7 +314,7 @@ mod tests {
 
     #[test]
     fn dense_mutate() {
-        let mut s = DenseSeries::new(0);
+        let s = DenseSeries::new(0);
         s.set_at(1, 1);
         s.mutate_at(1, |p| op!(i!(p) + 1));
         let middle = s.mutate_at(1, |p| op!(i!(p) + 10));

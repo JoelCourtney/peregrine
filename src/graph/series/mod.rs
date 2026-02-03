@@ -1,5 +1,5 @@
 pub mod dense;
-// pub mod fuzzy;
+// pub mod lazy;
 
 use crate::{Data, Upstream, cache::Cache, data::evolving::Evolving, graph::NodeId, node::Node};
 use parking_lot::Mutex;
@@ -116,7 +116,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         }
     }
 
-    pub fn set_at(&mut self, index: T, upstream: impl Upstream<Output = O> + 'a) {
+    pub fn set_at(&self, index: T, upstream: impl Upstream<Output = O> + 'a) {
         let upstream = Arc::new(upstream) as Arc<dyn Upstream<Output = O>>;
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         let probed = map
@@ -155,7 +155,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         self.node.add_edges(new_node_id);
     }
 
-    pub fn remove(&mut self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
+    pub fn remove(&self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         if let Some(ProbedUpstream {
             upstream: old_node,
@@ -231,7 +231,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
     }
 
     pub fn mutate_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<ConstantSeriesProbe<'a, T, O>>>) -> U,
     ) {
@@ -286,7 +286,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
     }
 
     pub fn mutate_evolve_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<EvolvingSeriesProbe<'a, T, O>>>) -> U,
     ) {
@@ -295,7 +295,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
     }
 
     pub fn mutate_sample_at<U: Upstream<Output = O> + 'a>(
-        &mut self,
+        &self,
         index: T,
         f: impl FnOnce(Node<Arc<SamplingSeriesProbe<'a, T, O>>>) -> U,
     ) {
@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn set_inclusive() {
-        let mut s = Series::default();
+        let s = Series::default();
         s.set_at(5, 5);
 
         let probe_0 = s.get_at_inc(0);
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn set_exclusive() {
-        let mut s = Series::new(0);
+        let s = Series::new(0);
         s.set_at(5, 5);
 
         let probe_0 = s.get_at(0);
@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn remove() {
-        let mut s = Series::new(0);
+        let s = Series::new(0);
         s.set_at(3, 3);
         s.set_at(5, 5);
 
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn mutate() {
-        let mut s = Series::new(0);
+        let s = Series::new(0);
         s.set_at(2, 2);
 
         s.mutate_at(3, |p| op!(i!(p) * 2));
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn mutate_overwrite() {
-        let mut s = Series::new(0);
+        let s = Series::new(0);
         s.set_at(2, 2);
 
         s.set_at(3, 10);
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn overwrite() {
-        let mut s = Series::default();
+        let s = Series::default();
         s.set_at(5, 5);
 
         let probe_6 = s.get_at_inc(5);
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn evolve() {
-        let mut s = Series::new(Polynomial::<2, i32, f64>::constant(1.0));
+        let s = Series::new(Polynomial::<2, i32, f64>::constant(1.0));
         s.set_at(0, Polynomial::<2, _, _>::new(1, 1.0, 2.0, 3.0));
 
         let probe = s.evolve_at(1);
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn sample() {
-        let mut s = Series::new(Polynomial::<1, i32, f64>::constant(1.0));
+        let s = Series::new(Polynomial::<1, i32, f64>::constant(1.0));
         s.set_at(0, Polynomial::<1, _, _>::new(1, 1.0, 2.0));
 
         let probe = s.sample_at(5);

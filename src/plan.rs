@@ -129,32 +129,6 @@ where
     }
 }
 
-/// ```compile_fail
-/// use serde::{Deserialize, Serialize};
-/// use peregrine::{Undo, Chronological, activity, plan::{Activity, Resource, Time, Planner}};
-/// use hifitime::Duration;
-/// #[derive(Undo, Chronological)]
-/// struct SubModel {
-///     x: Resource<i32>,
-/// }
-/// #[derive(Serialize, Deserialize)]
-/// struct SyncedModelActivity {
-///     value: i32,
-/// }
-/// #[activity]
-/// impl Activity<SubModel> for SyncedModelActivity {
-///     fn apply(&self, mut m: Planner<SubModel>) {
-///         m.x.set(self.value);
-///         m.wait(Duration::from_seconds(2.0));
-///
-///         m.x.set(m.x.get());
-///         todo!("Make the line above pass!");
-///     }
-/// }
-/// ```
-#[allow(unused)]
-struct CompileFailTest;
-
 #[cfg(test)]
 mod tests {
     use peregrine_macros::{chronological, op, sync};
@@ -205,7 +179,7 @@ mod tests {
 
     #[activity(apply_to = { Model => m.sub_model })]
     impl Activity<SubModel> for MyActivity {
-        fn apply(&self, mut m: Planner<SubModel>) {
+        fn apply(&self, m: Planner<SubModel>) {
             let original = m.x.get();
             m.x.set(self.value);
             m.wait(Duration::from_seconds(1.0));
@@ -215,7 +189,7 @@ mod tests {
 
     #[activity]
     impl Activity<SubModel> for SyncActivity {
-        fn apply(&self, mut m: Planner<SubModel>) {
+        fn apply(&self, m: Planner<SubModel>) {
             let mut internal_counter = Resource::new(0);
             sync!(internal_counter: Resource<i32> => m);
 
@@ -233,11 +207,10 @@ mod tests {
 
     #[activity]
     impl Activity<SubModel> for SyncedModelActivity {
-        fn apply(&self, mut m: Planner<SubModel>) {
+        fn apply(&self, m: Planner<SubModel>) {
             m.x.set(self.value);
             m.wait(Duration::from_seconds(2.0));
-            let x_sq = m.x_sq();
-            m.x.set(x_sq);
+            m.x.set(m.x_sq());
         }
     }
 

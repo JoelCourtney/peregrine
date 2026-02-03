@@ -286,7 +286,7 @@ mod tests {
             beta: 8.0 / 3.0,
             step_counter: step_counter.clone(),
         };
-        let mut s = Series::new(Evolution::new(lorenz.clone()));
+        let s = Series::new(Evolution::new(lorenz.clone()));
         s.set_at(OrderedFloat(0.0), Evolution::new(lorenz));
 
         run(s.sample_at(OrderedFloat(5.0)));

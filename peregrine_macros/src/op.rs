@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Expr, Ident, Path};
+use syn::{Block, Expr, Ident, Path};
 
 struct OpInput {
     processed_code: Expr,
@@ -81,19 +81,7 @@ fn collect_inputs(expr: &mut Expr, collected_inputs: &mut Vec<(Ident, Expr)>) ->
 
         // Recursively process other expression types
         Expr::Block(expr_block) => {
-            for stmt in &mut expr_block.block.stmts {
-                match stmt {
-                    syn::Stmt::Expr(e, _) => {
-                        collect_inputs(e, collected_inputs)?;
-                    }
-                    syn::Stmt::Local(local) => {
-                        if let Some(local_init) = &mut local.init {
-                            collect_inputs(&mut local_init.expr, collected_inputs)?;
-                        }
-                    }
-                    _ => {}
-                }
-            }
+            collect_inputs_block(&mut expr_block.block, collected_inputs)?;
         }
 
         Expr::Call(call) => {
@@ -136,11 +124,64 @@ fn collect_inputs(expr: &mut Expr, collected_inputs: &mut Vec<(Ident, Expr)>) ->
             collect_inputs(&mut method_call.receiver, collected_inputs)?;
         }
 
+        Expr::Struct(struct_expr) => {
+            for field in &mut struct_expr.fields {
+                collect_inputs(&mut field.expr, collected_inputs)?;
+            }
+            if let Some(rest) = &mut struct_expr.rest {
+                collect_inputs(&mut *rest, collected_inputs)?;
+            }
+        }
+
+        Expr::Reference(ref_expr) => {
+            collect_inputs(&mut ref_expr.expr, collected_inputs)?;
+        }
+
+        Expr::Closure(closure) => {
+            collect_inputs(&mut closure.body, collected_inputs)?;
+        }
+
+        Expr::Assign(assign) => {
+            collect_inputs(&mut assign.right, collected_inputs)?;
+        }
+
+        Expr::Let(let_expr) => {
+            collect_inputs(&mut let_expr.expr, collected_inputs)?;
+        }
+
+        Expr::If(if_expr) => {
+            collect_inputs(&mut if_expr.cond, collected_inputs)?;
+            collect_inputs_block(&mut if_expr.then_branch, collected_inputs)?;
+            if let Some((_, else_branch)) = &mut if_expr.else_branch {
+                collect_inputs(&mut *else_branch, collected_inputs)?;
+            }
+        }
+
         // For other expression types, return as-is for now
         // We can extend this as needed
         e => todo!("Unsupported expression type: {e:?}"),
     }
 
+    Ok(())
+}
+
+fn collect_inputs_block(
+    block: &mut Block,
+    collected_inputs: &mut Vec<(Ident, Expr)>,
+) -> syn::Result<()> {
+    for stmt in &mut block.stmts {
+        match stmt {
+            syn::Stmt::Expr(e, _) => {
+                collect_inputs(e, collected_inputs)?;
+            }
+            syn::Stmt::Local(local) => {
+                if let Some(local_init) = &mut local.init {
+                    collect_inputs(&mut local_init.expr, collected_inputs)?;
+                }
+            }
+            _ => {}
+        }
+    }
     Ok(())
 }
 
