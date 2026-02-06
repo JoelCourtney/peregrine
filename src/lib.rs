@@ -11,7 +11,6 @@ pub mod specification;
 
 use std::sync::atomic::AtomicU64;
 
-use graph::NodeId;
 pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op, sync};
 
 use cache::Cached;
@@ -22,7 +21,6 @@ use crate::{cache::collector::OutputCell, data::Data, flow::Sink};
 pub trait Upstream: Send + Sync {
     type Output: Data;
 
-    fn node_id(&self) -> Option<NodeId>;
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's;
@@ -95,6 +93,38 @@ pub trait Downstream: Send + Sync {
 pub struct Ctx<'a, 's> {
     pub scope: &'a Scope<'s>,
     pub run_count: u64,
+    pub stack_depth: u32,
+}
+
+const MAX_STACK_DEPTH: u32 = 1000;
+
+impl<'a, 's> Ctx<'a, 's> {
+    pub fn new(scope: &'a Scope<'s>, run_count: u64) -> Self {
+        Ctx {
+            scope,
+            stack_depth: 0,
+            run_count,
+        }
+    }
+    
+    #[inline]
+    pub fn spawn(&self, f: impl FnOnce(Ctx<'_, 's>) + Send + 's) {
+        let run_count = self.run_count;
+        self.scope.spawn(move |scope| f(Ctx::new(scope, run_count)));
+    }
+    
+    #[inline]
+    pub fn run(&self, f: impl FnOnce(Ctx<'_, 's>) + Send + 's) {
+        if self.stack_depth >= MAX_STACK_DEPTH {
+            self.spawn(f);
+        } else {
+            f(Ctx {
+                scope: self.scope,
+                run_count: self.run_count,
+                stack_depth: self.stack_depth + 1,
+            })
+        }
+    }
 }
 
 pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
@@ -105,7 +135,7 @@ pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
     let run_count = RUN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     rayon::scope(|scope| {
-        let ctx = Ctx { scope, run_count };
+        let ctx = Ctx::new(scope, run_count);
         upstream.request(ctx, sink.as_callback());
     });
 

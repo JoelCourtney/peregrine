@@ -4,30 +4,23 @@ use parking_lot::RwLock;
 
 use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
 
-use super::NodeTracker;
 
 pub struct Var<'a, O: Send + 'static> {
-    node: NodeTracker,
     cell: RwLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
 }
 
 impl<'a, O: Data> Var<'a, O> {
     pub fn new(node: impl Upstream<Output = O> + 'a) -> Var<'a, O> {
-        let outer = NodeTracker::new();
-        outer.add_edges(node.node_id());
         Var {
             cell: RwLock::new(Arc::new(node)),
             cache: Cache::new(),
-            node: outer,
         }
     }
 
     pub fn set(&self, node: impl Upstream<Output = O> + 'a) {
         let mut write = self.cell.write();
-        self.node.remove_edges(write.node_id());
         let new_node = Arc::new(node);
-        self.node.add_edges(new_node.node_id());
         self.cache.invalidate();
         *write = new_node;
     }
@@ -40,9 +33,6 @@ impl<'a, O: Data> Var<'a, O> {
 impl<O: Data> Upstream for Var<'_, O> {
     type Output = O;
 
-    fn node_id(&self) -> Option<super::NodeId> {
-        Some(self.node.id)
-    }
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
@@ -60,7 +50,6 @@ impl<O: Data> Upstream for Var<'_, O> {
 impl<O: Upstream<Output = O> + Default + Send + 'static> Default for Var<'_, O> {
     fn default() -> Self {
         Var {
-            node: NodeTracker::new(),
             cell: RwLock::new(Arc::new(O::default())),
             cache: Cache::new(),
         }

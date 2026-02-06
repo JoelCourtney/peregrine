@@ -22,10 +22,6 @@ pub fn derive_auto_source(input: TokenStream) -> TokenStream {
         impl #impl_generics peregrine::Upstream for #name #ty_generics #where_clause {
             type Output = Self;
 
-            fn node_id(&self) -> Option<peregrine::graph::NodeId> {
-                None
-            }
-
             #[inline(always)]
             fn request<'s>(&self, ctx: peregrine::Ctx<'_, 's>, callback: peregrine::Callback<'s, Self::Output>)
             where

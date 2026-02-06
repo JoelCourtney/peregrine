@@ -41,13 +41,11 @@ pub fn process_op(input_expr: Expr) -> TokenStream {
                     use peregrine::Upstream;
 
                     let (#(#input_names,)*) = (#(#upstreams,)*);
-                    let node_ids = [#(#input_names.node_id(),)*].into_iter().filter_map(|i| i);
                     peregrine::graph::op::Op::new(
                         (#(#input_names,)*),
                         move |(#(#input_names,)*)| {
                             #processed
-                        },
-                        node_ids
+                        }
                     )
                 }
             };

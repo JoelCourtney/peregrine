@@ -15,10 +15,6 @@ where
 {
     type Output = T::Output;
 
-    fn node_id(&self) -> Option<crate::graph::NodeId> {
-        self.0.node_id()
-    }
-
     fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
     where
         Self: 's,

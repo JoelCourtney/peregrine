@@ -64,8 +64,6 @@ impl<O: Clone> Callbacks<O> {
             return;
         }
 
-        let run_count = ctx.run_count;
-
         let mut to_run = self.vec.into_iter().filter_map(|c| {
             c.output.store(value_factory());
             if c.downstream.should_run() {
@@ -78,11 +76,14 @@ impl<O: Clone> Callbacks<O> {
         let first = to_run.next();
 
         for downstream in to_run {
-            ctx.scope
-                .spawn(move |scope| downstream.run(Ctx { scope, run_count }))
+            ctx.spawn(move |ctx| {
+                downstream.run(ctx);
+            });
         }
         if let Some(downstream) = first {
-            downstream.run(ctx);
+            ctx.run(move |ctx| {
+                downstream.run(ctx);
+            });
         }
     }
 }

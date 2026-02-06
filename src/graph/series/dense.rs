@@ -51,7 +51,7 @@ impl<'a, T: Ord + Copy, O: Data> DenseSeries<'a, T, O> {
         self.series.get_at(Dense { index, order: 0 })
     }
 
-    pub fn get_inc(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>> {
+    pub fn get_at_inc(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, Dense<T>, O>>> {
         self.series.get_at_inc(Dense {
             index,
             order: u64::MAX,
@@ -232,7 +232,7 @@ impl<'m, O: Data> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
     }
 
     pub fn get_inc(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
-        self.recorder.get_inc(self.time_tracker.get())
+        self.recorder.get_at_inc(self.time_tracker.get())
     }
 }
 

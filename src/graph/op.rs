@@ -18,10 +18,7 @@ use crate::{
     node::Node,
 };
 
-use super::{NodeId, NodeTracker};
-
 pub struct Op<UC: UpstreamCollector, O: 'static, F> {
-    node: NodeTracker,
     upstreams: UC,
     collection_cells: Arc<UC::Cells>,
     counter: AtomicU32,
@@ -34,9 +31,7 @@ pub struct Op<UC: UpstreamCollector, O: 'static, F> {
 type OpInput<UC> = <UC as UpstreamCollector>::Result;
 
 impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<UC, O, F> {
-    pub fn new(upstreams: UC, func: F, node_ids: impl IntoIterator<Item = NodeId>) -> Node<Self> {
-        let node = NodeTracker::new();
-        node.add_edges(node_ids);
+    pub fn new(upstreams: UC, func: F) -> Node<Self> {
         Node(Op {
             collection_cells: Arc::new(upstreams.new_cells()),
             upstreams,
@@ -44,7 +39,6 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<U
             func,
             callbacks: Default::default(),
             cache: Cache::new_arc(),
-            node,
             can_be_revalidated: AtomicBool::new(false),
         })
     }
@@ -55,9 +49,6 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upst
 {
     type Output = O;
 
-    fn node_id(&self) -> Option<super::NodeId> {
-        Some(self.node.id)
-    }
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<Self::Output>)
     where
         Self: 's,

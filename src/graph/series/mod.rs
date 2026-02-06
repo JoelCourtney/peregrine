@@ -1,7 +1,7 @@
 pub mod dense;
 // pub mod lazy;
 
-use crate::{Data, Upstream, cache::Cache, data::evolving::Evolving, graph::NodeId, node::Node};
+use crate::{Data, Upstream, cache::Cache, data::evolving::Evolving, node::Node};
 use parking_lot::Mutex;
 use std::{
     collections::BTreeMap,
@@ -9,16 +9,21 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use super::NodeTracker;
-
 pub struct Series<'a, T, O> {
-    node: NodeTracker,
     entries: Mutex<SeriesEntries<'a, T, O>>,
 }
 
 struct SeriesEntries<'a, T, O> {
     default: ProbedUpstream<'a, T, O>,
     map: BTreeMap<T, ProbedUpstream<'a, T, O>>,
+}
+
+impl<T, O> Drop for SeriesEntries<'_, T, O> {
+    fn drop(&mut self) {
+        let replacement = BTreeMap::new();
+        let actual = std::mem::replace(&mut self.map, replacement);
+        for _ in actual.into_iter().rev() {}
+    }
 }
 
 struct ProbedUpstream<'a, T, O> {
@@ -83,7 +88,6 @@ impl<'a, T, O> StrongSeriesProbe<'a, T, O> {
 }
 
 pub struct ConstantSeriesProbe<'a, T, O> {
-    node: NodeTracker,
     at: T,
     inclusive: bool,
     upstream: Mutex<Arc<dyn Upstream<Output = O> + 'a>>,
@@ -102,8 +106,6 @@ pub struct SamplingSeriesProbe<'a, T, O> {
 
 impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
     pub fn new(default: impl Upstream<Output = O> + 'a) -> Self {
-        let node = NodeTracker::new();
-        node.add_edges(default.node_id());
         Series {
             entries: Mutex::new(SeriesEntries {
                 default: ProbedUpstream {
@@ -112,7 +114,6 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
                 },
                 map: Default::default(),
             }),
-            node,
         }
     }
 
@@ -125,7 +126,6 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
             .map(|(_, v)| v)
             .unwrap_or(default);
 
-        let prev_node_id = probed.upstream.node_id();
         let new_probes = probed
             .probes
             .extract_if(.., |weak| {
@@ -133,26 +133,18 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
                     return false;
                 };
                 probe
-                    .reconsider(index, prev_node_id, &upstream)
+                    .reconsider(index, &upstream)
                     .should_extract()
             })
             .collect();
 
-        let new_node_id = upstream.node_id();
-        let removed = map.insert(
+        map.insert(
             index,
             ProbedUpstream {
                 upstream,
                 probes: new_probes,
             },
         );
-        if let Some(ProbedUpstream {
-            upstream: old_node, ..
-        }) = removed
-        {
-            self.node.remove_edges(old_node.node_id());
-        }
-        self.node.add_edges(new_node_id);
     }
 
     pub fn remove(&self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
@@ -167,14 +159,12 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
                 .next_back()
                 .map(|(key, value)| (Some(*key), value))
                 .unwrap_or((None, default));
-            let old_node_id = old_node.node_id();
             for weak in probes.into_iter() {
                 if let Some(probe) = weak.upgrade() {
-                    probe.switch(old_node_id, new_key, &probed.upstream);
+                    probe.switch(new_key, &probed.upstream);
                     probed.probes.push(weak);
                 }
             }
-            self.node.remove_edges(old_node_id);
             Some(old_node)
         } else {
             None
@@ -198,10 +188,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
             .next_back()
             .map(|(k, v)| (Some(*k), v))
             .unwrap_or((None, default));
-        let node = NodeTracker::new();
-        node.add_edges(probed.upstream.node_id());
         let probe = ConstantSeriesProbe {
-            node,
             at: index,
             inclusive,
             upstream: Mutex::new(probed.upstream.clone()),
@@ -322,7 +309,6 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
     fn reconsider(
         &self,
         new_key: T,
-        old_node_id: Option<NodeId>,
         upstream: &Arc<dyn Upstream<Output = O> + 'a>,
     ) -> MontyHall {
         use MontyHall::*;
@@ -339,13 +325,12 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
             return Stay;
         }
 
-        self.switch(old_node_id, Some(new_key), upstream);
+        self.switch(Some(new_key), upstream);
         Switch
     }
 
     fn switch(
         &self,
-        old_node_id: Option<NodeId>,
         new_key: Option<T>,
         upstream: &Arc<dyn Upstream<Output = O> + 'a>,
     ) {
@@ -354,9 +339,6 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
             StrongSeriesProbe::Evolving(e) => &e.inner,
             StrongSeriesProbe::Sampling(s) => &s.inner,
         };
-
-        constant_probe.node.remove_edges(old_node_id);
-        constant_probe.node.add_edges(upstream.node_id());
 
         constant_probe.cache.invalidate();
 
@@ -380,10 +362,6 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
 impl<'a, T: Send + Sync, O: Data> Upstream for ConstantSeriesProbe<'a, T, O> {
     type Output = O;
 
-    fn node_id(&self) -> Option<NodeId> {
-        Some(self.node.id)
-    }
-
     fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
     where
         Self: 's,
@@ -401,10 +379,6 @@ impl<'a, T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
     for EvolvingSeriesProbe<'a, T, O>
 {
     type Output = O;
-
-    fn node_id(&self) -> Option<NodeId> {
-        Some(self.inner.node.id)
-    }
 
     fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
     where
@@ -432,10 +406,6 @@ impl<'a, T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
     for SamplingSeriesProbe<'a, T, O>
 {
     type Output = O::Sample;
-
-    fn node_id(&self) -> Option<NodeId> {
-        Some(self.inner.node.id)
-    }
 
     fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
     where

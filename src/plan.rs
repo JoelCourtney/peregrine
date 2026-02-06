@@ -1,7 +1,6 @@
 use std::{any::TypeId, cell::Cell, rc::Rc};
 
 use derive_more::{Deref, DerefMut};
-use hifitime::Duration;
 use slotmap::{Key, SecondaryMap, new_key_type};
 
 use crate::{
@@ -10,6 +9,7 @@ use crate::{
 };
 
 pub type Time = hifitime::Epoch;
+pub use hifitime::Duration;
 pub type Resource<T> = DenseSeries<'static, Time, T>;
 
 new_key_type! { pub struct ActivityId; }

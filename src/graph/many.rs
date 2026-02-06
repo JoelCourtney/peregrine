@@ -21,9 +21,7 @@ macro_rules! impl_merge_and_split {
             fn merge(self) -> Node<Op<($($t,)*), ($($t::Output,)*), fn(($($t::Output,)*)) -> ($($t::Output,)*)>> {
                 let ($($t,)*) = self;
 
-                let node_ids = [$($t.node_id(),)*].into_iter().filter_map(|i| i);
-
-                Op::new(($($t,)*), identity, node_ids)
+                Op::new(($($t,)*), identity)
             }
         }
 
@@ -82,15 +80,11 @@ where
 {
     fn merge(self) -> Node<Op<Vec<U>, Vec<U::Output>, fn(Vec<U::Output>) -> Vec<U::Output>>> {
         let mut converted = Vec::with_capacity(self.len());
-        let mut node_ids = Vec::with_capacity(self.len());
         for upstream in self {
-            if let Some(id) = upstream.node_id() {
-                node_ids.push(id);
-            }
             converted.push(upstream);
         }
 
-        Op::new(converted, identity, node_ids)
+        Op::new(converted, identity)
     }
 }
 
@@ -102,9 +96,8 @@ where
     fn merge(self) -> Node<Op<[U; N], [U::Output; N], fn([U::Output; N]) -> [U::Output; N]>> {
         let mut iter = self.into_iter();
         let converted = array_init(move |_| iter.next().unwrap());
-        let node_ids: [_; N] = array_init(|i| converted[i].node_id());
 
-        Op::new(converted, identity, node_ids.into_iter().flatten())
+        Op::new(converted, identity)
     }
 }
 

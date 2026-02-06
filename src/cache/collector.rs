@@ -131,13 +131,13 @@ macro_rules! impl_upstream_collector_tuple {
                         let callback = unsafe {
                              Callback::new(downstream, transmute::<&OutputCell<_>, &'s OutputCell<_>>($c))
                         };
+                        let upstream = unsafe {
+                            transmute::<&$t, &'s $t>($u)
+                        };
                         if count == 0 {
-                            $u.request(ctx, callback);
+                            ctx.run(move |ctx| upstream.request(ctx, callback));
                         } else {
-                            let upstream = unsafe {
-                                transmute::<&$t, &'s $t>($u)
-                            };
-                            ctx.scope.spawn(move |scope| upstream.request(Ctx { scope, run_count }, callback))
+                            ctx.spawn(move |ctx| upstream.request(ctx, callback));
                         }
                     }
                 )*
@@ -227,8 +227,6 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
         let mut iter = self.iter().enumerate();
         let (_, first) = iter.next().unwrap();
 
-        let run_count = ctx.run_count;
-
         for (i, upstream) in iter {
             let callback = unsafe {
                 Callback::new(
@@ -237,16 +235,19 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
                 )
             };
             let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
-            ctx.scope
-                .spawn(move |scope| upstream.request(Ctx { scope, run_count }, callback))
+            ctx.spawn(move |ctx| upstream.request(ctx, callback));
         }
 
-        first.request(ctx, unsafe {
+        let callback = unsafe {
             Callback::new(
                 downstream,
                 transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
             )
-        });
+        };
+        let first = unsafe {
+            transmute::<&U, &'s U>(first)
+        };
+        ctx.run(move |ctx| first.request(ctx, callback));
     }
 
     fn get<F: FnOnce() + Send + 'static>(
@@ -320,8 +321,6 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
         let mut iter = self.iter().enumerate();
         let (_, first) = iter.next().unwrap();
 
-        let run_count = ctx.run_count;
-
         for (i, upstream) in iter {
             let callback = unsafe {
                 Callback::new(
@@ -330,16 +329,17 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
                 )
             };
             let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
-            ctx.scope
-                .spawn(move |scope| upstream.request(Ctx { scope, run_count }, callback))
+            ctx.spawn(move |ctx| upstream.request(ctx, callback));
         }
 
-        first.request(ctx, unsafe {
+        let callback = unsafe {
             Callback::new(
                 downstream,
                 transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
             )
-        });
+        };
+        let first = unsafe { transmute::<&U, &'s U>(first) };
+        ctx.spawn(move |ctx| first.request(ctx, callback));
     }
 
     fn get<F: FnOnce() + Send + 'static>(

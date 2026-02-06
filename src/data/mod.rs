@@ -8,7 +8,7 @@ use std::{
 
 use hifitime::Epoch;
 
-use crate::{Callback, Ctx, Upstream, cache::Cached, graph::NodeId};
+use crate::{Callback, Ctx, Upstream, cache::Cached};
 
 /// A marker trait for types that can be used as the output of a node.
 ///
@@ -23,9 +23,6 @@ pub struct Source<T>(pub T);
 impl<T: Data> Upstream for Source<T> {
     type Output = T;
 
-    fn node_id(&self) -> Option<NodeId> {
-        None
-    }
     #[inline(always)]
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
@@ -42,9 +39,6 @@ macro_rules! impl_upstream_for_data {
             impl Upstream for $ty {
                 type Output = Self;
 
-                fn node_id(&self) -> Option<NodeId> {
-                    None
-                }
                 #[inline(always)]
                 fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
                 where
@@ -72,9 +66,6 @@ macro_rules! impl_upstream_for_tuple {
             impl<$($ty: Data),*> Upstream for ($($ty,)*) {
                 type Output = ($($ty,)*);
 
-                fn node_id(&self) -> Option<NodeId> {
-                    None
-                }
                 #[inline(always)]
                 fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
                 where
@@ -102,10 +93,6 @@ impl_upstream_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
 impl<T: Data> Upstream for Vec<T> {
     type Output = Self;
 
-    fn node_id(&self) -> Option<NodeId> {
-        None
-    }
-
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
@@ -115,10 +102,6 @@ impl<T: Data> Upstream for Vec<T> {
 }
 impl<T: Data, const N: usize> Upstream for [T; N] {
     type Output = Self;
-
-    fn node_id(&self) -> Option<NodeId> {
-        None
-    }
 
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where

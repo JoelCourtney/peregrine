@@ -2,24 +2,18 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::{Callback, Ctx, Data, Upstream, cache::Cache, graph::NodeTracker, node::Node};
-
-use super::NodeId;
+use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
 
 pub struct Stack<'a, O> {
-    node: NodeTracker,
     nodes: RwLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
     cache: Cache<()>,
 }
 
 impl<'a, O: Data> Stack<'a, O> {
     pub fn new(run: impl Upstream<Output = O> + 'a) -> Stack<'a, O> {
-        let node = NodeTracker::new();
-        node.add_edges(run.node_id());
         Stack {
             nodes: RwLock::new(vec![Arc::new(run)]),
             cache: Cache::new(),
-            node,
         }
     }
 
@@ -29,9 +23,7 @@ impl<'a, O: Data> Stack<'a, O> {
     ) {
         let mut nodes = self.nodes.write();
         let prev = nodes.last().unwrap().clone();
-        self.node.remove_edges(prev.node_id());
         let upstream = f(prev);
-        self.node.add_edges(upstream.node_id());
         nodes.push(Arc::new(upstream));
         self.cache.invalidate()
     }
@@ -44,8 +36,6 @@ impl<'a, O: Data> Stack<'a, O> {
         if nodes.len() > 1 {
             self.cache.invalidate();
             let node = nodes.pop().unwrap();
-            self.node.remove_edges(node.node_id());
-            self.node.add_edges(nodes.last().unwrap().node_id());
             Some(Node(node))
         } else {
             None
@@ -63,15 +53,11 @@ impl<'a, O: Data> Stack<'a, O> {
     where
         O: Send + Clone + 'static,
     {
-        let node = NodeTracker::new();
         let vec = self.nodes.read();
-
-        node.add_edges(vec.iter().filter_map(|n| n.node_id()));
 
         Stack {
             nodes: RwLock::new(vec.clone()),
             cache: Cache::new(),
-            node,
         }
     }
 }
@@ -79,9 +65,6 @@ impl<'a, O: Data> Stack<'a, O> {
 impl<O: Data> Upstream for Stack<'_, O> {
     type Output = O;
 
-    fn node_id(&self) -> Option<NodeId> {
-        Some(self.node.id)
-    }
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
@@ -99,7 +82,6 @@ impl<O: Data> Upstream for Stack<'_, O> {
 impl<O: Upstream<Output = O> + Default + 'static> Default for Stack<'_, O> {
     fn default() -> Self {
         Stack {
-            node: NodeTracker::new(),
             nodes: RwLock::new(vec![Arc::new(O::default()) as Arc<dyn Upstream<Output = O>>]),
             cache: Cache::new(),
         }
