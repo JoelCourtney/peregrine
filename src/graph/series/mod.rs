@@ -1,6 +1,6 @@
 pub mod dense;
 pub mod resource;
-pub mod staggered;
+mod staggered;
 
 use crate::{
     Data, Upstream, cache::Cache, data::evolving::Evolving, graph::series::staggered::StaggeredMap,
