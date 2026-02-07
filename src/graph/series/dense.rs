@@ -25,6 +25,15 @@ pub struct Dense<T> {
     pub order: u64,
 }
 
+impl<T> Dense<T> {
+    pub fn map<U>(self, f: impl Fn(T) -> U) -> Dense<U> {
+        Dense {
+            index: f(self.index),
+            order: self.order,
+        }
+    }
+}
+
 pub struct DenseSeries<'a, T, O> {
     series: Series<'a, Dense<T>, O>,
     counter: AtomicU64,

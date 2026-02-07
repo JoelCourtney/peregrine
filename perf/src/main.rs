@@ -1,7 +1,8 @@
 use clap::Parser;
 use peregrine::{
+    graph::series::resource::Resource,
     op,
-    plan::{Duration, Resource, Time},
+    plan::{Duration, Time},
     run,
 };
 

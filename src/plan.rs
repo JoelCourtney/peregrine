@@ -3,14 +3,10 @@ use std::{any::TypeId, cell::Cell, rc::Rc};
 use derive_more::{Deref, DerefMut};
 use slotmap::{Key, SecondaryMap, new_key_type};
 
-use crate::{
-    graph::series::dense::DenseSeries,
-    undo::{Undo, UndoTracker},
-};
+use crate::undo::{Undo, UndoTracker};
 
 pub type Time = hifitime::Epoch;
 pub use hifitime::Duration;
-pub type Resource<T> = DenseSeries<'static, Time, T>;
 
 new_key_type! { pub struct ActivityId; }
 
@@ -134,8 +130,9 @@ mod tests {
     use peregrine_macros::{chronological, op, sync};
     use serde::{Deserialize, Serialize};
 
+    use crate::graph::series::resource::Resource;
     use crate::node::Node;
-    use crate::plan::{Resource, Time};
+    use crate::plan::Time;
     use crate::{self as peregrine, Upstream};
     use crate::{Chronological, Undo, activity, run};
 

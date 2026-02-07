@@ -62,7 +62,8 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use crate as peregrine;
-    use crate::plan::{Resource, Time};
+    use crate::graph::series::resource::Resource;
+    use crate::plan::Time;
     use crate::{Undo, run};
 
     use super::*;

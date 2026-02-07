@@ -1,4 +1,5 @@
 pub mod dense;
+pub mod resource;
 pub mod staggered;
 
 use crate::{
