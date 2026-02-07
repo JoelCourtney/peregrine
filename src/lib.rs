@@ -106,13 +106,13 @@ impl<'a, 's> Ctx<'a, 's> {
             run_count,
         }
     }
-    
+
     #[inline]
     pub fn spawn(&self, f: impl FnOnce(Ctx<'_, 's>) + Send + 's) {
         let run_count = self.run_count;
         self.scope.spawn(move |scope| f(Ctx::new(scope, run_count)));
     }
-    
+
     #[inline]
     pub fn run(&self, f: impl FnOnce(Ctx<'_, 's>) + Send + 's) {
         if self.stack_depth >= MAX_STACK_DEPTH {

@@ -1,13 +1,12 @@
 pub mod dense;
-// pub mod lazy;
+pub mod staggered;
 
-use crate::{Data, Upstream, cache::Cache, data::evolving::Evolving, node::Node};
-use parking_lot::Mutex;
-use std::{
-    collections::BTreeMap,
-    ops::Bound,
-    sync::{Arc, Weak},
+use crate::{
+    Data, Upstream, cache::Cache, data::evolving::Evolving, graph::series::staggered::StaggeredMap,
+    node::Node,
 };
+use parking_lot::Mutex;
+use std::sync::{Arc, Weak};
 
 pub struct Series<'a, T, O> {
     entries: Mutex<SeriesEntries<'a, T, O>>,
@@ -15,14 +14,14 @@ pub struct Series<'a, T, O> {
 
 struct SeriesEntries<'a, T, O> {
     default: ProbedUpstream<'a, T, O>,
-    map: BTreeMap<T, ProbedUpstream<'a, T, O>>,
+    map: StaggeredMap<T, ProbedUpstream<'a, T, O>>,
 }
 
 impl<T, O> Drop for SeriesEntries<'_, T, O> {
     fn drop(&mut self) {
-        let replacement = BTreeMap::new();
+        let replacement = StaggeredMap::new();
         let actual = std::mem::replace(&mut self.map, replacement);
-        for _ in actual.into_iter().rev() {}
+        for _ in actual.into_iter_unordered().rev() {}
     }
 }
 
@@ -31,10 +30,29 @@ struct ProbedUpstream<'a, T, O> {
     probes: Vec<WeakSeriesProbe<'a, T, O>>,
 }
 
+impl<T, O> Clone for ProbedUpstream<'_, T, O> {
+    fn clone(&self) -> Self {
+        ProbedUpstream {
+            upstream: self.upstream.clone(),
+            probes: self.probes.clone(),
+        }
+    }
+}
+
 enum WeakSeriesProbe<'a, T, O> {
     Constant(Weak<ConstantSeriesProbe<'a, T, O>>),
     Evolving(Weak<EvolvingSeriesProbe<'a, T, O>>),
     Sampling(Weak<SamplingSeriesProbe<'a, T, O>>),
+}
+
+impl<T, O> Clone for WeakSeriesProbe<'_, T, O> {
+    fn clone(&self) -> Self {
+        match self {
+            WeakSeriesProbe::Constant(w) => WeakSeriesProbe::Constant(w.clone()),
+            WeakSeriesProbe::Evolving(w) => WeakSeriesProbe::Evolving(w.clone()),
+            WeakSeriesProbe::Sampling(w) => WeakSeriesProbe::Sampling(w.clone()),
+        }
+    }
 }
 
 impl<'a, T, O> WeakSeriesProbe<'a, T, O> {
@@ -121,8 +139,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         let upstream = Arc::new(upstream) as Arc<dyn Upstream<Output = O>>;
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         let probed = map
-            .range_mut(..=index)
-            .next_back()
+            .get_before_mut(index, true)
             .map(|(_, v)| v)
             .unwrap_or(default);
 
@@ -132,9 +149,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
                 let Some(probe) = weak.upgrade() else {
                     return false;
                 };
-                probe
-                    .reconsider(index, &upstream)
-                    .should_extract()
+                probe.reconsider(index, &upstream).should_extract()
             })
             .collect();
 
@@ -155,8 +170,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         }) = map.remove(&index)
         {
             let (new_key, probed) = map
-                .range_mut(..=index)
-                .next_back()
+                .get_before_mut(index, true)
                 .map(|(key, value)| (Some(*key), value))
                 .unwrap_or((None, default));
             for weak in probes.into_iter() {
@@ -177,15 +191,9 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         inclusive: bool,
         mapper: impl Fn(Option<T>, ConstantSeriesProbe<T, O>) -> StrongSeriesProbe<T, O>,
     ) -> StrongSeriesProbe<'a, T, O> {
-        let bound = if inclusive {
-            Bound::Included(index)
-        } else {
-            Bound::Excluded(index)
-        };
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         let (key, probed) = map
-            .range_mut((Bound::Unbounded, bound))
-            .next_back()
+            .get_before_mut(index, inclusive)
             .map(|(k, v)| (Some(*k), v))
             .unwrap_or((None, default));
         let probe = ConstantSeriesProbe {
@@ -306,11 +314,7 @@ impl MontyHall {
 }
 
 impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
-    fn reconsider(
-        &self,
-        new_key: T,
-        upstream: &Arc<dyn Upstream<Output = O> + 'a>,
-    ) -> MontyHall {
+    fn reconsider(&self, new_key: T, upstream: &Arc<dyn Upstream<Output = O> + 'a>) -> MontyHall {
         use MontyHall::*;
 
         let constant_probe = match self {
@@ -329,11 +333,7 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
         Switch
     }
 
-    fn switch(
-        &self,
-        new_key: Option<T>,
-        upstream: &Arc<dyn Upstream<Output = O> + 'a>,
-    ) {
+    fn switch(&self, new_key: Option<T>, upstream: &Arc<dyn Upstream<Output = O> + 'a>) {
         let constant_probe = match self {
             StrongSeriesProbe::Constant(probe) => &**probe,
             StrongSeriesProbe::Evolving(e) => &e.inner,

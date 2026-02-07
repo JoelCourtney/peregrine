@@ -244,9 +244,7 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
                 transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
             )
         };
-        let first = unsafe {
-            transmute::<&U, &'s U>(first)
-        };
+        let first = unsafe { transmute::<&U, &'s U>(first) };
         ctx.run(move |ctx| first.request(ctx, callback));
     }
 

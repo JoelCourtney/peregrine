@@ -4,7 +4,6 @@ use parking_lot::RwLock;
 
 use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
 
-
 pub struct Var<'a, O: Send + 'static> {
     cell: RwLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
