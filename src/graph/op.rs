@@ -37,11 +37,24 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Op<U
             upstreams,
             counter: AtomicU32::new(0),
             func,
-            callbacks: Default::default(),
+            callbacks: Mutex::default(),
             cache: Cache::new_arc(),
             can_be_revalidated: AtomicBool::new(false),
         })
     }
+}
+
+impl<UC: UpstreamCollector> Op<UC, UC::Result, fn(UC::Result) -> UC::Result>
+where
+    UC::Result: Data,
+{
+    pub fn collect(upstreams: UC) -> Node<Self> {
+        Op::new(upstreams, identity)
+    }
+}
+
+fn identity<T>(value: T) -> T {
+    value
 }
 
 impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upstream
@@ -102,9 +115,8 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Down
     }
 
     fn run(&self, ctx: crate::Ctx) {
-        let (inputs, collection_status) = self
-            .upstreams
-            .get(&self.collection_cells, || self.cache.get_invalidator());
+        let (inputs, collection_status) =
+            UC::get(&self.collection_cells, || self.cache.get_invalidator());
         let result_factory = match collection_status {
             CollectionStatus::Revalidated if self.can_be_revalidated.load(Ordering::Relaxed) => {
                 self.cache.revalidate()

@@ -249,28 +249,34 @@ impl<O: Data> ResourceChronoRecorder<'_, '_, O> {
         self.recorder.mutate_at(self.time_tracker.get(), f)
     }
 
+    #[must_use]
     pub fn get(&self) -> Node<Arc<ConstantSeriesProbe<'static, Dense<Duration>, O>>> {
         self.recorder.get_at(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn get_inc(&self) -> Node<Arc<ConstantSeriesProbe<'static, Dense<Duration>, O>>> {
         self.recorder.get_at_inc(self.time_tracker.get())
     }
 }
 
 impl<O: Evolving<Dense<Duration>>> ResourceChronoRecorder<'_, '_, O> {
+    #[must_use]
     pub fn sample(&self) -> Node<Arc<SamplingSeriesProbe<'static, Dense<Duration>, O>>> {
         self.recorder.sample_at(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn sample_inc(&self) -> Node<Arc<SamplingSeriesProbe<'static, Dense<Duration>, O>>> {
         self.recorder.sample_at_inc(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn evolve(&self) -> Node<Arc<EvolvingSeriesProbe<'static, Dense<Duration>, O>>> {
         self.recorder.evolve_at(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn evolve_inc(&self) -> Node<Arc<EvolvingSeriesProbe<'static, Dense<Duration>, O>>> {
         self.recorder.evolve_at_inc(self.time_tracker.get())
     }

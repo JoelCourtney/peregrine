@@ -122,7 +122,7 @@ impl<'a, 's> Ctx<'a, 's> {
                 scope: self.scope,
                 run_count: self.run_count,
                 stack_depth: self.stack_depth + 1,
-            })
+            });
         }
     }
 }

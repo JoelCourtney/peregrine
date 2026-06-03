@@ -5,13 +5,6 @@ use peregrine::{
     run,
 };
 
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
-
 fn run_line(n: usize) -> i32 {
     let mut time = Time::from_tai_seconds(0.0);
 

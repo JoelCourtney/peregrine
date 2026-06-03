@@ -19,7 +19,7 @@ where
     where
         Self: 's,
     {
-        self.0.request(ctx, callback)
+        self.0.request(ctx, callback);
     }
 }
 

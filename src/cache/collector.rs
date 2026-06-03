@@ -1,7 +1,7 @@
 use array_init::array_init;
 use std::{
     cell::UnsafeCell,
-    mem::transmute,
+    mem::{take, transmute},
     sync::{
         Arc,
         atomic::{AtomicU32, Ordering},
@@ -26,7 +26,6 @@ pub trait UpstreamCollector: Send + Sync {
     ) where
         Self: 's;
     fn get<F: FnOnce() + Send + 'static>(
-        &self,
         cells: &Arc<Self::Cells>,
         invalidator_factory: impl Fn() -> F,
     ) -> (Self::Result, CollectionStatus);
@@ -58,7 +57,6 @@ impl UpstreamCollector for () {
     }
 
     fn get<F: FnOnce() + Send>(
-        &self,
         _cells: &Arc<Self::Cells>,
         _factory: impl Fn() -> F,
     ) -> ((), CollectionStatus) {
@@ -79,9 +77,24 @@ impl<T> OutputCell<T> {
         unsafe { (*self.0.get()).is_some() }
     }
 
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn get_mut(&self) -> &mut Cached<T> {
-        unsafe { (*self.0.get()).as_mut().unwrap() }
+    fn get_drain(&self) -> Option<Cached<T>>
+    where
+        T: Clone,
+    {
+        let value = unsafe { (*self.0.get()).as_mut() };
+        match value {
+            Some(Cached::Constant(v)) => Some(Cached::Constant(v.clone())),
+            Some(Cached::Variable {
+                value,
+                senders,
+                revalidated,
+            }) => Some(Cached::Variable {
+                value: value.clone(),
+                senders: take(senders),
+                revalidated: *revalidated,
+            }),
+            None => None,
+        }
     }
 
     fn clear(&self) {
@@ -115,15 +128,12 @@ macro_rules! impl_upstream_collector_tuple {
                 Default::default()
             }
 
-            #[allow(unused)]
             fn request<'s>(&self, ctx: Ctx<'_, 's>, cells: &Self::Cells, counter: &AtomicU32, downstream: &'s dyn Downstream) where Self: 's {
                 let ($($u,)*) = &self;
                 let ($($c,)*) = &cells;
 
                 let mut count = $( if $c.is_some() { 0 } else { 1 } +)* 0;
                 counter.store(count, Ordering::Relaxed);
-
-                let run_count = ctx.run_count;
 
                 $(
                     if !$c.is_some() {
@@ -143,17 +153,17 @@ macro_rules! impl_upstream_collector_tuple {
                 )*
             }
 
-            fn get<FUNC: FnOnce() + Send + 'static>(&self, cells: &Arc<Self::Cells>, factory: impl Fn() -> FUNC) -> (Self::Result, CollectionStatus) {
+            fn get<FUNC: FnOnce() + Send + 'static>(cells: &Arc<Self::Cells>, factory: impl Fn() -> FUNC) -> (Self::Result, CollectionStatus) {
                 let ($($c,)*) = &**cells;
                 let mut constant = true;
                 let mut revalidate = true;
                 let tuple = ($(
                     {
-                        let cached = unsafe { $c.get_mut() };
+                        let cached = $c.get_drain().expect("Output cell should be populated");
                         match cached {
                             Cached::Constant(v) => v.clone(),
                             Cached::Variable { value, senders, revalidated } => {
-                                for sender in senders.drain(..) {
+                                for sender in senders {
                                     let cells_weak = Arc::downgrade(cells);
                                     let base_invalidator = factory();
                                     let invalidator = move || {
@@ -162,10 +172,10 @@ macro_rules! impl_upstream_collector_tuple {
                                             cells.$index.clear();
                                         }
                                     };
-                                    sender.send(Box::new(invalidator)).unwrap();
+                                    sender.send(Box::new(invalidator)).expect("Upstream cache was dropped before an invalidator could be sent");
                                 }
                                 constant = false;
-                                revalidate = revalidate && *revalidated;
+                                revalidate = revalidate && revalidated;
                                 value.clone()
                             }
                         }
@@ -203,7 +213,7 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
     type Result = Vec<O>;
 
     fn new_cells(&self) -> Self::Cells {
-        Vec::with_capacity(self.len())
+        (0..self.len()).map(|_| OutputCell::default()).collect()
     }
 
     fn request<'s>(
@@ -222,34 +232,50 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
             return;
         }
 
-        counter.store(self.len() as u32, Ordering::Relaxed);
+        let mut count = 0;
 
-        let mut iter = self.iter().enumerate();
-        let (_, first) = iter.next().unwrap();
+        debug_assert_eq!(self.len(), cells.len());
 
-        for (i, upstream) in iter {
+        let mut zipped = self.iter().zip(cells.iter()).filter(|(_, c)| {
+            if c.is_some() {
+                false
+            } else {
+                count += 1;
+                true
+            }
+        });
+
+        let Some((first_upstream, first_cell)) = zipped.next() else {
+            if downstream.should_run() {
+                downstream.run(ctx);
+            }
+            return;
+        };
+
+        for (upstream, cell) in zipped {
             let callback = unsafe {
                 Callback::new(
                     downstream,
-                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[i]),
+                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(cell),
                 )
             };
             let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
             ctx.spawn(move |ctx| upstream.request(ctx, callback));
         }
 
+        counter.store(count, Ordering::Relaxed);
+
         let callback = unsafe {
             Callback::new(
                 downstream,
-                transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
+                transmute::<&OutputCell<_>, &'s OutputCell<_>>(first_cell),
             )
         };
-        let first = unsafe { transmute::<&U, &'s U>(first) };
+        let first = unsafe { transmute::<&U, &'s U>(first_upstream) };
         ctx.run(move |ctx| first.request(ctx, callback));
     }
 
     fn get<F: FnOnce() + Send + 'static>(
-        &self,
         cells: &Arc<Self::Cells>,
         factory: impl Fn() -> F,
     ) -> (Vec<O>, CollectionStatus) {
@@ -258,7 +284,7 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
         let result = cells
             .iter()
             .map(|c| {
-                let cached = unsafe { c.get_mut() };
+                let cached = c.get_drain().expect("Output cell should be populated");
                 match cached {
                     Cached::Constant(v) => v.clone(),
                     Cached::Variable {
@@ -266,11 +292,13 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
                         senders,
                         revalidated,
                     } => {
-                        for sender in senders.drain(..) {
-                            sender.send(Box::new(factory())).unwrap();
+                        for sender in senders {
+                            sender.send(Box::new(factory())).expect(
+                                "Upstream cache was dropped before an invalidator could be sent",
+                            );
                         }
                         constant = false;
-                        revalidate = revalidate && *revalidated;
+                        revalidate = revalidate && revalidated;
                         value.clone()
                     }
                 }
@@ -307,48 +335,58 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
     ) where
         Self: 's,
     {
-        if self.is_empty() {
+        let mut count = 0;
+
+        let mut zipped = self.iter().zip(cells.iter()).filter(|(_, c)| {
+            if c.is_some() {
+                false
+            } else {
+                count += 1;
+                true
+            }
+        });
+
+        let Some((first_upstream, first_cell)) = zipped.next() else {
             if downstream.should_run() {
                 downstream.run(ctx);
             }
             return;
-        }
+        };
 
-        counter.store(self.len() as u32, Ordering::Relaxed);
-
-        let mut iter = self.iter().enumerate();
-        let (_, first) = iter.next().unwrap();
-
-        for (i, upstream) in iter {
+        for (upstream, cell) in zipped {
             let callback = unsafe {
                 Callback::new(
                     downstream,
-                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[i]),
+                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(cell),
                 )
             };
             let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
             ctx.spawn(move |ctx| upstream.request(ctx, callback));
         }
 
+        counter.store(count, Ordering::Relaxed);
+
         let callback = unsafe {
             Callback::new(
                 downstream,
-                transmute::<&OutputCell<_>, &'s OutputCell<_>>(&cells[0]),
+                transmute::<&OutputCell<_>, &'s OutputCell<_>>(first_cell),
             )
         };
-        let first = unsafe { transmute::<&U, &'s U>(first) };
-        ctx.spawn(move |ctx| first.request(ctx, callback));
+        let first = unsafe { transmute::<&U, &'s U>(first_upstream) };
+        ctx.run(move |ctx| first.request(ctx, callback));
     }
 
+    #[expect(clippy::indexing_slicing, reason = "Indexing necessary for array_init")]
     fn get<F: FnOnce() + Send + 'static>(
-        &self,
         cells: &Arc<Self::Cells>,
         factory: impl Fn() -> F,
     ) -> ([O; N], CollectionStatus) {
         let mut constant = true;
         let mut revalidate = true;
         let result = array_init(|i| {
-            let cached = unsafe { cells[i].get_mut() };
+            let cached = cells[i]
+                .get_drain()
+                .expect("Output cell should be populated");
             match cached {
                 Cached::Constant(v) => v.clone(),
                 Cached::Variable {
@@ -356,11 +394,13 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
                     senders,
                     revalidated,
                 } => {
-                    for sender in senders.drain(..) {
-                        sender.send(Box::new(factory())).unwrap();
+                    for sender in senders {
+                        sender.send(Box::new(factory())).expect(
+                            "Upstream cache was dropped before an invalidator could be sent",
+                        );
                     }
                     constant = false;
-                    revalidate = revalidate && *revalidated;
+                    revalidate = revalidate && revalidated;
                     value.clone()
                 }
             }

@@ -23,7 +23,7 @@ pub struct Source<T>(pub T);
 impl<T: Data> Upstream for Source<T> {
     type Output = T;
 
-    #[inline(always)]
+    #[inline]
     fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,

@@ -25,13 +25,13 @@ impl<T> DataState<T> {
     fn invalidate(&mut self) {
         match std::mem::take(self) {
             DataState::Variable { value: d, .. } | DataState::Invalid(d) => {
-                *self = DataState::Invalid(d)
+                *self = DataState::Invalid(d);
             }
             DataState::Constant(_) => unreachable!(),
             DataState::Working(_) => {
                 panic!("Cannot invalidate a cache while the node is being executed.")
             }
-            _ => {}
+            DataState::Empty => {}
         }
     }
 }
@@ -43,7 +43,10 @@ pub struct Cache<T> {
     invalidators: Mutex<Vec<Receiver<Invalidator>>>,
 }
 
-#[allow(clippy::enum_variant_names)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "I think these variant names are both descriptive and funny, I'm not changing it"
+)]
 pub(crate) enum CheckResult<T> {
     NoProblem(Cached<T>),
     SomeoneElsesProblem,
@@ -64,6 +67,7 @@ impl<T: Data> Cache<T> {
         }
     }
 
+    #[must_use]
     pub fn new_arc() -> Arc<Self> {
         Arc::new(Self::new())
     }
@@ -174,7 +178,7 @@ impl<T: Data> Cache<T> {
         let weak = Arc::downgrade(self);
         move || {
             if let Some(c) = weak.upgrade() {
-                c.invalidate()
+                c.invalidate();
             }
         }
     }
@@ -202,10 +206,10 @@ impl<T> Cached<T> {
         match self {
             Cached::Constant(v) => v,
             Cached::Variable { value, senders, .. } => {
-                senders.into_iter().for_each(|s| {
+                for s in senders {
                     let i = invalidator.clone();
-                    s.send(Box::new(i)).expect("Could not sent invalidator")
-                });
+                    s.send(Box::new(i)).expect("Could not sent invalidator");
+                }
                 value
             }
         }

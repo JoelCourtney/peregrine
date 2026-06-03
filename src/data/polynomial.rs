@@ -78,6 +78,10 @@ impl_constant_constructors![
 impl<const N: usize, I, T> Index<usize> for Polynomial<N, I, T> {
     type Output = T;
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "This is the index trait, clippy is a bit of a moron"
+    )]
     fn index(&self, index: usize) -> &Self::Output {
         if index == 0 {
             &self.intercept
@@ -88,6 +92,10 @@ impl<const N: usize, I, T> Index<usize> for Polynomial<N, I, T> {
 }
 
 impl<const N: usize, I, T> IndexMut<usize> for Polynomial<N, I, T> {
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "This is the index trait, clippy is a bit of a moron"
+    )]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         if index == 0 {
             &mut self.intercept
@@ -98,60 +106,52 @@ impl<const N: usize, I, T> IndexMut<usize> for Polynomial<N, I, T> {
 }
 
 impl<const N: usize, I, T: Zero> Polynomial<N, I, T> {
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index == 0 {
+            Some(&self.intercept)
+        } else {
+            self.higher_coefficients.get(index - 1)
+        }
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        if index == 0 {
+            Some(&mut self.intercept)
+        } else {
+            self.higher_coefficients.get_mut(index - 1)
+        }
+    }
+
     pub fn intercept(&self) -> &T {
         &self.intercept
     }
 
-    pub fn slope(&self) -> &T {
-        if N >= 1 {
-            &self.higher_coefficients[0]
-        } else {
-            panic!("Polynomial degree {N} is too low to reference slope");
-        }
+    pub fn slope(&self) -> Option<&T> {
+        self.higher_coefficients.first()
     }
 
-    pub fn acceleration(&self) -> &T {
-        if N >= 2 {
-            &self.higher_coefficients[1]
-        } else {
-            panic!("Polynomial degree {N} is too low to reference acceleration");
-        }
+    pub fn acceleration(&self) -> Option<&T> {
+        self.higher_coefficients.get(1)
     }
 
-    pub fn jerk(&self) -> &T {
-        if N >= 3 {
-            &self.higher_coefficients[2]
-        } else {
-            panic!("Polynomial degree {N} is too low to reference jerk");
-        }
+    pub fn jerk(&self) -> Option<&T> {
+        self.higher_coefficients.get(2)
     }
 
     pub fn intercept_mut(&mut self) -> &mut T {
         &mut self.intercept
     }
 
-    pub fn slope_mut(&mut self) -> &mut T {
-        if N >= 1 {
-            &mut self.higher_coefficients[0]
-        } else {
-            panic!("Polynomial degree {N} is too low to mutate slope");
-        }
+    pub fn slope_mut(&mut self) -> Option<&mut T> {
+        self.higher_coefficients.first_mut()
     }
 
-    pub fn acceleration_mut(&mut self) -> &mut T {
-        if N >= 2 {
-            &mut self.higher_coefficients[1]
-        } else {
-            panic!("Polynomial degree {N} is too low to mutate acceleration");
-        }
+    pub fn acceleration_mut(&mut self) -> Option<&mut T> {
+        self.higher_coefficients.get_mut(1)
     }
 
-    pub fn jerk_mut(&mut self) -> &mut T {
-        if N >= 3 {
-            &mut self.higher_coefficients[2]
-        } else {
-            panic!("Polynomial degree {N} is too low to mutate jerk");
-        }
+    pub fn jerk_mut(&mut self) -> Option<&mut T> {
+        self.higher_coefficients.get_mut(2)
     }
 }
 
@@ -198,8 +198,8 @@ impl<C: Copy, const N: usize, I, T: Mul<C, Output = T>> Mul<C> for Polynomial<N,
 impl<C: Copy, const N: usize, I, T: MulAssign<C>> MulAssign<C> for Polynomial<N, I, T> {
     fn mul_assign(&mut self, rhs: C) {
         self.intercept *= rhs;
-        for i in 0..N {
-            self.higher_coefficients[i] *= rhs;
+        for c in &mut self.higher_coefficients {
+            *c *= rhs;
         }
     }
 }
@@ -217,8 +217,8 @@ impl<C: Copy, const N: usize, I, T: Div<C, Output = T>> Div<C> for Polynomial<N,
 impl<C: Copy, const N: usize, I, T: DivAssign<C>> DivAssign<C> for Polynomial<N, I, T> {
     fn div_assign(&mut self, rhs: C) {
         self.intercept /= rhs;
-        for i in 0..N {
-            self.higher_coefficients[i] /= rhs;
+        for c in &mut self.higher_coefficients {
+            *c /= rhs;
         }
     }
 }
@@ -233,13 +233,14 @@ macro_rules! impl_evolving {
                     let mut result = self.intercept.clone();
                     let measure = $basis_div_transform(sample_at - start) / $basis_div_transform(self.basis);
                     let mut x = measure;
-                    for i in 0..N {
-                        result = result + self.higher_coefficients[i].clone() * x;
+                    for c in &self.higher_coefficients {
+                        result = result + c.clone() * x;
                         x *= measure;
                     }
                     result
                 }
 
+                #[expect(clippy::indexing_slicing, reason = "index is guaranteed to be less than N")]
                 fn evolve(&self, from: $basis, to: $basis) -> Self {
                     let measure = $basis_div_transform(to - from) / $basis_div_transform(self.basis);
                     let mut result = self.clone();
@@ -282,7 +283,7 @@ fn identity<T>(value: T) -> T {
 }
 
 fn to_f64<T: ToPrimitive>(value: T) -> f64 {
-    <f64 as NumCast>::from(value).unwrap()
+    <f64 as NumCast>::from(value).expect("converting to f64 should never fail")
 }
 
 fn duration_to_seconds(duration: Duration) -> f64 {

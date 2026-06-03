@@ -188,9 +188,9 @@ impl<'a, T: Copy + Ord, O: Evolving<Dense<T>>> DenseSeriesRecorder<'_, 'a, T, O>
     }
 }
 
-impl<'a, 'm, T, O> ErasedRecorder for DenseSeriesRecorder<'a, 'm, T, O> {}
+impl<T, O> ErasedRecorder for DenseSeriesRecorder<'_, '_, T, O> {}
 
-impl<'a, 'm, T, O> IntoAnonIterator for DenseSeriesRecorder<'a, 'm, T, O> {
+impl<T, O> IntoAnonIterator for DenseSeriesRecorder<'_, '_, T, O> {
     type Item = Dense<T>;
 
     fn into_anon_iter(self) -> impl Iterator<Item = Dense<T>> {
@@ -236,28 +236,34 @@ impl<'m, O: Data> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
         self.recorder.mutate_at(self.time_tracker.get(), f)
     }
 
+    #[must_use]
     pub fn get(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.get_at(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn get_inc(&self) -> Node<Arc<ConstantSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.get_at_inc(self.time_tracker.get())
     }
 }
 
 impl<'m, O: Evolving<Dense<Time>>> DenseSeriesChronoRecorder<'_, '_, 'm, O> {
+    #[must_use]
     pub fn sample(&self) -> Node<Arc<SamplingSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.sample_at(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn sample_inc(&self) -> Node<Arc<SamplingSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.sample_at_inc(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn evolve(&self) -> Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.evolve_at(self.time_tracker.get())
     }
 
+    #[must_use]
     pub fn evolve_inc(&self) -> Node<Arc<EvolvingSeriesProbe<'m, Dense<Time>, O>>> {
         self.recorder.evolve_at_inc(self.time_tracker.get())
     }

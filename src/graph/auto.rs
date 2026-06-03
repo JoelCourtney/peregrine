@@ -9,7 +9,7 @@ impl<U: Upstream + ?Sized> Upstream for &U {
     where
         Self: 's,
     {
-        (**self).request(ctx, callback)
+        (**self).request(ctx, callback);
     }
 }
 
@@ -20,7 +20,7 @@ impl<U: Upstream + ?Sized> Upstream for Box<U> {
     where
         Self: 's,
     {
-        (**self).request(ctx, callback)
+        (**self).request(ctx, callback);
     }
 }
 
@@ -31,7 +31,7 @@ impl<U: Upstream + ?Sized> Upstream for Arc<U> {
     where
         Self: 's,
     {
-        (**self).request(ctx, callback)
+        (**self).request(ctx, callback);
     }
 }
 
@@ -63,6 +63,6 @@ impl<U: Upstream, O: Data> Upstream for UncachedMap<U, O> {
     {
         let func = self.func;
         self.upstream
-            .request(ctx, callback.map(move |c| c.map(func)))
+            .request(ctx, callback.map(move |c| c.map(func)));
     }
 }

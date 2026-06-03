@@ -1,13 +1,13 @@
 pub mod dense;
 pub mod resource;
-mod staggered;
 
-use crate::{
-    Data, Upstream, cache::Cache, data::evolving::Evolving, graph::series::staggered::StaggeredMap,
-    node::Node,
-};
+use crate::{Data, Upstream, cache::Cache, data::evolving::Evolving, node::Node};
 use parking_lot::Mutex;
-use std::sync::{Arc, Weak};
+use std::{
+    collections::BTreeMap,
+    ops::Bound,
+    sync::{Arc, Weak},
+};
 
 pub struct Series<'a, T, O> {
     entries: Mutex<SeriesEntries<'a, T, O>>,
@@ -15,14 +15,14 @@ pub struct Series<'a, T, O> {
 
 struct SeriesEntries<'a, T, O> {
     default: ProbedUpstream<'a, T, O>,
-    map: StaggeredMap<T, ProbedUpstream<'a, T, O>>,
+    map: BTreeMap<T, ProbedUpstream<'a, T, O>>,
 }
 
 impl<T, O> Drop for SeriesEntries<'_, T, O> {
     fn drop(&mut self) {
-        let replacement = StaggeredMap::new();
+        let replacement = BTreeMap::new();
         let actual = std::mem::replace(&mut self.map, replacement);
-        for _ in actual.into_iter_unordered().rev() {}
+        for _ in actual.into_iter().rev() {}
     }
 }
 
@@ -85,7 +85,7 @@ impl<'a, T, O> StrongSeriesProbe<'a, T, O> {
         if let StrongSeriesProbe::Constant(c) = self {
             c
         } else {
-            panic!("Expected ConstantSeriesProbe.")
+            unreachable!("Expected ConstantSeriesProbe.")
         }
     }
 
@@ -93,7 +93,7 @@ impl<'a, T, O> StrongSeriesProbe<'a, T, O> {
         if let StrongSeriesProbe::Evolving(c) = self {
             c
         } else {
-            panic!("Expected EvolvingSeriesProbe.")
+            unreachable!("Expected EvolvingSeriesProbe.")
         }
     }
 
@@ -101,7 +101,7 @@ impl<'a, T, O> StrongSeriesProbe<'a, T, O> {
         if let StrongSeriesProbe::Sampling(c) = self {
             c
         } else {
-            panic!("Expected SamplingSeriesProbe.")
+            unreachable!("Expected SamplingSeriesProbe.")
         }
     }
 }
@@ -131,7 +131,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
                     upstream: Arc::new(default),
                     probes: vec![],
                 },
-                map: Default::default(),
+                map: BTreeMap::default(),
             }),
         }
     }
@@ -140,9 +140,9 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         let upstream = Arc::new(upstream) as Arc<dyn Upstream<Output = O>>;
         let SeriesEntries { default, map } = &mut *self.entries.lock();
         let probed = map
-            .get_before_mut(index, true)
-            .map(|(_, v)| v)
-            .unwrap_or(default);
+            .range_mut(..=index)
+            .next_back()
+            .map_or(default, |(_, v)| v);
 
         let new_probes = probed
             .probes
@@ -171,10 +171,10 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         }) = map.remove(&index)
         {
             let (new_key, probed) = map
-                .get_before_mut(index, true)
-                .map(|(key, value)| (Some(*key), value))
-                .unwrap_or((None, default));
-            for weak in probes.into_iter() {
+                .range_mut(..=index)
+                .next_back()
+                .map_or((None, default), |(key, value)| (Some(*key), value));
+            for weak in probes {
                 if let Some(probe) = weak.upgrade() {
                     probe.switch(new_key, &probed.upstream);
                     probed.probes.push(weak);
@@ -193,19 +193,24 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         mapper: impl Fn(Option<T>, ConstantSeriesProbe<T, O>) -> StrongSeriesProbe<T, O>,
     ) -> StrongSeriesProbe<'a, T, O> {
         let SeriesEntries { default, map } = &mut *self.entries.lock();
+        let bound = if inclusive {
+            Bound::Included(index)
+        } else {
+            Bound::Excluded(index)
+        };
         let (key, probed) = map
-            .get_before_mut(index, inclusive)
-            .map(|(k, v)| (Some(*k), v))
-            .unwrap_or((None, default));
+            .range_mut((Bound::Unbounded, bound))
+            .next_back()
+            .map_or((None, default), |(k, v)| (Some(*k), v));
         let probe = ConstantSeriesProbe {
             at: index,
             inclusive,
             upstream: Mutex::new(probed.upstream.clone()),
             cache: Cache::new(),
         };
-        let mapped = mapper(key, probe);
-        probed.probes.push(mapped.downgrade());
-        mapped
+        let mapped_probe = mapper(key, probe);
+        probed.probes.push(mapped_probe.downgrade());
+        mapped_probe
     }
 
     pub fn get_at(&self, index: T) -> Node<Arc<ConstantSeriesProbe<'a, T, O>>> {
@@ -316,7 +321,7 @@ impl MontyHall {
 
 impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
     fn reconsider(&self, new_key: T, upstream: &Arc<dyn Upstream<Output = O> + 'a>) -> MontyHall {
-        use MontyHall::*;
+        use MontyHall::{Stay, Switch};
 
         let constant_probe = match self {
             StrongSeriesProbe::Constant(probe) => &**probe,
@@ -360,7 +365,7 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
     }
 }
 
-impl<'a, T: Send + Sync, O: Data> Upstream for ConstantSeriesProbe<'a, T, O> {
+impl<T: Send + Sync, O: Data> Upstream for ConstantSeriesProbe<'_, T, O> {
     type Output = O;
 
     fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
@@ -376,8 +381,8 @@ impl<'a, T: Send + Sync, O: Data> Upstream for ConstantSeriesProbe<'a, T, O> {
     }
 }
 
-impl<'a, T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
-    for EvolvingSeriesProbe<'a, T, O>
+impl<T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
+    for EvolvingSeriesProbe<'_, T, O>
 {
     type Output = O;
 
@@ -388,24 +393,22 @@ impl<'a, T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
         let sender = self.inner.cache.get_invalidator_sender();
         let upstream_at = self.upstream_at.lock().clone();
         let at = self.inner.at.clone();
-        let callback = if upstream_at != at {
+        let callback = if upstream_at == at {
             callback.map(|mut c| {
                 c.push_sender(sender, false);
-                c.map(|v: O| v.evolve(upstream_at, at))
+                c
             })
         } else {
             callback.map(|mut c| {
                 c.push_sender(sender, false);
-                c
+                c.map(|v: O| v.evolve(upstream_at, at))
             })
         };
         self.inner.upstream.lock().request(ctx, callback);
     }
 }
 
-impl<'a, T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
-    for SamplingSeriesProbe<'a, T, O>
-{
+impl<T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream for SamplingSeriesProbe<'_, T, O> {
     type Output = O::Sample;
 
     fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: crate::Callback<'s, Self::Output>)
@@ -423,7 +426,7 @@ impl<'a, T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
     }
 }
 
-impl<'a, T: Copy + Ord, O: Upstream<Output = O> + Default + Data> Default for Series<'a, T, O> {
+impl<T: Copy + Ord, O: Upstream<Output = O> + Default + Data> Default for Series<'_, T, O> {
     fn default() -> Self {
         Series::new(O::default())
     }

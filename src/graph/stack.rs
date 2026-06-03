@@ -5,6 +5,7 @@ use parking_lot::RwLock;
 use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
 
 pub struct Stack<'a, O> {
+    base: Arc<dyn Upstream<Output = O> + 'a>,
     nodes: RwLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
     cache: Cache<()>,
 }
@@ -12,7 +13,8 @@ pub struct Stack<'a, O> {
 impl<'a, O: Data> Stack<'a, O> {
     pub fn new(run: impl Upstream<Output = O> + 'a) -> Stack<'a, O> {
         Stack {
-            nodes: RwLock::new(vec![Arc::new(run)]),
+            base: Arc::new(run),
+            nodes: RwLock::new(vec![]),
             cache: Cache::new(),
         }
     }
@@ -22,10 +24,10 @@ impl<'a, O: Data> Stack<'a, O> {
         f: impl FnOnce(Arc<dyn Upstream<Output = O> + 'a>) -> U,
     ) {
         let mut nodes = self.nodes.write();
-        let prev = nodes.last().unwrap().clone();
+        let prev = nodes.last().unwrap_or(&self.base).clone();
         let upstream = f(prev);
         nodes.push(Arc::new(upstream));
-        self.cache.invalidate()
+        self.cache.invalidate();
     }
 
     pub fn pop(&self) -> Option<Node<Arc<dyn Upstream<Output = O> + 'a>>>
@@ -33,31 +35,11 @@ impl<'a, O: Data> Stack<'a, O> {
         O: 'static,
     {
         let mut nodes = self.nodes.write();
-        if nodes.len() > 1 {
+        if let Some(node) = nodes.pop() {
             self.cache.invalidate();
-            let node = nodes.pop().unwrap();
             Some(Node(node))
         } else {
             None
-        }
-    }
-
-    pub fn freeze(&self) -> Node<Arc<dyn Upstream<Output = O> + 'a>>
-    where
-        O: 'static,
-    {
-        Node(self.nodes.read().last().unwrap().clone())
-    }
-
-    pub fn fork(&self) -> Stack<'a, O>
-    where
-        O: Send + Clone + 'static,
-    {
-        let vec = self.nodes.read();
-
-        Stack {
-            nodes: RwLock::new(vec.clone()),
-            cache: Cache::new(),
         }
     }
 }
@@ -75,14 +57,15 @@ impl<O: Data> Upstream for Stack<'_, O> {
             c
         });
         let cell = self.nodes.read();
-        cell.last().unwrap().request(ctx, callback);
+        cell.last().unwrap_or(&self.base).request(ctx, callback);
     }
 }
 
 impl<O: Upstream<Output = O> + Default + 'static> Default for Stack<'_, O> {
     fn default() -> Self {
         Stack {
-            nodes: RwLock::new(vec![Arc::new(O::default()) as Arc<dyn Upstream<Output = O>>]),
+            base: Arc::new(O::default()),
+            nodes: RwLock::new(vec![]),
             cache: Cache::new(),
         }
     }

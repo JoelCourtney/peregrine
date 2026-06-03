@@ -16,18 +16,21 @@ impl<O: Clone + Send + 'static> Sink<O> {
         }
     }
 
-    pub(crate) fn as_callback<'s>(&'s self) -> Callback<'s, O> {
+    pub(crate) fn as_callback(&self) -> Callback<'_, O> {
         Callback::new(self, &self.output)
     }
 
     pub(crate) fn open(self) -> O {
-        self.output.take().unwrap().open()
+        self.output
+            .take()
+            .expect("todo: An output was not present. This is an internal error")
+            .open()
     }
 }
 
 impl<O: Send> Downstream for Sink<O> {
     fn should_run(&self) -> bool {
-        true
+        false
     }
 
     fn run(&self, _: Ctx) {}
@@ -41,7 +44,7 @@ pub(crate) struct Callbacks<O: 'static> {
 impl<O: 'static> Default for Callbacks<O> {
     fn default() -> Self {
         Self {
-            vec: Default::default(),
+            vec: Vec::default(),
             run_counter: None,
         }
     }
@@ -50,11 +53,10 @@ impl<O: 'static> Default for Callbacks<O> {
 impl<O: Clone> Callbacks<O> {
     pub fn add<'s>(&mut self, callback: Callback<'s, O>, run_count: u64) {
         let old_run_count = self.run_counter.replace(run_count).unwrap_or(run_count);
-        if old_run_count != run_count {
-            panic!(
-                "Stale callbacks found from previous run #{old_run_count}, now on run #{run_count}"
-            );
-        }
+        assert!(
+            old_run_count == run_count,
+            "Stale callbacks found from previous run #{old_run_count}, now on run #{run_count}"
+        );
         self.vec
             .push(unsafe { transmute::<Callback<'s, O>, Callback<'static, O>>(callback) });
     }

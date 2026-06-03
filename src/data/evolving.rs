@@ -14,7 +14,9 @@ use crate as peregrine;
 pub trait Evolving<I>: Data {
     type Sample: Data;
 
+    #[must_use]
     fn evolve(&self, from: I, to: I) -> Self;
+    #[must_use]
     fn sample(&self, start: I, sample_at: I) -> Self::Sample;
 }
 
@@ -46,7 +48,10 @@ pub struct Evolution<I, T: EvolvingSteps<I>> {
     #[deref]
     #[deref_mut]
     value: T,
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "I don't think it makes sense to make a type alias for this"
+    )]
     evolution: Arc<Mutex<Vec<EvolutionStep<I, T::State>>>>,
 }
 
@@ -125,6 +130,8 @@ impl<I: Data + PartialOrd, T: EvolvingSteps<I>> Evolving<I> for Evolution<I, T> 
     }
 
     fn sample(&self, start: I, sample_at: I) -> Self::Sample {
+        debug_assert!(start <= sample_at);
+
         let evolution = &mut *self.evolution.lock();
         if evolution.is_empty() {
             evolution.push(EvolutionStep {
@@ -132,7 +139,9 @@ impl<I: Data + PartialOrd, T: EvolvingSteps<I>> Evolving<I> for Evolution<I, T> 
                 value: self.value.current_state(start),
             });
         }
-        let mut last = evolution.last().unwrap();
+        let mut last = evolution
+            .last()
+            .expect("evolution.is_empty() is checked above");
         let mut computed_new = false;
         while last.index < sample_at {
             computed_new = true;
@@ -141,14 +150,16 @@ impl<I: Data + PartialOrd, T: EvolvingSteps<I>> Evolving<I> for Evolution<I, T> 
                 index: next_index,
                 value: next_value,
             });
-            last = evolution.last().unwrap();
+            last = evolution.last().expect("a new element was just pushed");
         }
 
         if computed_new {
             if last.index == sample_at {
                 last.value.clone()
             } else {
-                let before_last = &evolution[evolution.len() - 2];
+                let before_last = evolution
+                    .get(evolution.len() - 2)
+                    .expect("new steps were just inserted");
                 self.value.interpolate(
                     &before_last.value,
                     &last.value,
@@ -163,10 +174,18 @@ impl<I: Data + PartialOrd, T: EvolvingSteps<I>> Evolving<I> for Evolution<I, T> 
                     .partial_cmp(&sample_at)
                     .expect("Failed to compare indices")
             }) {
-                Ok(index) => evolution[index].value.clone(),
+                Ok(index) => evolution
+                    .get(index)
+                    .expect("this index was just searched for")
+                    .value
+                    .clone(),
                 Err(index) => {
-                    let before = &evolution[index - 1];
-                    let after = &evolution[index];
+                    let before = evolution
+                        .get(index - 1)
+                        .expect("sample_at cannot be less than start");
+                    let after = evolution
+                        .get(index)
+                        .expect("should have already evolved past sample_at");
                     self.value.interpolate(
                         &before.value,
                         &after.value,
