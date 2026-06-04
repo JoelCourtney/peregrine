@@ -53,8 +53,8 @@ impl<O: 'static> Default for Callbacks<O> {
 impl<O: Clone> Callbacks<O> {
     pub fn add<'s>(&mut self, callback: Callback<'s, O>, run_count: u64) {
         let old_run_count = self.run_counter.replace(run_count).unwrap_or(run_count);
-        assert!(
-            old_run_count == run_count,
+        assert_eq!(
+            old_run_count, run_count,
             "Stale callbacks found from previous run #{old_run_count}, now on run #{run_count}"
         );
         self.vec
@@ -65,6 +65,8 @@ impl<O: Clone> Callbacks<O> {
         if self.vec.is_empty() {
             return;
         }
+
+        assert_eq!(self.run_counter.expect("Can't have callbacks but no run_counter"), ctx.run_count);
 
         let mut to_run = self.vec.into_iter().filter_map(|c| {
             c.output.store(value_factory());
