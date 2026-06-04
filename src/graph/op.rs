@@ -1,5 +1,5 @@
 use std::{
-    mem::{take, transmute},
+    mem::take,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -9,13 +9,10 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    Callback, Ctx, Data, Downstream, Upstream,
-    cache::{
+    Callback, Ctx, Data, Downstream, Upstream, cache::{
         Cache, CheckResult,
         collector::{CollectionStatus, UpstreamCollector},
-    },
-    flow::Callbacks,
-    node::Node,
+    }, callback::CallbackId, node::Node
 };
 
 pub struct Op<UC: UpstreamCollector, O: 'static, F> {
@@ -23,7 +20,7 @@ pub struct Op<UC: UpstreamCollector, O: 'static, F> {
     collection_cells: Arc<UC::Cells>,
     counter: AtomicU32,
     func: F,
-    callbacks: Mutex<Callbacks<O>>,
+    callbacks: Mutex<Vec<CallbackId>>,
     cache: Arc<Cache<O>>,
     can_be_revalidated: AtomicBool,
 }
@@ -62,7 +59,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upst
 {
     type Output = O;
 
-    fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -85,7 +82,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upst
                         callback.call(r, ctx);
                     }
                     CheckResult::SomeoneElsesProblem => {
-                        callbacks.add(callback, ctx.run_count);
+                        callbacks.push(ctx.insert_callback(callback));
                     }
                     CheckResult::YourProblem { .. } => unreachable!(),
                 }
@@ -93,11 +90,9 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upst
             CheckResult::YourProblem { can_be_revalidated } => {
                 self.can_be_revalidated
                     .store(can_be_revalidated, Ordering::Relaxed);
-                self.callbacks.lock().add(callback, ctx.run_count);
+                self.callbacks.lock().push(ctx.insert_callback(callback));
                 self.upstreams
-                    .request(ctx, &self.collection_cells, &self.counter, unsafe {
-                        transmute::<&dyn Downstream, &'static dyn Downstream>(self)
-                    });
+                    .request(ctx, &self.collection_cells, &self.counter, self);
             }
         }
     }
@@ -117,7 +112,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Down
     fn run(&self, ctx: crate::Ctx) {
         let (inputs, collection_status) =
             UC::get(&self.collection_cells, || self.cache.get_invalidator());
-        let result_factory = match collection_status {
+        let mut result_factory = match collection_status {
             CollectionStatus::Revalidated if self.can_be_revalidated.load(Ordering::Relaxed) => {
                 self.cache.revalidate()
             }
@@ -129,7 +124,33 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Down
                 )
             }
         };
-        let callbacks = take(&mut *self.callbacks.lock());
-        callbacks.run(ctx, result_factory);
+        let ids = take(&mut *self.callbacks.lock());
+        if ids.is_empty() {
+            return;
+        }
+
+        let callbacks = ids.into_iter().map(|id| ctx.take_callback::<O>(id));
+
+        let mut to_run = callbacks.filter_map(|c| {
+            c.output.store(result_factory());
+            if c.downstream.should_run() {
+                Some(c.downstream)
+            } else {
+                None
+            }
+        });
+
+        let first = to_run.next();
+
+        for downstream in to_run {
+            ctx.spawn(move |ctx| {
+                downstream.run(ctx);
+            });
+        }
+        if let Some(downstream) = first {
+            ctx.run(move |ctx| {
+                downstream.run(ctx);
+            });
+        }
     }
 }

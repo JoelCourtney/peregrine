@@ -36,7 +36,7 @@ impl<T> DataState<T> {
     }
 }
 
-type Invalidator = Box<dyn FnOnce() + Send>;
+type Invalidator = Box<dyn FnOnce() + Send + Sync>;
 
 pub struct Cache<T> {
     result: Mutex<DataState<T>>,
@@ -202,7 +202,7 @@ impl<T> Cached<T> {
         }
     }
 
-    pub fn track(self, invalidator: impl FnOnce() + Clone + Send + 'static) -> T {
+    pub fn track(self, invalidator: impl FnOnce() + Clone + Send + Sync + 'static) -> T {
         match self {
             Cached::Constant(v) => v,
             Cached::Variable { value, senders, .. } => {

@@ -25,7 +25,7 @@ pub trait UpstreamCollector: Send + Sync {
         downstream: &'s dyn Downstream,
     ) where
         Self: 's;
-    fn get<F: FnOnce() + Send + 'static>(
+    fn get<F: FnOnce() + Send + Sync + 'static>(
         cells: &Arc<Self::Cells>,
         invalidator_factory: impl Fn() -> F,
     ) -> (Self::Result, CollectionStatus);
@@ -149,7 +149,7 @@ macro_rules! impl_upstream_collector_tuple {
                 )*
             }
 
-            fn get<FUNC: FnOnce() + Send + 'static>(cells: &Arc<Self::Cells>, factory: impl Fn() -> FUNC) -> (Self::Result, CollectionStatus) {
+            fn get<FUNC: FnOnce() + Send + Sync + 'static>(cells: &Arc<Self::Cells>, factory: impl Fn() -> FUNC) -> (Self::Result, CollectionStatus) {
                 let ($($c,)*) = &**cells;
                 let mut constant = true;
                 let mut revalidate = true;
@@ -260,7 +260,7 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
         ctx.run(move |ctx| first.request(ctx, callback));
     }
 
-    fn get<F: FnOnce() + Send + 'static>(
+    fn get<F: FnOnce() + Send + Sync + 'static>(
         cells: &Arc<Self::Cells>,
         factory: impl Fn() -> F,
     ) -> (Vec<O>, CollectionStatus) {
@@ -350,7 +350,7 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
     }
 
     #[expect(clippy::indexing_slicing, reason = "Indexing necessary for array_init")]
-    fn get<F: FnOnce() + Send + 'static>(
+    fn get<F: FnOnce() + Send + Sync + 'static>(
         cells: &Arc<Self::Cells>,
         factory: impl Fn() -> F,
     ) -> ([O; N], CollectionStatus) {

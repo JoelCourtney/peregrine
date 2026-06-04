@@ -27,6 +27,7 @@ hifitime = "4.2"
 serde = "1.0"
 rayon = "1.11"
 num = "0.4"
+sharded-slab = "0.1.7"
 
 [dev-dependencies]
 ordered-float = "5.1"
