@@ -62,7 +62,7 @@ impl<UC: UpstreamCollector, O: Data, F: Fn(OpInput<UC>) -> O + Send + Sync> Upst
 {
     type Output = O;
 
-    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<Self::Output>)
+    fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, callback: Callback<Self::Output>)
     where
         Self: 's,
     {

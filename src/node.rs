@@ -15,7 +15,7 @@ where
 {
     type Output = T::Output;
 
-    fn request<'s>(&self, ctx: crate::Ctx<'_, '_, 's>, callback: crate::Callback<'s, Self::Output>)
+    fn request<'s>(&'s self, ctx: crate::Ctx<'_, '_, 's>, callback: crate::Callback<'s, Self::Output>)
     where
         Self: 's,
     {

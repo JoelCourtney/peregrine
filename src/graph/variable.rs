@@ -4,7 +4,7 @@ use crate::{
     Callback, Ctx, Data, Upstream,
     cache::Cache,
     node::Node,
-    shared_lock::{SharedLock, SharedLockKey},
+    shared_lock::{SharedLock, SharedKey},
 };
 
 pub struct Var<'a, O: Send + 'static> {
@@ -21,16 +21,16 @@ impl<'a, O: Data> Var<'a, O> {
     }
 
     pub fn set(&self, node: impl Upstream<Output = O> + 'a) {
-        let shared_key = SharedLockKey::new();
-        let write = self.cell.lock(&shared_key);
+        let mut shared_key = SharedKey::new();
+        let write = self.cell.write(&mut shared_key);
         let new_node = Arc::new(node);
         self.cache.invalidate();
         *write = new_node;
     }
 
     pub fn freeze(&self) -> Node<Arc<dyn Upstream<Output = O> + 'a>> {
-        let shared_key = SharedLockKey::new();
-        let cell = self.cell.lock(&shared_key);
+        let shared_key = SharedKey::new();
+        let cell = self.cell.read(&shared_key);
         Node((*cell).clone())
     }
 }
@@ -38,7 +38,7 @@ impl<'a, O: Data> Var<'a, O> {
 impl<O: Data> Upstream for Var<'_, O> {
     type Output = O;
 
-    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, O>)
+    fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
     {
@@ -47,7 +47,7 @@ impl<O: Data> Upstream for Var<'_, O> {
             c.push_sender(sender, false);
             c
         });
-        let cell = self.cell.lock(ctx.key);
+        let cell = self.cell.read(ctx.key);
         cell.request(ctx, callback);
     }
 }

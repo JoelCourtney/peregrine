@@ -27,7 +27,6 @@ hifitime = "4.2"
 serde = "1.0"
 rayon = "1.11"
 num = "0.4"
-paste = "1.0.15"
 
 [dev-dependencies]
 ordered-float = "5.1"

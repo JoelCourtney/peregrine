@@ -17,12 +17,12 @@ pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op
 use cache::Cached;
 use rayon::Scope;
 
-use crate::{cache::collector::OutputCell, data::Data, flow::Sink, shared_lock::SharedLockKey};
+use crate::{cache::collector::OutputCell, data::Data, flow::Sink, shared_lock::SharedKey};
 
 pub trait Upstream: Send + Sync {
     type Output: Data;
 
-    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's;
 }
@@ -98,13 +98,13 @@ where
     scope: &'a Scope<'s>,
     run_count: u64,
     stack_depth: u32,
-    key: &'b SharedLockKey<'s>,
+    key: &'b SharedKey<'s>,
 }
 
 const MAX_STACK_DEPTH: u32 = 1000;
 
 impl<'a, 'b, 's> Ctx<'a, 'b, 's> {
-    fn new(scope: &'a Scope<'s>, run_count: u64, key: &'b SharedLockKey<'s>) -> Self {
+    fn new(scope: &'a Scope<'s>, run_count: u64, key: &'b SharedKey<'s>) -> Self {
         Ctx {
             scope,
             stack_depth: 0,
@@ -143,7 +143,7 @@ pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
 
     let run_count = RUN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    let key = SharedLockKey::new();
+    let key = SharedKey::new();
 
     rayon::scope(|scope| {
         let ctx = Ctx::new(scope, run_count, &key);

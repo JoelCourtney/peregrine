@@ -1,7 +1,7 @@
 use array_init::array_init;
 use std::{
     cell::UnsafeCell,
-    mem::{take, transmute},
+    mem::take,
     sync::{
         Arc,
         atomic::{AtomicU32, Ordering},
@@ -18,9 +18,9 @@ pub trait UpstreamCollector: Send + Sync {
 
     fn new_cells(&self) -> Self::Cells;
     fn request<'s>(
-        &self,
+        &'s self,
         ctx: Ctx<'_, '_, 's>,
-        cells: &Self::Cells,
+        cells: &'s Self::Cells,
         counter: &AtomicU32,
         downstream: &'s dyn Downstream,
     ) where
@@ -45,7 +45,7 @@ impl UpstreamCollector for () {
     fn new_cells(&self) -> Self::Cells {}
 
     fn request<'s>(
-        &self,
+        &'s self,
         ctx: Ctx<'_, '_, 's>,
         _cells: &(),
         _counter: &AtomicU32,
@@ -128,7 +128,7 @@ macro_rules! impl_upstream_collector_tuple {
                 Default::default()
             }
 
-            fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, cells: &Self::Cells, counter: &AtomicU32, downstream: &'s dyn Downstream) where Self: 's {
+            fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, cells: &'s Self::Cells, counter: &AtomicU32, downstream: &'s dyn Downstream) where Self: 's {
                 let ($($u,)*) = &self;
                 let ($($c,)*) = &cells;
 
@@ -138,12 +138,8 @@ macro_rules! impl_upstream_collector_tuple {
                 $(
                     if !$c.is_some() {
                         count -= 1;
-                        let callback = unsafe {
-                             Callback::new(downstream, transmute::<&OutputCell<_>, &'s OutputCell<_>>($c))
-                        };
-                        let upstream = unsafe {
-                            transmute::<&$t, &'s $t>($u)
-                        };
+                        let callback = Callback::new(downstream, $c);
+                        let upstream = $u;
                         if count == 0 {
                             ctx.run(move |ctx| upstream.request(ctx, callback));
                         } else {
@@ -217,9 +213,9 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
     }
 
     fn request<'s>(
-        &self,
+        &'s self,
         ctx: Ctx<'_, '_, 's>,
-        cells: &Self::Cells,
+        cells: &'s Self::Cells,
         counter: &AtomicU32,
         downstream: &'s dyn Downstream,
     ) where
@@ -253,25 +249,14 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
         };
 
         for (upstream, cell) in zipped {
-            let callback = unsafe {
-                Callback::new(
-                    downstream,
-                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(cell),
-                )
-            };
-            let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
+            let callback = Callback::new(downstream, cell);
             ctx.spawn(move |ctx| upstream.request(ctx, callback));
         }
 
         counter.store(count, Ordering::Relaxed);
 
-        let callback = unsafe {
-            Callback::new(
-                downstream,
-                transmute::<&OutputCell<_>, &'s OutputCell<_>>(first_cell),
-            )
-        };
-        let first = unsafe { transmute::<&U, &'s U>(first_upstream) };
+        let callback = Callback::new(downstream, first_cell);
+        let first = first_upstream;
         ctx.run(move |ctx| first.request(ctx, callback));
     }
 
@@ -327,9 +312,9 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
     }
 
     fn request<'s>(
-        &self,
+        &'s self,
         ctx: Ctx<'_, '_, 's>,
-        cells: &Self::Cells,
+        cells: &'s Self::Cells,
         counter: &AtomicU32,
         downstream: &'s dyn Downstream,
     ) where
@@ -354,26 +339,14 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
         };
 
         for (upstream, cell) in zipped {
-            let callback = unsafe {
-                Callback::new(
-                    downstream,
-                    transmute::<&OutputCell<_>, &'s OutputCell<_>>(cell),
-                )
-            };
-            let upstream = unsafe { transmute::<&U, &'s U>(upstream) };
+            let callback = Callback::new(downstream, cell);
             ctx.spawn(move |ctx| upstream.request(ctx, callback));
         }
 
         counter.store(count, Ordering::Relaxed);
 
-        let callback = unsafe {
-            Callback::new(
-                downstream,
-                transmute::<&OutputCell<_>, &'s OutputCell<_>>(first_cell),
-            )
-        };
-        let first = unsafe { transmute::<&U, &'s U>(first_upstream) };
-        ctx.run(move |ctx| first.request(ctx, callback));
+        let callback = Callback::new(downstream, first_cell);
+        ctx.run(move |ctx| first_upstream.request(ctx, callback));
     }
 
     #[expect(clippy::indexing_slicing, reason = "Indexing necessary for array_init")]

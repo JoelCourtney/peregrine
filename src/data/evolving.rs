@@ -118,6 +118,7 @@ pub trait EvolvingSteps<I>: Data {
         to: I,
         at: I,
     ) -> Self::State;
+    #[must_use]
     fn rebuild(&self, state: Self::State) -> Self;
 }
 

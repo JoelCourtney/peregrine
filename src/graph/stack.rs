@@ -4,7 +4,7 @@ use crate::{
     Callback, Ctx, Data, Upstream,
     cache::Cache,
     node::Node,
-    shared_lock::{SharedLock, SharedLockKey},
+    shared_lock::{SharedLock, SharedKey},
 };
 
 pub struct Stack<'a, O> {
@@ -26,8 +26,8 @@ impl<'a, O: Data> Stack<'a, O> {
         &self,
         f: impl FnOnce(Arc<dyn Upstream<Output = O> + 'a>) -> U,
     ) {
-        let shared_key = SharedLockKey::new();
-        let nodes = self.nodes.lock(&shared_key);
+        let mut shared_key = SharedKey::new();
+        let nodes = self.nodes.write(&mut shared_key);
         let prev = nodes.last().unwrap_or(&self.base).clone();
         let upstream = f(prev);
         nodes.push(Arc::new(upstream));
@@ -38,8 +38,8 @@ impl<'a, O: Data> Stack<'a, O> {
     where
         O: 'static,
     {
-        let shared_key = SharedLockKey::new();
-        let nodes = self.nodes.lock(&shared_key);
+        let mut shared_key = SharedKey::new();
+        let nodes = self.nodes.write(&mut shared_key);
         if let Some(node) = nodes.pop() {
             self.cache.invalidate();
             Some(Node(node))
@@ -52,7 +52,7 @@ impl<'a, O: Data> Stack<'a, O> {
 impl<O: Data> Upstream for Stack<'_, O> {
     type Output = O;
 
-    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, O>)
+    fn request<'s>(&'s self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
     {
@@ -61,7 +61,7 @@ impl<O: Data> Upstream for Stack<'_, O> {
             c.push_sender(sender, false);
             c
         });
-        let cell = self.nodes.lock(ctx.key);
+        let cell = self.nodes.read(ctx.key);
         cell.last().unwrap_or(&self.base).request(ctx, callback);
     }
 }
