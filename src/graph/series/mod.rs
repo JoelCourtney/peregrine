@@ -6,7 +6,7 @@ use crate::{
     cache::Cache,
     data::evolving::Evolving,
     node::Node,
-    shared_lock::{SharedLock, SharedKey},
+    shared_lock::{SharedKey, SharedLock},
 };
 use std::{
     collections::BTreeMap,
@@ -378,7 +378,7 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
             (StrongSeriesProbe::Sampling(s), Some(new_key)) => {
                 *s.upstream_at.write(shared_key) = new_key;
             }
-            _ => panic!(
+            _ => todo!(
                 "Cannot evolve or sample the default value of a Series. The default value occurs at -infinity."
             ),
         }
@@ -388,8 +388,11 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
 impl<T: Send + Sync, O: Data> Upstream for ConstantSeriesProbe<'_, T, O> {
     type Output = O;
 
-    fn request<'s>(&'s self, ctx: crate::Ctx<'_, '_, 's>, callback: crate::Callback<'s, Self::Output>)
-    where
+    fn request<'s>(
+        &'s self,
+        ctx: crate::Ctx<'_, '_, 's>,
+        callback: crate::Callback<'s, Self::Output>,
+    ) where
         Self: 's,
     {
         let sender = self.cache.get_invalidator_sender();
@@ -406,8 +409,11 @@ impl<T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
 {
     type Output = O;
 
-    fn request<'s>(&'s self, ctx: crate::Ctx<'_, '_, 's>, callback: crate::Callback<'s, Self::Output>)
-    where
+    fn request<'s>(
+        &'s self,
+        ctx: crate::Ctx<'_, '_, 's>,
+        callback: crate::Callback<'s, Self::Output>,
+    ) where
         Self: 's,
     {
         let sender = self.inner.cache.get_invalidator_sender();
@@ -431,8 +437,11 @@ impl<T: PartialEq + Clone + Send + Sync + 'static, O: Evolving<T>> Upstream
 impl<T: Clone + Send + Sync + 'static, O: Evolving<T>> Upstream for SamplingSeriesProbe<'_, T, O> {
     type Output = O::Sample;
 
-    fn request<'s>(&'s self, ctx: crate::Ctx<'_, '_, 's>, callback: crate::Callback<'s, Self::Output>)
-    where
+    fn request<'s>(
+        &'s self,
+        ctx: crate::Ctx<'_, '_, 's>,
+        callback: crate::Callback<'s, Self::Output>,
+    ) where
         Self: 's,
     {
         let sender = self.inner.cache.get_invalidator_sender();

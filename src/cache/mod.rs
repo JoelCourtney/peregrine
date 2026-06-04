@@ -29,7 +29,7 @@ impl<T> DataState<T> {
             }
             DataState::Constant(_) => unreachable!(),
             DataState::Working(_) => {
-                panic!("Cannot invalidate a cache while the node is being executed.")
+                unreachable!("Cannot invalidate a cache while the node is being executed.")
             }
             DataState::Empty => {}
         }

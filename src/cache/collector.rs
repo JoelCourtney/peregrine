@@ -74,6 +74,7 @@ impl<T> Default for OutputCell<T> {
 
 impl<T> OutputCell<T> {
     fn is_some(&self) -> bool {
+        // SAFETY: todo
         unsafe { (*self.0.get()).is_some() }
     }
 
@@ -81,6 +82,7 @@ impl<T> OutputCell<T> {
     where
         T: Clone,
     {
+        // SAFETY: todo
         let value = unsafe { (*self.0.get()).as_mut() };
         match value {
             Some(Cached::Constant(v)) => Some(Cached::Constant(v.clone())),
@@ -98,23 +100,28 @@ impl<T> OutputCell<T> {
     }
 
     fn clear(&self) {
+        // SAFETY: todo
         unsafe {
             (*self.0.get()) = None;
         }
     }
 
     pub(crate) fn take(&self) -> Option<Cached<T>> {
+        // SAFETY: todo
         unsafe { (*self.0.get()).take() }
     }
 
     pub(crate) fn store(&self, value: Cached<T>) {
+        // SAFETY: todo
         unsafe {
             (*self.0.get()) = Some(value);
         }
     }
 }
 
+// SAFETY: todo
 unsafe impl<T: Send> Sync for OutputCell<T> {}
+// SAFETY: todo
 unsafe impl<T: Send> Send for OutputCell<T> {}
 
 macro_rules! impl_upstream_collector_tuple {

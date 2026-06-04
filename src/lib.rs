@@ -12,7 +12,7 @@ pub mod specification;
 
 use std::sync::Arc;
 
-pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op, sync};
+pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op};
 
 use rayon::Scope;
 use sharded_slab::Slab;

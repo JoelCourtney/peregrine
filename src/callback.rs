@@ -1,6 +1,9 @@
 use std::{any::TypeId, mem::transmute};
 
-use crate::{Ctx, Downstream, cache::{Cached, collector::OutputCell}};
+use crate::{
+    Ctx, Downstream,
+    cache::{Cached, collector::OutputCell},
+};
 
 pub struct Callback<'s, I> {
     pub downstream: &'s dyn Downstream,
@@ -71,9 +74,7 @@ impl<'s> ErasedCallback<'s> {
     pub fn new<O: 'static>(callback: Callback<'s, O>) -> Self {
         // SAFETY: The typeid of O is stored, the callback can only be accessed
         // if opened with the same type
-        let erased = unsafe {
-            transmute::<Callback<'s, O>, Callback<'s, ()>>(callback)
-        };
+        let erased = unsafe { transmute::<Callback<'s, O>, Callback<'s, ()>>(callback) };
         ErasedCallback {
             callback: erased,
             output_type_id: TypeId::of::<O>(),
@@ -87,7 +88,6 @@ impl<'s> ErasedCallback<'s> {
         unsafe { transmute::<Callback<'s, ()>, Callback<'s, O>>(self.callback) }
     }
 }
-
 
 pub(crate) struct Sink<O> {
     output: OutputCell<O>,

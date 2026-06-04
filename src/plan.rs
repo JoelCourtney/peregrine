@@ -125,9 +125,21 @@ where
     }
 }
 
+#[macro_export]
+macro_rules! sync {
+    ($model:ident : $t:ty => $plan:ident) => {
+        let mut __peregrine_internal_sync_recorder = {
+            use peregrine::undo::Undo;
+            ($model).recorder()
+        };
+        let $model =
+            <$t>::chrono_recorder(&$plan.time_tracker, &mut __peregrine_internal_sync_recorder);
+    };
+}
+
 #[cfg(test)]
 mod tests {
-    use peregrine_macros::{chronological, op, sync};
+    use peregrine_macros::{chronological, op};
     use serde::{Deserialize, Serialize};
 
     use crate::graph::series::resource::Resource;

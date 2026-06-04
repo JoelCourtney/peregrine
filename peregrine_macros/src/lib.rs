@@ -2,7 +2,6 @@ mod action;
 mod auto_source;
 mod chronological;
 mod op;
-mod sync;
 mod undo;
 
 use proc_macro::TokenStream;
@@ -46,9 +45,4 @@ pub fn action(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn activity(attr: TokenStream, item: TokenStream) -> TokenStream {
     action::act_attribute(attr, item, action::ActType::Activity)
-}
-
-#[proc_macro]
-pub fn sync(input: TokenStream) -> TokenStream {
-    sync::sync_macro(input)
 }

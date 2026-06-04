@@ -4,7 +4,7 @@ use crate::{
     Callback, Ctx, Data, Upstream,
     cache::Cache,
     node::Node,
-    shared_lock::{SharedLock, SharedKey},
+    shared_lock::{SharedKey, SharedLock},
 };
 
 pub struct Stack<'a, O> {

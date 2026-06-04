@@ -9,10 +9,13 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    Callback, Ctx, Data, Downstream, Upstream, cache::{
+    Callback, Ctx, Data, Downstream, Upstream,
+    cache::{
         Cache, CheckResult,
         collector::{CollectionStatus, UpstreamCollector},
-    }, callback::CallbackId, node::Node
+    },
+    callback::CallbackId,
+    node::Node,
 };
 
 pub struct Op<UC: UpstreamCollector, O: 'static, F> {
