@@ -19,7 +19,7 @@ pub trait UpstreamCollector: Send + Sync {
     fn new_cells(&self) -> Self::Cells;
     fn request<'s>(
         &self,
-        ctx: Ctx<'_, 's>,
+        ctx: Ctx<'_, '_, 's>,
         cells: &Self::Cells,
         counter: &AtomicU32,
         downstream: &'s dyn Downstream,
@@ -46,7 +46,7 @@ impl UpstreamCollector for () {
 
     fn request<'s>(
         &self,
-        ctx: Ctx<'_, 's>,
+        ctx: Ctx<'_, '_, 's>,
         _cells: &(),
         _counter: &AtomicU32,
         downstream: &'s dyn Downstream,
@@ -128,7 +128,7 @@ macro_rules! impl_upstream_collector_tuple {
                 Default::default()
             }
 
-            fn request<'s>(&self, ctx: Ctx<'_, 's>, cells: &Self::Cells, counter: &AtomicU32, downstream: &'s dyn Downstream) where Self: 's {
+            fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, cells: &Self::Cells, counter: &AtomicU32, downstream: &'s dyn Downstream) where Self: 's {
                 let ($($u,)*) = &self;
                 let ($($c,)*) = &cells;
 
@@ -218,7 +218,7 @@ impl<U: Upstream<Output = O>, O: Send + Clone + 'static> UpstreamCollector for V
 
     fn request<'s>(
         &self,
-        ctx: Ctx<'_, 's>,
+        ctx: Ctx<'_, '_, 's>,
         cells: &Self::Cells,
         counter: &AtomicU32,
         downstream: &'s dyn Downstream,
@@ -328,7 +328,7 @@ impl<const N: usize, U: Upstream<Output = O>, O: Send + Clone + 'static> Upstrea
 
     fn request<'s>(
         &self,
-        ctx: Ctx<'_, 's>,
+        ctx: Ctx<'_, '_, 's>,
         cells: &Self::Cells,
         counter: &AtomicU32,
         downstream: &'s dyn Downstream,

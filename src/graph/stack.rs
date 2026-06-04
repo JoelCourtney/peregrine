@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use parking_lot::RwLock;
-
-use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
+use crate::{
+    Callback, Ctx, Data, Upstream,
+    cache::Cache,
+    node::Node,
+    shared_lock::{SharedLock, SharedLockKey},
+};
 
 pub struct Stack<'a, O> {
     base: Arc<dyn Upstream<Output = O> + 'a>,
-    nodes: RwLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
+    nodes: SharedLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
     cache: Cache<()>,
 }
 
@@ -14,7 +17,7 @@ impl<'a, O: Data> Stack<'a, O> {
     pub fn new(run: impl Upstream<Output = O> + 'a) -> Stack<'a, O> {
         Stack {
             base: Arc::new(run),
-            nodes: RwLock::new(vec![]),
+            nodes: SharedLock::new(vec![]),
             cache: Cache::new(),
         }
     }
@@ -23,7 +26,8 @@ impl<'a, O: Data> Stack<'a, O> {
         &self,
         f: impl FnOnce(Arc<dyn Upstream<Output = O> + 'a>) -> U,
     ) {
-        let mut nodes = self.nodes.write();
+        let shared_key = SharedLockKey::new();
+        let nodes = self.nodes.lock(&shared_key);
         let prev = nodes.last().unwrap_or(&self.base).clone();
         let upstream = f(prev);
         nodes.push(Arc::new(upstream));
@@ -34,7 +38,8 @@ impl<'a, O: Data> Stack<'a, O> {
     where
         O: 'static,
     {
-        let mut nodes = self.nodes.write();
+        let shared_key = SharedLockKey::new();
+        let nodes = self.nodes.lock(&shared_key);
         if let Some(node) = nodes.pop() {
             self.cache.invalidate();
             Some(Node(node))
@@ -47,7 +52,7 @@ impl<'a, O: Data> Stack<'a, O> {
 impl<O: Data> Upstream for Stack<'_, O> {
     type Output = O;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, O>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
     {
@@ -56,7 +61,7 @@ impl<O: Data> Upstream for Stack<'_, O> {
             c.push_sender(sender, false);
             c
         });
-        let cell = self.nodes.read();
+        let cell = self.nodes.lock(ctx.key);
         cell.last().unwrap_or(&self.base).request(ctx, callback);
     }
 }
@@ -65,7 +70,7 @@ impl<O: Upstream<Output = O> + Default + 'static> Default for Stack<'_, O> {
     fn default() -> Self {
         Stack {
             base: Arc::new(O::default()),
-            nodes: RwLock::new(vec![]),
+            nodes: SharedLock::new(vec![]),
             cache: Cache::new(),
         }
     }

@@ -4,6 +4,7 @@ pub mod flow;
 pub mod graph;
 pub mod macro_prelude;
 pub mod node;
+mod shared_lock;
 pub mod undo;
 
 pub mod plan;
@@ -16,12 +17,12 @@ pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op
 use cache::Cached;
 use rayon::Scope;
 
-use crate::{cache::collector::OutputCell, data::Data, flow::Sink};
+use crate::{cache::collector::OutputCell, data::Data, flow::Sink, shared_lock::SharedLockKey};
 
 pub trait Upstream: Send + Sync {
     type Output: Data;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's;
 }
@@ -90,31 +91,38 @@ pub trait Downstream: Send + Sync {
 }
 
 #[derive(Copy, Clone)]
-pub struct Ctx<'a, 's> {
-    pub scope: &'a Scope<'s>,
-    pub run_count: u64,
-    pub stack_depth: u32,
+pub struct Ctx<'a, 'b, 's>
+where
+    'b: 's,
+{
+    scope: &'a Scope<'s>,
+    run_count: u64,
+    stack_depth: u32,
+    key: &'b SharedLockKey<'s>,
 }
 
 const MAX_STACK_DEPTH: u32 = 1000;
 
-impl<'a, 's> Ctx<'a, 's> {
-    pub fn new(scope: &'a Scope<'s>, run_count: u64) -> Self {
+impl<'a, 'b, 's> Ctx<'a, 'b, 's> {
+    fn new(scope: &'a Scope<'s>, run_count: u64, key: &'b SharedLockKey<'s>) -> Self {
         Ctx {
             scope,
             stack_depth: 0,
             run_count,
+            key,
         }
     }
 
     #[inline]
-    pub fn spawn(&self, f: impl FnOnce(Ctx<'_, 's>) + Send + 's) {
+    pub fn spawn(&self, f: impl FnOnce(Ctx<'_, '_, 's>) + Send + 's) {
         let run_count = self.run_count;
-        self.scope.spawn(move |scope| f(Ctx::new(scope, run_count)));
+        let key = self.key;
+        self.scope
+            .spawn(move |scope| f(Ctx::new(scope, run_count, key)));
     }
 
     #[inline]
-    pub fn run(&self, f: impl FnOnce(Ctx<'_, 's>) + Send + 's) {
+    pub fn run(&self, f: impl FnOnce(Ctx<'_, '_, 's>) + Send + 's) {
         if self.stack_depth >= MAX_STACK_DEPTH {
             self.spawn(f);
         } else {
@@ -122,6 +130,7 @@ impl<'a, 's> Ctx<'a, 's> {
                 scope: self.scope,
                 run_count: self.run_count,
                 stack_depth: self.stack_depth + 1,
+                key: self.key,
             });
         }
     }
@@ -134,8 +143,10 @@ pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
 
     let run_count = RUN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+    let key = SharedLockKey::new();
+
     rayon::scope(|scope| {
-        let ctx = Ctx::new(scope, run_count);
+        let ctx = Ctx::new(scope, run_count, &key);
         upstream.request(ctx, sink.as_callback());
     });
 

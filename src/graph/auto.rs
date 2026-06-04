@@ -5,7 +5,7 @@ use crate::{Callback, Ctx, Data, Upstream, cache::Cached};
 impl<U: Upstream + ?Sized> Upstream for &U {
     type Output = U::Output;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -16,7 +16,7 @@ impl<U: Upstream + ?Sized> Upstream for &U {
 impl<U: Upstream + ?Sized> Upstream for Box<U> {
     type Output = U::Output;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -27,7 +27,7 @@ impl<U: Upstream + ?Sized> Upstream for Box<U> {
 impl<U: Upstream + ?Sized> Upstream for Arc<U> {
     type Output = U::Output;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -38,7 +38,7 @@ impl<U: Upstream + ?Sized> Upstream for Arc<U> {
 impl<R: Upstream> Upstream for Option<R> {
     type Output = Option<R::Output>;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Option<R::Output>>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Option<R::Output>>)
     where
         Self: 's,
     {
@@ -57,7 +57,7 @@ pub struct UncachedMap<U: Upstream, O> {
 impl<U: Upstream, O: Data> Upstream for UncachedMap<U, O> {
     type Output = O;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {

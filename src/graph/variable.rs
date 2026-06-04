@@ -1,38 +1,44 @@
 use std::sync::Arc;
 
-use parking_lot::RwLock;
-
-use crate::{Callback, Ctx, Data, Upstream, cache::Cache, node::Node};
+use crate::{
+    Callback, Ctx, Data, Upstream,
+    cache::Cache,
+    node::Node,
+    shared_lock::{SharedLock, SharedLockKey},
+};
 
 pub struct Var<'a, O: Send + 'static> {
-    cell: RwLock<Arc<dyn Upstream<Output = O> + 'a>>,
+    cell: SharedLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
 }
 
 impl<'a, O: Data> Var<'a, O> {
     pub fn new(node: impl Upstream<Output = O> + 'a) -> Var<'a, O> {
         Var {
-            cell: RwLock::new(Arc::new(node)),
+            cell: SharedLock::new(Arc::new(node)),
             cache: Cache::new(),
         }
     }
 
     pub fn set(&self, node: impl Upstream<Output = O> + 'a) {
-        let mut write = self.cell.write();
+        let shared_key = SharedLockKey::new();
+        let write = self.cell.lock(&shared_key);
         let new_node = Arc::new(node);
         self.cache.invalidate();
         *write = new_node;
     }
 
     pub fn freeze(&self) -> Node<Arc<dyn Upstream<Output = O> + 'a>> {
-        Node((*self.cell.read()).clone())
+        let shared_key = SharedLockKey::new();
+        let cell = self.cell.lock(&shared_key);
+        Node((*cell).clone())
     }
 }
 
 impl<O: Data> Upstream for Var<'_, O> {
     type Output = O;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, O>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, O>)
     where
         Self: 's,
     {
@@ -41,7 +47,7 @@ impl<O: Data> Upstream for Var<'_, O> {
             c.push_sender(sender, false);
             c
         });
-        let cell = self.cell.read();
+        let cell = self.cell.lock(ctx.key);
         cell.request(ctx, callback);
     }
 }
@@ -49,7 +55,7 @@ impl<O: Data> Upstream for Var<'_, O> {
 impl<O: Upstream<Output = O> + Default + Send + 'static> Default for Var<'_, O> {
     fn default() -> Self {
         Var {
-            cell: RwLock::new(Arc::new(O::default())),
+            cell: SharedLock::new(Arc::new(O::default())),
             cache: Cache::new(),
         }
     }

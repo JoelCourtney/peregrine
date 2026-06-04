@@ -24,7 +24,7 @@ impl<T: Data> Upstream for Source<T> {
     type Output = T;
 
     #[inline]
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -40,7 +40,7 @@ macro_rules! impl_upstream_for_data {
                 type Output = Self;
 
                 #[inline(always)]
-                fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+                fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
                 where
                     Self: 's,
                 {
@@ -67,7 +67,7 @@ macro_rules! impl_upstream_for_tuple {
                 type Output = ($($ty,)*);
 
                 #[inline(always)]
-                fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+                fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
                 where
                     Self: 's,
                 {
@@ -93,7 +93,7 @@ impl_upstream_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
 impl<T: Data> Upstream for Vec<T> {
     type Output = Self;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -103,7 +103,7 @@ impl<T: Data> Upstream for Vec<T> {
 impl<T: Data, const N: usize> Upstream for [T; N] {
     type Output = Self;
 
-    fn request<'s>(&self, ctx: Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {

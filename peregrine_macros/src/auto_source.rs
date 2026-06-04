@@ -23,7 +23,7 @@ pub fn derive_auto_source(input: TokenStream) -> TokenStream {
             type Output = Self;
 
             #[inline(always)]
-            fn request<'s>(&self, ctx: peregrine::Ctx<'_, 's>, callback: peregrine::Callback<'s, Self::Output>)
+            fn request<'s>(&self, ctx: peregrine::Ctx<'_, '_, 's>, callback: peregrine::Callback<'s, Self::Output>)
             where
                 Self: 's,
             {
