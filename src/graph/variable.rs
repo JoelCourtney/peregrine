@@ -3,34 +3,34 @@ use std::sync::Arc;
 use crate::{
     Callback, Ctx, Data, Upstream,
     cache::Cache,
+    lock::{ChildLock, PARENT},
     node::Node,
-    shared_lock::{SharedKey, SharedLock},
 };
 
 pub struct Var<'a, O: Send + 'static> {
-    cell: SharedLock<Arc<dyn Upstream<Output = O> + 'a>>,
+    cell: ChildLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
 }
 
 impl<'a, O: Data> Var<'a, O> {
     pub fn new(node: impl Upstream<Output = O> + 'a) -> Var<'a, O> {
         Var {
-            cell: SharedLock::new(Arc::new(node)),
+            cell: ChildLock::new(Arc::new(node), &PARENT),
             cache: Cache::new(),
         }
     }
 
     pub fn set(&self, node: impl Upstream<Output = O> + 'a) {
-        let mut shared_key = SharedKey::new();
-        let write = self.cell.write(&mut shared_key);
+        let mut key = PARENT.key();
+        let write = self.cell.write(&mut key);
         let new_node = Arc::new(node);
         self.cache.invalidate();
         *write = new_node;
     }
 
     pub fn freeze(&self) -> Node<Arc<dyn Upstream<Output = O> + 'a>> {
-        let shared_key = SharedKey::new();
-        let cell = self.cell.read(&shared_key);
+        let key = PARENT.key();
+        let cell = self.cell.read(&key);
         Node((*cell).clone())
     }
 }
@@ -55,7 +55,7 @@ impl<O: Data> Upstream for Var<'_, O> {
 impl<O: Upstream<Output = O> + Default + Send + 'static> Default for Var<'_, O> {
     fn default() -> Self {
         Var {
-            cell: SharedLock::new(Arc::new(O::default())),
+            cell: ChildLock::new(Arc::new(O::default()), &PARENT),
             cache: Cache::new(),
         }
     }

@@ -1,12 +1,16 @@
 pub mod dense;
+pub mod lazy;
 pub mod resource;
+
+use child_lock::parking_lot::MutexKey;
+use parking_lot::Mutex;
 
 use crate::{
     Data, Upstream,
     cache::Cache,
     data::evolving::Evolving,
+    lock::{ChildLock, PARENT},
     node::Node,
-    shared_lock::{SharedKey, SharedLock},
 };
 use std::{
     collections::BTreeMap,
@@ -15,7 +19,7 @@ use std::{
 };
 
 pub struct Series<'a, T, O> {
-    entries: SharedLock<SeriesEntries<'a, T, O>>,
+    entries: Mutex<SeriesEntries<'a, T, O>>,
 }
 
 struct SeriesEntries<'a, T, O> {
@@ -114,24 +118,24 @@ impl<'a, T, O> StrongSeriesProbe<'a, T, O> {
 pub struct ConstantSeriesProbe<'a, T, O> {
     at: T,
     inclusive: bool,
-    upstream: SharedLock<Arc<dyn Upstream<Output = O> + 'a>>,
+    upstream: ChildLock<Arc<dyn Upstream<Output = O> + 'a>>,
     cache: Cache<()>,
 }
 
 pub struct EvolvingSeriesProbe<'a, T, O> {
     inner: ConstantSeriesProbe<'a, T, O>,
-    upstream_at: SharedLock<T>,
+    upstream_at: ChildLock<T>,
 }
 
 pub struct SamplingSeriesProbe<'a, T, O> {
     inner: ConstantSeriesProbe<'a, T, O>,
-    upstream_at: SharedLock<T>,
+    upstream_at: ChildLock<T>,
 }
 
 impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
     pub fn new(default: impl Upstream<Output = O> + 'a) -> Self {
         Series {
-            entries: SharedLock::new(SeriesEntries {
+            entries: Mutex::new(SeriesEntries {
                 default: ProbedUpstream {
                     upstream: Arc::new(default),
                     probes: vec![],
@@ -143,8 +147,8 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
 
     pub fn set_at(&self, index: T, upstream: impl Upstream<Output = O> + 'a) {
         let upstream = Arc::new(upstream) as Arc<dyn Upstream<Output = O>>;
-        let mut shared_key = SharedKey::new();
-        let SeriesEntries { default, map } = &mut *self.entries.write(&mut shared_key);
+        let mut shared_key = PARENT.key();
+        let SeriesEntries { default, map } = &mut *self.entries.lock();
         let probed = map
             .range_mut(..=index)
             .next_back()
@@ -172,8 +176,8 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
     }
 
     pub fn remove(&self, index: T) -> Option<Arc<dyn Upstream<Output = O> + 'a>> {
-        let mut shared_key = SharedKey::new();
-        let SeriesEntries { default, map } = &mut *self.entries.write(&mut shared_key);
+        let mut shared_key = PARENT.key();
+        let SeriesEntries { default, map } = &mut *self.entries.lock();
         if let Some(ProbedUpstream {
             upstream: old_node,
             probes,
@@ -201,8 +205,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         inclusive: bool,
         mapper: impl Fn(Option<T>, ConstantSeriesProbe<T, O>) -> StrongSeriesProbe<T, O>,
     ) -> StrongSeriesProbe<'a, T, O> {
-        let mut shared_key = SharedKey::new();
-        let SeriesEntries { default, map } = self.entries.write(&mut shared_key);
+        let SeriesEntries { default, map } = &mut *self.entries.lock();
         let bound = if inclusive {
             Bound::Included(index)
         } else {
@@ -215,7 +218,7 @@ impl<'a, T: Copy + Ord, O: Data> Series<'a, T, O> {
         let probe = ConstantSeriesProbe {
             at: index,
             inclusive,
-            upstream: SharedLock::new(probed.upstream.clone()),
+            upstream: ChildLock::new(probed.upstream.clone(), &PARENT),
             cache: Cache::new(),
         };
         let mapped_probe = mapper(key, probe);
@@ -258,7 +261,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
             false,
             |key, probe| StrongSeriesProbe::Sampling(Arc::new(SamplingSeriesProbe {
                 inner: probe,
-                upstream_at: SharedLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity.")),
+                upstream_at: ChildLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."), &PARENT),
             })),
         ).unwrap_sampling())
     }
@@ -269,7 +272,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
             true,
             |key, probe| StrongSeriesProbe::Sampling(Arc::new(SamplingSeriesProbe {
                 inner: probe,
-                upstream_at: SharedLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."))
+                upstream_at: ChildLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."), &PARENT),
             }))
         ).unwrap_sampling())
     }
@@ -280,7 +283,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
             false,
             |key, probe| StrongSeriesProbe::Evolving(Arc::new(EvolvingSeriesProbe {
                 inner: probe,
-                upstream_at: SharedLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."))
+                upstream_at: ChildLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."), &PARENT),
             }))
         ).unwrap_evolving ())
     }
@@ -291,7 +294,7 @@ impl<'a, T: Copy + Ord, O: Evolving<T>> Series<'a, T, O> {
             true,
             |key, probe| StrongSeriesProbe::Evolving(Arc::new(EvolvingSeriesProbe {
                 inner: probe,
-                upstream_at: SharedLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."))
+                upstream_at: ChildLock::new(key.expect("Cannot sample from the default value of a Series. The default occurs at -infinity."), &PARENT),
             }))
         ).unwrap_evolving())
     }
@@ -334,7 +337,7 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
         &self,
         new_key: T,
         upstream: &Arc<dyn Upstream<Output = O> + 'a>,
-        shared_key: &mut SharedKey<'_>,
+        shared_key: &mut MutexKey,
     ) -> MontyHall {
         use MontyHall::{Stay, Switch};
 
@@ -358,7 +361,7 @@ impl<'a, T: Ord, O: Data> StrongSeriesProbe<'a, T, O> {
         &self,
         new_key: Option<T>,
         upstream: &Arc<dyn Upstream<Output = O> + 'a>,
-        shared_key: &mut SharedKey,
+        shared_key: &mut MutexKey,
     ) {
         let constant_probe = match self {
             StrongSeriesProbe::Constant(probe) => &**probe,

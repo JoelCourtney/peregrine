@@ -3,13 +3,13 @@ use std::sync::Arc;
 use crate::{
     Callback, Ctx, Data, Upstream,
     cache::Cache,
+    lock::{ChildLock, PARENT},
     node::Node,
-    shared_lock::{SharedKey, SharedLock},
 };
 
 pub struct Stack<'a, O> {
     base: Arc<dyn Upstream<Output = O> + 'a>,
-    nodes: SharedLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
+    nodes: ChildLock<Vec<Arc<dyn Upstream<Output = O> + 'a>>>,
     cache: Cache<()>,
 }
 
@@ -17,7 +17,7 @@ impl<'a, O: Data> Stack<'a, O> {
     pub fn new(run: impl Upstream<Output = O> + 'a) -> Stack<'a, O> {
         Stack {
             base: Arc::new(run),
-            nodes: SharedLock::new(vec![]),
+            nodes: ChildLock::new(vec![], &PARENT),
             cache: Cache::new(),
         }
     }
@@ -26,7 +26,7 @@ impl<'a, O: Data> Stack<'a, O> {
         &self,
         f: impl FnOnce(Arc<dyn Upstream<Output = O> + 'a>) -> U,
     ) {
-        let mut shared_key = SharedKey::new();
+        let mut shared_key = PARENT.key();
         let nodes = self.nodes.write(&mut shared_key);
         let prev = nodes.last().unwrap_or(&self.base).clone();
         let upstream = f(prev);
@@ -38,7 +38,7 @@ impl<'a, O: Data> Stack<'a, O> {
     where
         O: 'static,
     {
-        let mut shared_key = SharedKey::new();
+        let mut shared_key = PARENT.key();
         let nodes = self.nodes.write(&mut shared_key);
         if let Some(node) = nodes.pop() {
             self.cache.invalidate();
@@ -70,7 +70,7 @@ impl<O: Upstream<Output = O> + Default + 'static> Default for Stack<'_, O> {
     fn default() -> Self {
         Stack {
             base: Arc::new(O::default()),
-            nodes: SharedLock::new(vec![]),
+            nodes: ChildLock::new(vec![], &PARENT),
             cache: Cache::new(),
         }
     }

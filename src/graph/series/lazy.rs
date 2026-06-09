@@ -12,7 +12,6 @@ use crate::{
     Callback, Ctx, Upstream,
     cache::{Cache, CheckResult},
     data::Data,
-    graph::{NodeId, NodeTracker},
     node::Node,
 };
 
@@ -137,7 +136,7 @@ impl<I: Data + Ord, O: 'static, Eq: Data + Default> RecurringNodeGenerator<I, O,
         &self,
         index: I,
         inclusive: bool,
-        ctx: crate::Ctx<'_, 's>,
+        ctx: crate::Ctx<'_, '_, 's>,
         callback: Callback<'s, GeneratedNode<I, O>>,
     ) {
         {
@@ -157,21 +156,23 @@ impl<I: Data + Ord, O: 'static, Eq: Data + Default> RecurringNodeGenerator<I, O,
         }
     }
 
-    fn run<'s>(&self, ctx: Ctx<'_, 's>) -> MutexGuard<'_, BinaryHeap<RevOrderedCallback<I, O>>> {
-        let send_result =
-            |ctx: Ctx<'_, 's>, node: &UpstreamStep<I, O, Eq>, callback: Callback<'static, _>| {
-                let result = match node.cache.check() {
-                    CheckResult::NoProblem(v) => v.map(|v| GeneratedNode {
-                        placement: node.index.clone(),
-                        node: v.upstream,
-                    }),
-                    _ => unreachable!(),
-                };
-                let run_count = ctx.run_count;
-                ctx.scope
-                    .spawn(move |scope| callback.call(result, Ctx { scope, run_count }));
+    fn run<'s>(
+        &self,
+        ctx: Ctx<'_, '_, 's>,
+    ) -> MutexGuard<'_, BinaryHeap<RevOrderedCallback<I, O>>> {
+        let send_result = |ctx: &Ctx<'_, '_, 's>,
+                           node: &UpstreamStep<I, O, Eq>,
+                           callback: Callback<'static, _>| {
+            let result = match node.cache.check() {
+                CheckResult::NoProblem(v) => v.map(|v| GeneratedNode {
+                    placement: node.index.clone(),
+                    node: v.upstream,
+                }),
+                _ => unreachable!(),
             };
-        let mut nodes = self.nodes.lock();
+            ctx.spawn(move |ctx| callback.call(result, ctx));
+        };
+        let nodes = self.nodes.lock();
         loop {
             let mut callbacks = self.callbacks.lock();
             let next_callback = callbacks.pop();
@@ -185,11 +186,11 @@ impl<I: Data + Ord, O: 'static, Eq: Data + Default> RecurringNodeGenerator<I, O,
                     }
                 });
                 match search_result {
-                    Ok(which) if c.inclusive => send_result(ctx, &nodes[which], c.callback),
-                    Ok(which) => send_result(ctx, &nodes[max(which - 1, 0)], c.callback),
+                    Ok(which) if c.inclusive => send_result(&ctx, &nodes[which], c.callback),
+                    Ok(which) => send_result(&ctx, &nodes[max(which - 1, 0)], c.callback),
                     Err(which) => {
                         if nodes[which].cache.is_valid() {
-                            send_result(ctx, &nodes[max(which - 1, 0)], c.callback);
+                            send_result(&ctx, &nodes[max(which - 1, 0)], c.callback);
                         } else {
                             todo!()
                         }
@@ -233,7 +234,6 @@ impl<I: Ord + Data, O: Data, Eq: Default + Data> NodeGenerator<I, O>
 {
     fn get(&self, input: I, inclusive: bool) -> Arc<dyn Upstream<Output = GeneratedNode<I, O>>> {
         Arc::new(RecurringNodeUpstream {
-            node: NodeTracker::new(),
             generator: self.clone(),
             query: input,
             inclusive,
@@ -242,7 +242,6 @@ impl<I: Ord + Data, O: Data, Eq: Default + Data> NodeGenerator<I, O>
 }
 
 pub struct RecurringNodeUpstream<I, O, Eq = ()> {
-    node: NodeTracker,
     generator: Arc<RecurringNodeGenerator<I, O, Eq>>,
     query: I,
     inclusive: bool,
@@ -251,11 +250,7 @@ pub struct RecurringNodeUpstream<I, O, Eq = ()> {
 impl<I: Data + Ord, O: Data, Eq: Default + Data> Upstream for RecurringNodeUpstream<I, O, Eq> {
     type Output = GeneratedNode<I, O>;
 
-    fn node_id(&self) -> Option<NodeId> {
-        Some(self.node.id)
-    }
-
-    fn request<'s>(&self, ctx: crate::Ctx<'_, 's>, callback: Callback<'s, Self::Output>)
+    fn request<'s>(&self, ctx: crate::Ctx<'_, '_, 's>, callback: Callback<'s, Self::Output>)
     where
         Self: 's,
     {
@@ -269,8 +264,8 @@ mod tests {
     use super::*;
     use crate::{
         self as peregrine,
-        graph::variable::Var,
-        plan::{Resource, Time},
+        graph::{series::resource::Resource, variable::Var},
+        plan::Time,
         run,
     };
 

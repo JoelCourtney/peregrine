@@ -2,9 +2,9 @@ pub mod cache;
 pub(crate) mod callback;
 pub mod data;
 pub mod graph;
+mod lock;
 pub mod macro_prelude;
 pub mod node;
-mod shared_lock;
 pub mod undo;
 
 pub mod plan;
@@ -12,6 +12,7 @@ pub mod specification;
 
 use std::sync::Arc;
 
+use child_lock::parking_lot::MutexKey;
 pub use peregrine_macros::{AutoSource, Chronological, Undo, action, activity, op};
 
 use rayon::Scope;
@@ -20,7 +21,7 @@ use sharded_slab::Slab;
 use crate::{
     callback::{Callback, CallbackId, ErasedCallback, Sink},
     data::Data,
-    shared_lock::SharedKey,
+    lock::PARENT,
 };
 
 pub trait Upstream: Send + Sync {
@@ -42,7 +43,7 @@ where
 {
     scope: &'a Scope<'s>,
     stack_depth: u32,
-    key: &'b SharedKey<'s>,
+    key: &'b MutexKey<'s>,
     callbacks: Arc<Slab<ErasedCallback<'s>>>,
 }
 
@@ -51,7 +52,7 @@ const MAX_STACK_DEPTH: u32 = 1000;
 impl<'a, 'b, 's> Ctx<'a, 'b, 's> {
     fn new(
         scope: &'a Scope<'s>,
-        key: &'b SharedKey<'s>,
+        key: &'b MutexKey<'s>,
         callbacks: Arc<Slab<ErasedCallback<'s>>>,
     ) -> Self {
         Ctx {
@@ -107,7 +108,7 @@ impl<'a, 'b, 's> Ctx<'a, 'b, 's> {
 pub fn run<O: Data>(upstream: impl Upstream<Output = O>) -> O {
     let sink = Sink::new();
 
-    let key = SharedKey::new();
+    let key = PARENT.key();
 
     rayon::scope(|scope| {
         let ctx = Ctx::new(scope, &key, Arc::new(Slab::new()));
